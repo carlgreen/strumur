@@ -17,6 +17,12 @@ use rand::Rng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use uuid::Uuid;
 
+const NAME: &str = env!("CARGO_PKG_NAME");
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+const UPNP_VERSION: &str = "UPnP/2.0";
+
 const SSDP_IPV4_MULTICAST_ADDRESS: &str = "239.255.255.250:1900";
 
 const HTTP_PROTOCOL_NAME: &str = "HTTP";
@@ -125,7 +131,7 @@ fn main() -> Result<()> {
     let nt = "upnp:rootdevice";
     let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -133,7 +139,7 @@ fn main() -> Result<()> {
     let nt = format!("uuid:{device_uuid}");
     let usn = format!("uuid:{device_uuid}");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -143,7 +149,7 @@ fn main() -> Result<()> {
     let nt = format!("urn:schemas-upnp-org:device:{device_type}:{ver}");
     let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:device:{device_type}:{ver}");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -157,7 +163,7 @@ fn main() -> Result<()> {
     let nt = format!("urn:schemas-upnp-org:service:{service_type}:{ver}");
     let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:service:{service_type}:{ver}");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -310,7 +316,7 @@ fn main() -> Result<()> {
                                     let st = "upnp:rootdevice";
                                     let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
@@ -322,7 +328,7 @@ fn main() -> Result<()> {
                                     let st = format!("uuid:{device_uuid}");
                                     let usn = format!("uuid:{device_uuid}");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
@@ -335,7 +341,7 @@ fn main() -> Result<()> {
                                     let st = "urn:schemas-upnp-org:device:MediaServer:1";
                                     let usn = format!("uuid:{device_uuid}::{st}");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
@@ -348,7 +354,7 @@ fn main() -> Result<()> {
                                     let st = "urn:schemas-upnp-org:service:ContentDirectory:1";
                                     let usn = format!("uuid:{device_uuid}::{st}");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} UPnP/2.0 strumur/0.1.0\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
