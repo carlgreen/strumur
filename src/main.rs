@@ -31,11 +31,39 @@ const HTTP_PROTOCOL_VERSION: &str = "1.1";
 
 const HTTP_MATCH_ANY_RESOURCE: &str = "*";
 
+const HTTP_RESPONSE_OK: &str = "200 OK";
+
 const HTTP_HEADER_SEP: &str = ":";
 
 const HTTP_METHOD_NOTIFY: &str = "NOTIFY";
 
 const HTTP_METHOD_SEARCH: &str = "M-SEARCH";
+
+const HTTP_HEADER_HOST: &str = "HOST";
+
+const HTTP_HEADER_SERVER: &str = "SERVER";
+
+const HTTP_HEADER_LOCATION: &str = "LOCATION";
+
+const HTTP_HEADER_DATE: &str = "DATE";
+
+const HTTP_HEADER_EXT: &str = "EXT";
+
+const HTTP_HEADER_CACHE_CONTROL: &str = "CACHE-CONTROL";
+
+const HTTP_HEADER_BOOTID: &str = "BOOTID.UPNP.ORG";
+
+const HTTP_HEADER_CONFIGID: &str = "CONFIGID.UPNP.ORG";
+
+const HTTP_HEADER_NT: &str = "NT";
+
+const HTTP_HEADER_NTS: &str = "NTS";
+
+const HTTP_HEADER_ST: &str = "ST";
+
+const HTTP_HEADER_USN: &str = "USN";
+
+const NTS_ALIVE: &str = "ssdp:alive";
 
 fn main() -> Result<()> {
     let mut rng = rand::rng();
@@ -54,7 +82,8 @@ fn main() -> Result<()> {
 
             println!("Request: {http_request:#?}");
 
-            let status_line = "HTTP/1.1 200 OK";
+            let status_line =
+                format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
             // TODO what is this content?
             let content = r#"<?xml version="1.0" encoding="utf-8"?><root xmlns="urn:schemas-upnp-org:device-1-0"><specVersion><major>1</major><minor>0</minor></specVersion><device></device></root>"#;
             let length = content.len();
@@ -131,7 +160,7 @@ fn main() -> Result<()> {
     let nt = "upnp:rootdevice";
     let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -139,7 +168,7 @@ fn main() -> Result<()> {
     let nt = format!("uuid:{device_uuid}");
     let usn = format!("uuid:{device_uuid}");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -149,7 +178,7 @@ fn main() -> Result<()> {
     let nt = format!("urn:schemas-upnp-org:device:{device_type}:{ver}");
     let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:device:{device_type}:{ver}");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -163,7 +192,7 @@ fn main() -> Result<()> {
     let nt = format!("urn:schemas-upnp-org:service:{service_type}:{ver}");
     let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:service:{service_type}:{ver}");
     let advertisement = format!(
-        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\nHOST: {SSDP_IPV4_MULTICAST_ADDRESS}\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nNT: {nt}\r\nNTS: ssdp:alive\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
@@ -189,7 +218,11 @@ fn main() -> Result<()> {
                 // discovery message.
                 match parse_ssdp_message(&buffer) {
                     Ok(ssdp_message) => {
-                        if ssdp_message.request_line == "HTTP/1.1 200 OK" {
+                        if ssdp_message.request_line
+                            == format!(
+                                "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}"
+                            )
+                        {
                             println!("what do i do with {ssdp_message:#?}");
                             continue;
                         }
@@ -316,7 +349,7 @@ fn main() -> Result<()> {
                                     let st = "upnp:rootdevice";
                                     let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
@@ -328,7 +361,7 @@ fn main() -> Result<()> {
                                     let st = format!("uuid:{device_uuid}");
                                     let usn = format!("uuid:{device_uuid}");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
@@ -341,7 +374,7 @@ fn main() -> Result<()> {
                                     let st = "urn:schemas-upnp-org:device:MediaServer:1";
                                     let usn = format!("uuid:{device_uuid}::{st}");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
@@ -354,7 +387,7 @@ fn main() -> Result<()> {
                                     let st = "urn:schemas-upnp-org:service:ContentDirectory:1";
                                     let usn = format!("uuid:{device_uuid}::{st}");
                                     let advertisement = format!(
-                                        "HTTP/1.1 200 OK\r\nDATE: {response_date}\r\nEXT:\r\nBOOTID.UPNP.ORG: {boot_id}\r\nCONFIGID.UPNP.ORG: 1\r\nSERVER: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\nST: {st}\r\nUSN: {usn}\r\nLOCATION: {location}\r\nCACHE-CONTROL: max-age={}\r\n\r\n",
+                                        "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
