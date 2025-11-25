@@ -93,7 +93,7 @@ fn main() -> Result<()> {
                     "empty request from {}",
                     stream
                         .peer_addr()
-                        .map_or("default".to_string(), |a| a.to_string())
+                        .map_or("unknown".to_string(), |a| a.to_string())
                 );
                 continue;
             };
