@@ -138,7 +138,9 @@ fn main() -> Result<()> {
                 let response =
                     format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
 
-                stream.write_all(response.as_bytes()).unwrap();
+                if let Err(err) = stream.write_all(response.as_bytes()) {
+                    println!("error writing response: {err}");
+                }
 
                 continue;
             }
@@ -157,7 +159,9 @@ fn main() -> Result<()> {
                 let response =
                     format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
 
-                stream.write_all(response.as_bytes()).unwrap();
+                if let Err(err) = stream.write_all(response.as_bytes()) {
+                    println!("error writing response: {err}");
+                }
 
                 continue;
             }
@@ -165,7 +169,9 @@ fn main() -> Result<()> {
             println!("unknown request line: {request_line}");
             let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} 404 NOT FOUND");
             let response = format!("{status_line}\r\nContent-Length: 0\r\n\r\n");
-            stream.write_all(response.as_bytes()).unwrap();
+            if let Err(err) = stream.write_all(response.as_bytes()) {
+                println!("error writing response: {err}");
+            }
         }
     });
 
