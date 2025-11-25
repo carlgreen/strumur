@@ -223,7 +223,9 @@ fn main() -> Result<()> {
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
-    socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
+    if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
+        println!("error sending advertiesment: {err}");
+    };
 
     let nt = format!("uuid:{device_uuid}");
     let usn = format!("uuid:{device_uuid}");
@@ -231,7 +233,9 @@ fn main() -> Result<()> {
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
-    socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
+    if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
+        println!("error sending advertiesment: {err}");
+    };
 
     let device_type = "MediaServer";
     let ver = 1;
@@ -241,7 +245,9 @@ fn main() -> Result<()> {
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
-    socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
+    if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
+        println!("error sending advertiesment: {err}");
+    };
 
     // - Two discovery messages for each embedded device - I don't have any embedded devices
 
@@ -255,7 +261,9 @@ fn main() -> Result<()> {
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
     );
-    socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
+    if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
+        println!("error sending advertiesment: {err}");
+    };
 
     // TODO ConnectionManager service
     // let service_type = "ConnectionManager";
@@ -266,7 +274,9 @@ fn main() -> Result<()> {
     //     "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
     //     max_age.as_secs()
     // );
-    // socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
+    // if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
+    //     println!("error sending advertiesment: {err}");
+    // };
 
     // TODO above messages should be resent periodically
 
@@ -426,7 +436,10 @@ fn main() -> Result<()> {
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
-                                    socket.send_to(advertisement.as_bytes(), &src)?;
+                                    if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
+                                    {
+                                        println!("error sending advertiesment: {err}");
+                                    }
                                 }
 
                                 if st == "ssdp:all" || st == format!("uuid:{device_uuid}").as_str()
@@ -438,7 +451,10 @@ fn main() -> Result<()> {
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
-                                    socket.send_to(advertisement.as_bytes(), &src)?;
+                                    if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
+                                    {
+                                        println!("error sending advertiesment: {err}");
+                                    }
                                 }
 
                                 if st == "ssdp:all"
@@ -451,7 +467,10 @@ fn main() -> Result<()> {
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
-                                    socket.send_to(advertisement.as_bytes(), &src)?;
+                                    if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
+                                    {
+                                        println!("error sending advertiesment: {err}");
+                                    }
                                 }
 
                                 if st == "ssdp:all"
@@ -464,7 +483,10 @@ fn main() -> Result<()> {
                                         max_age.as_secs()
                                     );
                                     println!("send {usn}");
-                                    socket.send_to(advertisement.as_bytes(), &src)?;
+                                    if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
+                                    {
+                                        println!("error sending advertiesment: {err}");
+                                    }
                                 }
 
                                 // TODO ConnectionManager service
@@ -478,7 +500,10 @@ fn main() -> Result<()> {
                                 //         max_age.as_secs()
                                 //     );
                                 //     println!("send {usn}");
-                                //     socket.send_to(advertisement.as_bytes(), &src)?;
+                                //     if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
+                                //     {
+                                //         println!("error sending advertiesment: {err}");
+                                //     }
                                 // }
                             }
                             _ => println!("something else: {}", ssdp_message.request_line),
