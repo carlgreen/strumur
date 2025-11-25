@@ -225,7 +225,7 @@ fn main() -> Result<()> {
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
         println!("error sending advertiesment: {err}");
-    };
+    }
 
     let nt = format!("uuid:{device_uuid}");
     let usn = format!("uuid:{device_uuid}");
@@ -235,7 +235,7 @@ fn main() -> Result<()> {
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
         println!("error sending advertiesment: {err}");
-    };
+    }
 
     let device_type = "MediaServer";
     let ver = 1;
@@ -247,7 +247,7 @@ fn main() -> Result<()> {
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
         println!("error sending advertiesment: {err}");
-    };
+    }
 
     // - Two discovery messages for each embedded device - I don't have any embedded devices
 
@@ -263,7 +263,7 @@ fn main() -> Result<()> {
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
         println!("error sending advertiesment: {err}");
-    };
+    }
 
     // TODO ConnectionManager service
     // let service_type = "ConnectionManager";
@@ -276,7 +276,7 @@ fn main() -> Result<()> {
     // );
     // if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
     //     println!("error sending advertiesment: {err}");
-    // };
+    // }
 
     // TODO above messages should be resent periodically
 
