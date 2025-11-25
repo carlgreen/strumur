@@ -98,11 +98,8 @@ fn main() -> Result<()> {
                 continue;
             };
 
-            match &request_line[..] {
+            let (content, result) = match &request_line[..] {
                 "GET /Device.xml HTTP/1.1" => {
-                    let status_line =
-                        format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
-
                     let content = format!(
                         r#"<?xml version="1.0" encoding="utf-8"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0" configId="1">
@@ -134,41 +131,28 @@ fn main() -> Result<()> {
     </device>
 </root>"#
                     );
-                    let length = content.len();
 
-                    let response =
-                        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
-
-                    if let Err(err) = stream.write_all(response.as_bytes()) {
-                        println!("error writing response: {err}");
-                    }
+                    (content, HTTP_RESPONSE_OK)
                 }
                 "GET /ConnectionManager.xml HTTP/1.1" => {
                     unimplemented!("GET /ConnectionManager.xml not implemented");
                 }
                 "GET /ContentDirectory.xml HTTP/1.1" => {
-                    let status_line =
-                        format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
-
                     let content = include_str!("ContentDirectory.xml");
-                    let length = content.len();
 
-                    let response =
-                        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
-
-                    if let Err(err) = stream.write_all(response.as_bytes()) {
-                        println!("error writing response: {err}");
-                    }
+                    (content.to_string(), HTTP_RESPONSE_OK)
                 }
                 _ => {
                     println!("unknown request line: {request_line}");
-                    let status_line =
-                        format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} 404 NOT FOUND");
-                    let response = format!("{status_line}\r\nContent-Length: 0\r\n\r\n");
-                    if let Err(err) = stream.write_all(response.as_bytes()) {
-                        println!("error writing response: {err}");
-                    }
+
+                    (String::new(), "404 NOT FOUND")
                 }
+            };
+            let length = content.len();
+            let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {result}");
+            let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
+            if let Err(err) = stream.write_all(response.as_bytes()) {
+                println!("error writing response: {err}");
             }
         }
     });
