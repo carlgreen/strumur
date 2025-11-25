@@ -88,7 +88,15 @@ fn main() -> Result<()> {
 
             // TODO header stuff
 
-            let request_line = http_request.first().unwrap();
+            let Some(request_line) = http_request.first() else {
+                println!(
+                    "empty request from {}",
+                    stream
+                        .peer_addr()
+                        .map_or("default".to_string(), |a| a.to_string())
+                );
+                continue;
+            };
 
             if request_line == "GET /Device.xml HTTP/1.1" {
                 let status_line =
