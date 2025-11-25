@@ -227,7 +227,7 @@ fn main() -> Result<()> {
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertiesment: {err}");
+        println!("error sending advertisement: {err}");
     }
 
     let nt = format!("uuid:{device_uuid}");
@@ -237,7 +237,7 @@ fn main() -> Result<()> {
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertiesment: {err}");
+        println!("error sending advertisement: {err}");
     }
 
     let device_type = "MediaServer";
@@ -249,7 +249,7 @@ fn main() -> Result<()> {
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertiesment: {err}");
+        println!("error sending advertisement: {err}");
     }
 
     // - Two discovery messages for each embedded device - I don't have any embedded devices
@@ -265,7 +265,7 @@ fn main() -> Result<()> {
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertiesment: {err}");
+        println!("error sending advertisement: {err}");
     }
 
     // TODO ConnectionManager service
@@ -278,7 +278,7 @@ fn main() -> Result<()> {
     //     max_age.as_secs()
     // );
     // if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-    //     println!("error sending advertiesment: {err}");
+    //     println!("error sending advertisement: {err}");
     // }
 
     // TODO above messages should be resent periodically
@@ -450,7 +450,7 @@ fn main() -> Result<()> {
                                         if let Err(err) =
                                             socket.send_to(advertisement.as_bytes(), &src)
                                         {
-                                            println!("error sending advertiesment: {err}");
+                                            println!("error sending advertisement: {err}");
                                         }
                                     }
 
@@ -467,7 +467,7 @@ fn main() -> Result<()> {
                                         if let Err(err) =
                                             socket.send_to(advertisement.as_bytes(), &src)
                                         {
-                                            println!("error sending advertiesment: {err}");
+                                            println!("error sending advertisement: {err}");
                                         }
                                     }
 
@@ -484,7 +484,7 @@ fn main() -> Result<()> {
                                         if let Err(err) =
                                             socket.send_to(advertisement.as_bytes(), &src)
                                         {
-                                            println!("error sending advertiesment: {err}");
+                                            println!("error sending advertisement: {err}");
                                         }
                                     }
 
@@ -501,7 +501,7 @@ fn main() -> Result<()> {
                                         if let Err(err) =
                                             socket.send_to(advertisement.as_bytes(), &src)
                                         {
-                                            println!("error sending advertiesment: {err}");
+                                            println!("error sending advertisement: {err}");
                                         }
                                     }
 
@@ -518,7 +518,7 @@ fn main() -> Result<()> {
                                     //     println!("send {usn}");
                                     //     if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
                                     //     {
-                                    //         println!("error sending advertiesment: {err}");
+                                    //         println!("error sending advertisement: {err}");
                                     //     }
                                     // }
                                 }
