@@ -67,6 +67,10 @@ const NTS_ALIVE: &str = "ssdp:alive";
 
 fn main() -> Result<()> {
     let mut rng = rand::rng();
+
+    // let device_uuid = Uuid::now_v6();
+    let device_uuid = Uuid::new_v4(); // TODO only do this once then store
+
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
         println!("listening on {}", listener.local_addr().unwrap());
@@ -82,20 +86,80 @@ fn main() -> Result<()> {
 
             println!("Request: {http_request:#?}");
 
-            let status_line =
-                format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
-            // TODO what is this content?
-            let content = r#"<?xml version="1.0" encoding="utf-8"?><root xmlns="urn:schemas-upnp-org:device-1-0"><specVersion><major>1</major><minor>0</minor></specVersion><device></device></root>"#;
-            let length = content.len();
+            // TODO header stuff
 
-            let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
+            let request_line = http_request.first().unwrap();
 
+            if request_line == "GET /Device.xml HTTP/1.1" {
+                let status_line =
+                    format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
+
+                let content = format!(
+                    r#"<?xml version="1.0" encoding="utf-8"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0" configId="1">
+    <specVersion>
+        <major>1</major>
+        <minor>0</minor>
+    </specVersion>
+    <device>
+        <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
+        <UDN>uuid:{device_uuid}</UDN>
+        <friendlyName>strumur</friendlyName>
+        <serviceList>
+            <!--service>
+                <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
+                <serviceId>urn:upnp-org:serviceId:ConnectionManager</serviceId>
+				<SCPDURL>/ConnectionManager.xml</SCPDURL>
+				<eventSubURL>/ConnectionManager/Event</eventSubURL>
+				<controlURL>/ConnectionManager/Control</controlURL>
+            </service-->
+			<service>
+				<serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
+				<serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
+				<SCPDURL>/ContentDirectory.xml</SCPDURL>
+				<eventSubURL>/ContentDirectory/Event</eventSubURL>
+				<controlURL>/ContentDirectory/Control</controlURL>
+			</service>
+        </serviceList>
+        <presentationURL>/</presentationURL>
+    </device>
+</root>"#
+                );
+                let length = content.len();
+
+                let response =
+                    format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
+
+                stream.write_all(response.as_bytes()).unwrap();
+
+                continue;
+            }
+
+            if request_line == "GET /ConnectionManager.xml HTTP/1.1" {
+                unimplemented!("GET /ConnectionManager.xml not implemented");
+            }
+
+            if request_line == "GET /ContentDirectory.xml HTTP/1.1" {
+                let status_line =
+                    format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
+
+                let content = include_str!("ContentDirectory.xml");
+                let length = content.len();
+
+                let response =
+                    format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
+
+                stream.write_all(response.as_bytes()).unwrap();
+
+                continue;
+            }
+
+            println!("unknown request line: {request_line}");
+            let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} 404 NOT FOUND");
+            let response = format!("{status_line}\r\nContent-Length: 0\r\n\r\n");
             stream.write_all(response.as_bytes()).unwrap();
         }
     });
-
-    // let device_uuid = Uuid::now_v6();
-    let device_uuid = Uuid::new_v4(); // TODO only do this once then store
 
     let addr: SocketAddr = SSDP_IPV4_MULTICAST_ADDRESS
         .parse()
@@ -138,7 +202,7 @@ fn main() -> Result<()> {
     // packet. There is no guarantee that the above 3+2d+k messages will arrive in a particular
     // order.
 
-    let location = "http://192.168.1.34:7878/"; // TODO get this IP address properly
+    let location = "http://192.168.1.34:7878/Device.xml"; // TODO get this IP address properly
     let max_age = Duration::from_secs(1800);
 
     let info = os_info::get();
@@ -196,6 +260,17 @@ fn main() -> Result<()> {
         max_age.as_secs()
     );
     socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
+
+    // TODO ConnectionManager service
+    // let service_type = "ConnectionManager";
+    // let ver = 1;
+    // let nt = format!("urn:schemas-upnp-org:service:{service_type}:{ver}");
+    // let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:service:{service_type}:{ver}");
+    // let advertisement = format!(
+    //     "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
+    //     max_age.as_secs()
+    // );
+    // socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr))?;
 
     // TODO above messages should be resent periodically
 
@@ -319,11 +394,13 @@ fn main() -> Result<()> {
                                     continue;
                                 };
 
+                                // TODO ConnectionManager service
                                 if st == "ssdp:all"
                                     || st == "upnp:rootdevice"
                                     || st == format!("uuid:{device_uuid}").as_str()
                                     || st == "urn:schemas-upnp-org:device:MediaServer:1"
                                     || st == "urn:schemas-upnp-org:service:ContentDirectory:1"
+                                // || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
                                 {
                                     println!("ok search target: {st}");
                                 } else if st.starts_with(format!("uuid:{device_uuid}").as_str()) {
@@ -393,6 +470,20 @@ fn main() -> Result<()> {
                                     println!("send {usn}");
                                     socket.send_to(advertisement.as_bytes(), &src)?;
                                 }
+
+                                // TODO ConnectionManager service
+                                // if st == "ssdp:all"
+                                //     || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
+                                // {
+                                //     let st = "urn:schemas-upnp-org:service:ConnectionManager:1";
+                                //     let usn = format!("uuid:{device_uuid}::{st}");
+                                //     let advertisement = format!(
+                                //         "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
+                                //         max_age.as_secs()
+                                //     );
+                                //     println!("send {usn}");
+                                //     socket.send_to(advertisement.as_bytes(), &src)?;
+                                // }
                             }
                             _ => println!("something else: {}", ssdp_message.request_line),
                         }
