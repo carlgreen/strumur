@@ -23,6 +23,8 @@ const NAME: &str = env!("CARGO_PKG_NAME");
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const DEVICEID_FILE: &str = ".deviceid";
+
 const UPNP_VERSION: &str = "UPnP/2.0";
 
 const SSDP_IPV4_MULTICAST_ADDRESS: &str = "239.255.255.250:1900";
@@ -71,7 +73,6 @@ fn main() -> Result<()> {
     let mut rng = rand::rng();
 
     // TODO this file should probably be somewhere appropriate
-    const DEVICEID_FILE: &str = ".deviceid";
     let device_uuid = match read_to_string(DEVICEID_FILE) {
         Ok(contents) => match Uuid::parse_str(&contents) {
             Ok(device_uuid) => device_uuid,
