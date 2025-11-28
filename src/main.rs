@@ -1,6 +1,8 @@
 extern crate socket2;
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::fs::read_to_string;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::ErrorKind;
@@ -68,8 +70,27 @@ const NTS_ALIVE: &str = "ssdp:alive";
 fn main() -> Result<()> {
     let mut rng = rand::rng();
 
-    // let device_uuid = Uuid::now_v6();
-    let device_uuid = Uuid::new_v4(); // TODO only do this once then store
+    // TODO this file should probably be somewhere appropriate
+    const DEVICEID_FILE: &str = ".deviceid";
+    let device_uuid = match read_to_string(DEVICEID_FILE) {
+        Ok(contents) => match Uuid::parse_str(&contents) {
+            Ok(device_uuid) => device_uuid,
+            Err(e) => {
+                panic!("invalid device ID {contents}: {e}");
+            }
+        },
+        Err(e) => {
+            if e.kind() == ErrorKind::NotFound {
+                // let device_uuid = Uuid::now_v6();
+                let device_uuid = Uuid::new_v4();
+                let mut file = File::create(DEVICEID_FILE)?;
+                file.write_all(device_uuid.to_string().as_bytes())?;
+                device_uuid
+            } else {
+                panic!("could not read device id: {e}");
+            }
+        }
+    };
 
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
