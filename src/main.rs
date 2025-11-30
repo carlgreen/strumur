@@ -111,7 +111,7 @@ fn main() -> Result<()> {
                                 "empty request from {}",
                                 stream
                                     .peer_addr()
-                                    .map_or("unknown".to_string(), |a| a.to_string())
+                                    .map_or_else(|_| "unknown".to_string(), |a| a.to_string())
                             );
                             return;
                         }
@@ -655,7 +655,7 @@ fn parse_ssdp_message(data: &[u8]) -> std::result::Result<SSDPMessage, String> {
         let key = parts.next().ok_or("failed to get key")?.trim().to_string();
         let value = parts
             .next()
-            .ok_or(format!("failed to get value for key {key}"))?
+            .ok_or_else(|| format!("failed to get value for key {key}"))?
             .trim()
             .to_string();
         headers.insert(key, value);
