@@ -10,7 +10,6 @@ use std::io::Read;
 use std::io::Result;
 use std::io::Write;
 use std::net::TcpListener;
-use std::net::TcpStream;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread;
 use std::time::Duration;
@@ -106,7 +105,7 @@ fn main() -> Result<()> {
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
 
             thread::spawn(move || {
-                handle_device_connection(device_uuid, &peer_addr, stream);
+                handle_device_connection(device_uuid, &peer_addr, &stream, &stream);
             });
         }
     });
@@ -213,8 +212,13 @@ fn main() -> Result<()> {
     // devices, embedded devices and services will no longer be available.
 }
 
-fn handle_device_connection(device_uuid: Uuid, peer_addr: &str, mut stream: TcpStream) {
-    let mut buf_reader = BufReader::new(&stream);
+fn handle_device_connection(
+    device_uuid: Uuid,
+    peer_addr: &str,
+    mut input_stream: impl std::io::Read,
+    mut output_stream: impl std::io::Write,
+) {
+    let mut buf_reader = BufReader::new(&mut input_stream);
 
     let mut line: String = String::with_capacity(100);
     let request_line = match buf_reader.read_line(&mut line) {
@@ -351,7 +355,7 @@ fn handle_device_connection(device_uuid: Uuid, peer_addr: &str, mut stream: TcpS
     let length = content.len();
     let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {result}");
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
-    if let Err(err) = stream.write_all(response.as_bytes()) {
+    if let Err(err) = output_stream.write_all(response.as_bytes()) {
         println!("error writing response: {err}");
     }
 }
@@ -731,7 +735,69 @@ fn format_rfc1123(dt: chrono::DateTime<Utc>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
+
+    #[test]
+    fn test_handle_get_device() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let peer_addr = "1.2.3.4";
+        let input = "GET /Device.xml HTTP/1.1\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.collect::<String>();
+
+        // check a couple of bits of the body rather than hard coding the whole thing
+        assert!(body.contains("<root xmlns=\"urn:schemas-upnp-org:device-1-0\" configId=\"1\">"));
+        assert!(body.contains("<UDN>uuid:5c863963-f2a2-491e-8b60-079cdadad147</UDN>"));
+    }
+
+    #[test]
+    fn test_handle_get_content_directory() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let peer_addr = "1.2.3.4";
+        let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.collect::<String>();
+
+        // check a couple of bits of the body rather than hard coding the whole thing
+        assert!(body.contains("<scpd xmlns=\"urn:schemas-upnp-org:service-1-0\">"));
+        assert!(body.contains("<name>Browse</name>"));
+    }
 
     #[test]
     fn test_parse_request_line() {
