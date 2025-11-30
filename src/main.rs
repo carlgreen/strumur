@@ -101,9 +101,12 @@ fn main() -> Result<()> {
         println!("listening on {}", listener.local_addr().unwrap());
         for stream in listener.incoming() {
             let stream = stream.unwrap();
+            let peer_addr = stream
+                .peer_addr()
+                .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
 
             thread::spawn(move || {
-                handle_device_connection(device_uuid, stream);
+                handle_device_connection(device_uuid, &peer_addr, stream);
             });
         }
     });
@@ -210,19 +213,14 @@ fn main() -> Result<()> {
     // devices, embedded devices and services will no longer be available.
 }
 
-fn handle_device_connection(device_uuid: Uuid, mut stream: TcpStream) {
+fn handle_device_connection(device_uuid: Uuid, peer_addr: &str, mut stream: TcpStream) {
     let mut buf_reader = BufReader::new(&stream);
 
     let mut line: String = String::with_capacity(100);
     let request_line = match buf_reader.read_line(&mut line) {
         Ok(size) => {
             if size == 0 {
-                println!(
-                    "empty request from {}",
-                    stream
-                        .peer_addr()
-                        .map_or_else(|_| "unknown".to_string(), |a| a.to_string())
-                );
+                println!("empty request from {peer_addr}");
                 return;
             }
             line.strip_suffix("\r\n").map_or_else(
