@@ -6,6 +6,7 @@ use std::fs::read_to_string;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::ErrorKind;
+use std::io::Read;
 use std::io::Result;
 use std::io::Write;
 use std::net::TcpListener;
@@ -100,26 +101,96 @@ fn main() -> Result<()> {
             let mut stream = stream.unwrap();
 
             thread::spawn(move || {
-                let buf_reader = BufReader::new(&stream);
-                let http_request = buf_reader
-                    .lines()
-                    .map(|result| result.unwrap())
-                    .take_while(|line| !line.is_empty())
-                    .collect::<Vec<_>>();
+                let mut buf_reader = BufReader::new(&stream);
 
-                println!("Request: {http_request:#?}");
-
-                // TODO header stuff
-
-                let Some(request_line) = http_request.first() else {
-                    println!(
-                        "empty request from {}",
-                        stream
-                            .peer_addr()
-                            .map_or("unknown".to_string(), |a| a.to_string())
-                    );
-                    return;
+                let mut line: String = String::with_capacity(100);
+                let request_line = match buf_reader.read_line(&mut line) {
+                    Ok(size) => {
+                        if size == 0 {
+                            println!(
+                                "empty request from {}",
+                                stream
+                                    .peer_addr()
+                                    .map_or("unknown".to_string(), |a| a.to_string())
+                            );
+                            return;
+                        }
+                        line.strip_suffix("\r\n").map_or_else(
+                            || {
+                                println!(
+                                    "warning: expected CRLF terminated request line: {line:#?}"
+                                );
+                                line.clone()
+                            },
+                            ToString::to_string,
+                        )
+                    }
+                    Err(e) => {
+                        println!("error reading request line: {e}");
+                        return;
+                    }
                 };
+
+                println!("Request: {request_line}");
+
+                // TODO probably should be case-insensitive for header names
+                let mut http_request_headers = HashMap::new();
+                loop {
+                    line.clear();
+                    match buf_reader.read_line(&mut line) {
+                        Ok(size) => {
+                            if size == 0 || line == "\r\n" {
+                                break;
+                            }
+                            line = line.strip_suffix("\r\n").map_or_else(
+                                || {
+                                    println!("warning: expected CRLF terminated header: {line:#?}");
+                                    line.clone()
+                                },
+                                ToString::to_string,
+                            );
+                            let mut line = line.splitn(2, ':');
+                            let key = line.next().unwrap().trim().to_string();
+                            let value = line.next().unwrap().trim().to_string();
+                            http_request_headers.insert(key, value);
+                        }
+                        Err(e) => {
+                            println!("error reading header: {e}");
+                            break;
+                        }
+                    }
+                }
+
+                println!("  headers: {http_request_headers:#?}");
+
+                // get content-length from the headers. if none and a GET request then assume zero. otherwise i don't know.
+                let content_length: usize = http_request_headers.get("Content-Length").map_or_else(
+                    || {
+                        if request_line.starts_with("GET ") {
+                            // assume no body
+                            0
+                        } else {
+                            panic!("no content length");
+                        }
+                    },
+                    |content_length| content_length.parse().unwrap(),
+                );
+                println!("content length: {content_length}");
+
+                let body = if content_length > 0 {
+                    let mut buf = vec![0; content_length];
+                    if let Err(e) = buf_reader.read_exact(&mut buf) {
+                        println!("could not ready body: {e}");
+                    }
+
+                    Some(String::from_utf8(buf).expect("body is not UTF8"))
+                } else {
+                    None
+                };
+
+                if let Some(body) = body {
+                    println!("  body: {body}");
+                }
 
                 let (content, result) = match &request_line[..] {
                     "GET /Device.xml HTTP/1.1" => {
