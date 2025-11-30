@@ -215,10 +215,10 @@ fn main() -> Result<()> {
 fn handle_device_connection(
     device_uuid: Uuid,
     peer_addr: &str,
-    mut input_stream: impl std::io::Read,
+    input_stream: impl std::io::Read,
     mut output_stream: impl std::io::Write,
 ) {
-    let mut buf_reader = BufReader::new(&mut input_stream);
+    let mut buf_reader = BufReader::new(input_stream);
 
     let mut line: String = String::with_capacity(100);
     let request_line = match buf_reader.read_line(&mut line) {
