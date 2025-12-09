@@ -20,6 +20,7 @@ use rand::Rng;
 use rand::rngs::ThreadRng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use uuid::Uuid;
+use xmltree::Element;
 
 const NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -298,9 +299,10 @@ fn handle_device_connection(
         None
     };
 
-    if let Some(body) = body {
+    let body = body.map(|body| {
         println!("  body: {body}");
-    }
+        body
+    });
 
     let (content, result) = match &request_line[..] {
         "GET /Device.xml HTTP/1.1" => {
@@ -345,6 +347,127 @@ fn handle_device_connection(
             let content = include_str!("ContentDirectory.xml");
 
             (content.to_string(), HTTP_RESPONSE_OK)
+        }
+        "POST /ContentDirectory/Control HTTP/1.1" => {
+            http_request_headers.get("Soapaction").map_or_else(|| {
+                    println!("control: no soap action");
+                    (String::new(), "400 BAD REQUEST")
+                }, |soap_action| if soap_action == "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"" {
+                        match body {
+                            Some(body) => {
+                                let envelope = Element::parse(body.as_bytes()).unwrap();
+                                let body = envelope.get_child("Body").unwrap();
+                                match body.get_child("Browse") {
+                                    Some(browse) => {
+                                        for child in &browse.children {
+                                            match child.as_element().unwrap().name.as_str() {
+                                                "ObjectID" => {
+                                                    let object_id = child
+                                                        .as_element()
+                                                        .unwrap()
+                                                        .get_text()
+                                                        .unwrap();
+                                                    if object_id == "0" {
+                                                        println!("probably root request");
+                                                    } else {
+                                                        println!(
+                                                            "some context: {object_id}. what's up"
+                                                        );
+                                                    }
+                                                }
+                                                "BrowseFlag" => {
+                                                    let browse_flag = child
+                                                        .as_element()
+                                                        .unwrap()
+                                                        .get_text()
+                                                        .unwrap();
+                                                    if browse_flag == "BrowseDirectChildren" {
+                                                        println!("direct children. simple.");
+                                                    } else {
+                                                        println!(
+                                                            "browse flag: {browse_flag}. what's up"
+                                                        );
+                                                    }
+                                                }
+                                                "Filter" => {
+                                                    let filter = child
+                                                        .as_element()
+                                                        .unwrap()
+                                                        .get_text()
+                                                        .unwrap();
+                                                    if filter == "*" {
+                                                        println!("no filter. simple.");
+                                                    } else {
+                                                        println!(
+                                                            "some filter: {filter}. what's up"
+                                                        );
+                                                    }
+                                                }
+                                                "StartingIndex" => {
+                                                    let starting_index = child
+                                                        .as_element()
+                                                        .unwrap()
+                                                        .get_text()
+                                                        .unwrap();
+                                                    if starting_index == "0" {
+                                                        println!("start from zero. simple.");
+                                                    } else {
+                                                        println!(
+                                                            "start from: {starting_index}. what's up"
+                                                        );
+                                                    }
+                                                }
+                                                "RequestedCount" => {
+                                                    let requested_count = child
+                                                        .as_element()
+                                                        .unwrap()
+                                                        .get_text()
+                                                        .unwrap();
+                                                    println!(
+                                                        "only want: {requested_count}. what's up"
+                                                    );
+                                                }
+                                                "SortCriteria" => {
+                                                    let sort_criteria =
+                                                        child.as_element().unwrap().get_text();
+                                                    if let Some(sort_criteria) = sort_criteria {
+                                                        println!(
+                                                            "sort criteria: {sort_criteria}. what's up"
+                                                        );
+                                                    } else {
+                                                        println!(
+                                                            "no sort criteria. do i just make this up?"
+                                                        );
+                                                    }
+                                                }
+                                                anything => println!("what is {anything:?}"),
+                                            }
+                                        }
+                                    }
+                                    None => panic!("no Browse child"),
+                                }
+                            }
+                            None => panic!("no body"),
+                        }
+
+                        // TODO generate based on what i have?
+                        let response = r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
+&lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;2093 albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;22366 items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;706 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>10</NumberReturned>
+            <TotalMatches>10</TotalMatches>
+            <UpdateID>25</UpdateID>
+        </u:BrowseResponse>
+    </s:Body>
+</s:Envelope>"#;
+                        (response.to_string(), HTTP_RESPONSE_OK)
+                    } else {
+                        println!("control: unexpected soap action: {soap_action}");
+                        (String::new(), "400 BAD REQUEST")
+                    })
         }
         _ => {
             println!("unknown request line: {request_line}");
