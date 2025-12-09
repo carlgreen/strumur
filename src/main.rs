@@ -353,6 +353,7 @@ fn handle_device_connection(
                     println!("control: no soap action");
                     (String::new(), "400 BAD REQUEST")
                 }, |soap_action| if soap_action == "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"" {
+                        let mut object_id = None;
                         match body {
                             Some(body) => {
                                 let envelope = Element::parse(body.as_bytes()).unwrap();
@@ -362,18 +363,10 @@ fn handle_device_connection(
                                         for child in &browse.children {
                                             match child.as_element().unwrap().name.as_str() {
                                                 "ObjectID" => {
-                                                    let object_id = child
+                                                    object_id = Some(child
                                                         .as_element()
                                                         .unwrap()
-                                                        .get_text()
-                                                        .unwrap();
-                                                    if object_id == "0" {
-                                                        println!("probably root request");
-                                                    } else {
-                                                        println!(
-                                                            "some context: {object_id}. what's up"
-                                                        );
-                                                    }
+                                                        .get_text().unwrap().into_owned());
                                                 }
                                                 "BrowseFlag" => {
                                                     let browse_flag = child
@@ -450,8 +443,12 @@ fn handle_device_connection(
                             None => panic!("no body"),
                         }
 
-                        // TODO generate based on what i have?
-                        let response = r#"<?xml version="1.0" encoding="utf-8"?>
+
+                        object_id.map_or_else(|| {
+                            panic!("no object id");
+                        }, |object_id| if object_id == "0" {
+                                // TODO generate based on what i have?
+                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -463,7 +460,26 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                        (response.to_string(), HTTP_RESPONSE_OK)
+                                (response.to_string(), HTTP_RESPONSE_OK)
+                            } else if object_id == "0$albums" {
+                                // TODO generate based on what i have?
+                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
+&lt;container id=&quot;0$albums$*a0&quot; parentID=&quot;0$albums&quot; childCount=&quot;5&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;74 Jailbreak&lt;/dc:title&gt;&lt;dc:date&gt;1984-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;AC/DC&lt;/upnp:artist&gt;&lt;dc:creator&gt;AC/DC&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;AC/DC&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/AC_DC/*2774*20Jailbreak/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a1&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Allelujah! Don&amp;apos;t Bend! Ascend!&lt;/dc:title&gt;&lt;dc:date&gt;2012-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;dc:creator&gt;Godspeed You! Black Emperor&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Godspeed*20You!*20Black*20Emperor/*27Allelujah!*20Don*27t*20Bend!*20Ascend!/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a2&quot; parentID=&quot;0$albums&quot; childCount=&quot;9&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Sno Angel Like You&lt;/dc:title&gt;&lt;upnp:genre&gt;Indie&lt;/upnp:genre&gt;&lt;dc:date&gt;2006-03-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;dc:creator&gt;Howe Gelb&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Howe*20Gelb/*27Sno*20Angel*20Like*20You/02*20Paradise*20Here*20Abouts.mp3/$!picture-1938-34544.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a3&quot; parentID=&quot;0$albums&quot; childCount=&quot;12&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(VV:2) Venomous Villain&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, W. Pentz, A. Brooks, Di, ile, D., G. Jr. Valencia, I. Vasquetelle, G. Lamar Owens, W. Tolbert, L. McConnell, K. Thornton, M. Delaey, M. Delaney, L. Herron&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a4&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(What&amp;apos;s the Story) Morning Glory?&lt;/dc:title&gt;&lt;upnp:genre&gt;Rock&lt;/upnp:genre&gt;&lt;dc:date&gt;1995-01-01&lt;/dc:date&gt;&lt;upnp:artist&gt;Oasis&lt;/upnp:artist&gt;&lt;dc:creator&gt;Oasis&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Oasis&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;Noel Gallagher&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Oasis/(What*27s*20the*20Story)*20Morning*20Glory_/12*20Champagne*20Supernova.mp3/$!picture-636-65528.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>500</NumberReturned>
+            <TotalMatches>2094</TotalMatches>
+            <UpdateID>25</UpdateID>
+        </u:BrowseResponse>
+    </s:Body>
+</s:Envelope>"#;
+                                (response.to_string(), HTTP_RESPONSE_OK)
+                            } else {
+                                println!("control: unexpected object ID: {object_id}");
+                                (String::new(), "400 BAD REQUEST")
+                            })
                     } else {
                         println!("control: unexpected soap action: {soap_action}");
                         (String::new(), "400 BAD REQUEST")
