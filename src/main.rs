@@ -1014,14 +1014,26 @@ mod tests {
         assert!(body.contains("<name>Browse</name>"));
     }
 
-    #[test]
-    fn test_handle_browse_content_root() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let peer_addr = "1.2.3.4";
+    fn generate_browse_request(object_id: &str) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+        let body = format!(
+            r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <ObjectID>{object_id}</ObjectID>
+            <BrowseFlag>BrowseDirectChildren</BrowseFlag>
+            <Filter>*</Filter>
+            <StartingIndex>0</StartingIndex>
+            <RequestedCount>500</RequestedCount>
+            <SortCriteria></SortCriteria>
+        </u:Browse>
+    </s:Body>
+</s:Envelope>"#
+        );
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
@@ -1029,7 +1041,14 @@ mod tests {
             + format!("{}", body.len()).as_str()
             + "\r\n"
             + "\r\n"
-            + body;
+            + &body
+    }
+
+    #[test]
+    fn test_handle_browse_content_root() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let peer_addr = "1.2.3.4";
+        let input = generate_browse_request("0");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -1072,18 +1091,7 @@ mod tests {
     fn test_handle_browse_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let peer_addr = "1.2.3.4";
-        let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$albums</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
-            + "\r\n"
-            + "Content-Type: text/xml; charset=utf-8\r\n"
-            + "Content-Length: "
-            + format!("{}", body.len()).as_str()
-            + "\r\n"
-            + "\r\n"
-            + body;
+        let input = generate_browse_request("0$albums");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -1126,18 +1134,7 @@ mod tests {
     fn test_handle_browse_an_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let peer_addr = "1.2.3.4";
-        let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$albums$*a3</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
-            + "\r\n"
-            + "Content-Type: text/xml; charset=utf-8\r\n"
-            + "Content-Length: "
-            + format!("{}", body.len()).as_str()
-            + "\r\n"
-            + "\r\n"
-            + body;
+        let input = generate_browse_request("0$albums$*a3");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -1180,18 +1177,7 @@ mod tests {
     fn test_handle_browse_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let peer_addr = "1.2.3.4";
-        let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$=Artist</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
-            + "\r\n"
-            + "Content-Type: text/xml; charset=utf-8\r\n"
-            + "Content-Length: "
-            + format!("{}", body.len()).as_str()
-            + "\r\n"
-            + "\r\n"
-            + body;
+        let input = generate_browse_request("0$=Artist");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -1234,18 +1220,7 @@ mod tests {
     fn test_handle_browse_an_artist_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let peer_addr = "1.2.3.4";
-        let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$=Artist$3187</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
-            + "\r\n"
-            + "Content-Type: text/xml; charset=utf-8\r\n"
-            + "Content-Length: "
-            + format!("{}", body.len()).as_str()
-            + "\r\n"
-            + "\r\n"
-            + body;
+        let input = generate_browse_request("0$=Artist$3187");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -1288,18 +1263,7 @@ mod tests {
     fn test_handle_browse_an_artist_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let peer_addr = "1.2.3.4";
-        let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$=Artist$3187$albums</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
-            + "\r\n"
-            + "Content-Type: text/xml; charset=utf-8\r\n"
-            + "Content-Length: "
-            + format!("{}", body.len()).as_str()
-            + "\r\n"
-            + "\r\n"
-            + body;
+        let input = generate_browse_request("0$=Artist$3187$albums");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -1342,18 +1306,7 @@ mod tests {
     fn test_handle_browse_an_artist_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let peer_addr = "1.2.3.4";
-        let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$=Artist$3187$albums$*a251</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
-            + "\r\n"
-            + "Content-Type: text/xml; charset=utf-8\r\n"
-            + "Content-Length: "
-            + format!("{}", body.len()).as_str()
-            + "\r\n"
-            + "\r\n"
-            + body;
+        let input = generate_browse_request("0$=Artist$3187$albums$*a251");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -1396,18 +1349,7 @@ mod tests {
     fn test_handle_browse_all_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let peer_addr = "1.2.3.4";
-        let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
-        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$=All Artists</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
-            + "\r\n"
-            + "Content-Type: text/xml; charset=utf-8\r\n"
-            + "Content-Length: "
-            + format!("{}", body.len()).as_str()
-            + "\r\n"
-            + "\r\n"
-            + body;
+        let input = generate_browse_request("0$=All Artists");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
