@@ -322,37 +322,7 @@ fn handle_device_connection(
 
     let (content, result) = match &request_line[..] {
         "GET /Device.xml HTTP/1.1" => {
-            let content = format!(
-                r#"<?xml version="1.0" encoding="utf-8"?>
-<root xmlns="urn:schemas-upnp-org:device-1-0" configId="1">
-    <specVersion>
-        <major>1</major>
-        <minor>0</minor>
-    </specVersion>
-    <device>
-        <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
-        <UDN>uuid:{device_uuid}</UDN>
-        <friendlyName>strumur</friendlyName>
-        <serviceList>
-            <!--service>
-                <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
-                <serviceId>urn:upnp-org:serviceId:ConnectionManager</serviceId>
-                <SCPDURL>/ConnectionManager.xml</SCPDURL>
-                <eventSubURL>/ConnectionManager/Event</eventSubURL>
-                <controlURL>/ConnectionManager/Control</controlURL>
-            </service-->
-            <service>
-                <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
-                <serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
-                <SCPDURL>/ContentDirectory.xml</SCPDURL>
-                <eventSubURL>/ContentDirectory/Event</eventSubURL>
-                <controlURL>/ContentDirectory/Control</controlURL>
-            </service>
-        </serviceList>
-        <presentationURL>/</presentationURL>
-    </device>
-</root>"#
-            );
+            let content = format!(include_str!("Device.xml"), device_uuid);
 
             (content, HTTP_RESPONSE_OK)
         }
