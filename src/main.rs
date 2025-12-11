@@ -213,20 +213,13 @@ fn main() -> Result<()> {
     // devices, embedded devices and services will no longer be available.
 }
 
-fn handle_device_connection(
-    device_uuid: Uuid,
-    peer_addr: &str,
-    input_stream: impl std::io::Read,
-    mut output_stream: impl std::io::Write,
-) {
-    let mut buf_reader = BufReader::new(input_stream);
-
+fn parse_some_request_line(buf_reader: &mut BufReader<impl Read>, peer_addr: &str) -> String {
     let mut line: String = String::with_capacity(100);
-    let request_line = match buf_reader.read_line(&mut line) {
+    match buf_reader.read_line(&mut line) {
         Ok(size) => {
             if size == 0 {
                 println!("empty request from {peer_addr}");
-                return;
+                return String::new(); // TODO error
             }
             line.strip_suffix("\r\n").map_or_else(
                 || {
@@ -238,13 +231,14 @@ fn handle_device_connection(
         }
         Err(e) => {
             println!("error reading request line: {e}");
-            return;
+            String::new() // TODO error
         }
-    };
+    }
+}
 
-    println!("Request: {request_line}");
-
-    // TODO probably should be case-insensitive for header names
+// TODO probably should be case-insensitive for header names
+fn parse_some_headers(buf_reader: &mut BufReader<impl Read>) -> HashMap<String, String> {
+    let mut line: String = String::with_capacity(100);
     let mut http_request_headers = HashMap::new();
     loop {
         line.clear();
@@ -272,10 +266,11 @@ fn handle_device_connection(
         }
     }
 
-    println!("  headers: {http_request_headers:#?}");
+    http_request_headers
+}
 
-    // get content-length from the headers. if none and a GET request then assume zero. otherwise i don't know.
-    let content_length: usize = http_request_headers.get("Content-Length").map_or_else(
+fn get_content_length(request_line: &str, http_request_headers: &HashMap<String, String>) -> usize {
+    http_request_headers.get("Content-Length").map_or_else(
         || {
             if request_line.starts_with("GET ") {
                 // assume no body
@@ -285,10 +280,11 @@ fn handle_device_connection(
             }
         },
         |content_length| content_length.parse().unwrap(),
-    );
-    println!("content length: {content_length}");
+    )
+}
 
-    let body = if content_length > 0 {
+fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> Option<String> {
+    if content_length > 0 {
         let mut buf = vec![0; content_length];
         if let Err(e) = buf_reader.read_exact(&mut buf) {
             println!("could not ready body: {e}");
@@ -297,7 +293,27 @@ fn handle_device_connection(
         Some(String::from_utf8(buf).expect("body is not UTF8"))
     } else {
         None
-    };
+    }
+}
+
+fn handle_device_connection(
+    device_uuid: Uuid,
+    peer_addr: &str,
+    input_stream: impl std::io::Read,
+    mut output_stream: impl std::io::Write,
+) {
+    let mut buf_reader = BufReader::new(input_stream);
+
+    let request_line = parse_some_request_line(&mut buf_reader, peer_addr);
+    println!("Request: {request_line}");
+
+    let http_request_headers = parse_some_headers(&mut buf_reader);
+    println!("  headers: {http_request_headers:#?}");
+
+    let content_length = get_content_length(&request_line, &http_request_headers);
+    println!("content length: {content_length}");
+
+    let body = parse_body(content_length, &mut buf_reader);
 
     let body = body.map(|body| {
         println!("  body: {body}");
