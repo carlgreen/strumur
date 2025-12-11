@@ -939,6 +939,114 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_browse_content_root() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let peer_addr = "1.2.3.4";
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
+        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + body;
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        assert_eq!(
+            body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
+&lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;2093 albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;22366 items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;706 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>10</NumberReturned>
+            <TotalMatches>10</TotalMatches>
+            <UpdateID>25</UpdateID>
+        </u:BrowseResponse>
+    </s:Body>
+</s:Envelope>
+"#
+        );
+    }
+
+    #[test]
+    fn test_handle_browse_albums_content() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let peer_addr = "1.2.3.4";
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
+        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>0$albums</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>500</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + body;
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        assert_eq!(
+            body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
+&lt;container id=&quot;0$albums$*a0&quot; parentID=&quot;0$albums&quot; childCount=&quot;5&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;74 Jailbreak&lt;/dc:title&gt;&lt;dc:date&gt;1984-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;AC/DC&lt;/upnp:artist&gt;&lt;dc:creator&gt;AC/DC&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;AC/DC&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/AC_DC/*2774*20Jailbreak/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a1&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Allelujah! Don&amp;apos;t Bend! Ascend!&lt;/dc:title&gt;&lt;dc:date&gt;2012-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;dc:creator&gt;Godspeed You! Black Emperor&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Godspeed*20You!*20Black*20Emperor/*27Allelujah!*20Don*27t*20Bend!*20Ascend!/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a2&quot; parentID=&quot;0$albums&quot; childCount=&quot;9&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Sno Angel Like You&lt;/dc:title&gt;&lt;upnp:genre&gt;Indie&lt;/upnp:genre&gt;&lt;dc:date&gt;2006-03-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;dc:creator&gt;Howe Gelb&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Howe*20Gelb/*27Sno*20Angel*20Like*20You/02*20Paradise*20Here*20Abouts.mp3/$!picture-1938-34544.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a3&quot; parentID=&quot;0$albums&quot; childCount=&quot;12&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(VV:2) Venomous Villain&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, W. Pentz, A. Brooks, Di, ile, D., G. Jr. Valencia, I. Vasquetelle, G. Lamar Owens, W. Tolbert, L. McConnell, K. Thornton, M. Delaey, M. Delaney, L. Herron&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a4&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(What&amp;apos;s the Story) Morning Glory?&lt;/dc:title&gt;&lt;upnp:genre&gt;Rock&lt;/upnp:genre&gt;&lt;dc:date&gt;1995-01-01&lt;/dc:date&gt;&lt;upnp:artist&gt;Oasis&lt;/upnp:artist&gt;&lt;dc:creator&gt;Oasis&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Oasis&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;Noel Gallagher&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Oasis/(What*27s*20the*20Story)*20Morning*20Glory_/12*20Champagne*20Supernova.mp3/$!picture-636-65528.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>500</NumberReturned>
+            <TotalMatches>2094</TotalMatches>
+            <UpdateID>25</UpdateID>
+        </u:BrowseResponse>
+    </s:Body>
+</s:Envelope>
+"#
+        );
+    }
+
+    #[test]
     fn test_parse_request_line() {
         let request_line = r#"M-SEARCH * HTTP/1.1"#;
         let (method, request_target, protocol) = parse_request_line(request_line).unwrap();
