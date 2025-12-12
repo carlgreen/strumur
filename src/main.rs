@@ -1,8 +1,8 @@
 extern crate socket2;
 
 use std::collections::HashMap;
-use std::fs::read_to_string;
 use std::fs::File;
+use std::fs::read_to_string;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::ErrorKind;
@@ -16,8 +16,8 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use rand::rngs::ThreadRng;
 use rand::Rng;
+use rand::rngs::ThreadRng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use uuid::Uuid;
 use xmltree::Element;
@@ -535,10 +535,10 @@ fn handle_device_connection(
                             println!("control: unexpected object ID: {object_id:?}");
                             (String::new(), "400 BAD REQUEST")
                         })
-                    } else {
-                        println!("control: unexpected soap action: {soap_action}");
-                        (String::new(), "400 BAD REQUEST")
-                    })
+                } else {
+                    println!("control: unexpected soap action: {soap_action}");
+                    (String::new(), "400 BAD REQUEST")
+                })
         }
         _ => {
             println!("unknown request line: {request_line}");
