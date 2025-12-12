@@ -363,131 +363,95 @@ fn parse_soap_request(body: &str) -> Option<Vec<String>> {
 }
 
 fn generate_browse_response(object_id: &[String]) -> (String, &'static str) {
-    if object_id == vec!["0"] {
+    let browse_response = if object_id == vec!["0"] {
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;2093 albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;22366 items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;706 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>10</NumberReturned>
             <TotalMatches>10</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else if object_id == vec!["0", "albums"] {
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;container id=&quot;0$albums$*a0&quot; parentID=&quot;0$albums&quot; childCount=&quot;5&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;74 Jailbreak&lt;/dc:title&gt;&lt;dc:date&gt;1984-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;AC/DC&lt;/upnp:artist&gt;&lt;dc:creator&gt;AC/DC&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;AC/DC&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/AC_DC/*2774*20Jailbreak/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a1&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Allelujah! Don&amp;apos;t Bend! Ascend!&lt;/dc:title&gt;&lt;dc:date&gt;2012-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;dc:creator&gt;Godspeed You! Black Emperor&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Godspeed*20You!*20Black*20Emperor/*27Allelujah!*20Don*27t*20Bend!*20Ascend!/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a2&quot; parentID=&quot;0$albums&quot; childCount=&quot;9&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Sno Angel Like You&lt;/dc:title&gt;&lt;upnp:genre&gt;Indie&lt;/upnp:genre&gt;&lt;dc:date&gt;2006-03-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;dc:creator&gt;Howe Gelb&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Howe*20Gelb/*27Sno*20Angel*20Like*20You/02*20Paradise*20Here*20Abouts.mp3/$!picture-1938-34544.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a3&quot; parentID=&quot;0$albums&quot; childCount=&quot;12&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(VV:2) Venomous Villain&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, W. Pentz, A. Brooks, Di, ile, D., G. Jr. Valencia, I. Vasquetelle, G. Lamar Owens, W. Tolbert, L. McConnell, K. Thornton, M. Delaey, M. Delaney, L. Herron&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a4&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(What&amp;apos;s the Story) Morning Glory?&lt;/dc:title&gt;&lt;upnp:genre&gt;Rock&lt;/upnp:genre&gt;&lt;dc:date&gt;1995-01-01&lt;/dc:date&gt;&lt;upnp:artist&gt;Oasis&lt;/upnp:artist&gt;&lt;dc:creator&gt;Oasis&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Oasis&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;Noel Gallagher&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Oasis/(What*27s*20the*20Story)*20Morning*20Glory_/12*20Champagne*20Supernova.mp3/$!picture-636-65528.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>500</NumberReturned>
             <TotalMatches>2094</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else if object_id[0..2] == vec!["0", "albums"] && object_id.len() == 3 {
         // TODO e.g. 0$albums$*a3 but not e.g. 0$albums$*a3$*i20771
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;item id=&quot;0$albums$*a3$*i20771&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Viktormizer (intro)&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:48.884&quot; size=&quot;6836179&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i1635&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Back End&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, W. Pentz&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/02*20Viktor*20Vaughn*20-*20Back*20End.mp3/$!picture-2696-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:33.161&quot; size=&quot;8609049&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/02*20Viktor*20Vaughn*20-*20Back*20End.mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i6218&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Fall Back / Titty Fat&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;A. Brooks, D. Dumile, Di, ile, D., G. Jr. Valencia&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/03*20Viktor*20Vaughn*20-*20Fall*20Back*20_*20Titty*20Fat.mp3/$!picture-2743-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:33.762&quot; size=&quot;8633152&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/03*20Viktor*20Vaughn*20-*20Fall*20Back*20_*20Titty*20Fat.mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i5207&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Doom on Vik&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, G. Jr. Valencia, I. Vasquetelle&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/04*20Viktor*20Vaughn*20-*20Doom*20on*20Vik.mp3/$!picture-2724-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:01:53.505&quot; size=&quot;4618805&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/04*20Viktor*20Vaughn*20-*20Doom*20on*20Vik.mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i15037&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;R.A.P. G.A.M.E.&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn feat. Manchild &amp;amp; Iz-Real&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn feat. Manchild &amp;amp; Iz-Real&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, G. Lamar Owens, I. Vasquetelle, W. Tolbert&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;5&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/05*20Viktor*20Vaughn*20feat.*20Manchild*20*26*20Iz-Real*20-*20R.A.P.*20G.A.M.E..mp3/$!picture-3014-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:04:20.208&quot; size=&quot;10493110&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/05*20Viktor*20Vaughn*20feat.*20Manchild*20*26*20Iz-Real*20-*20R.A.P.*20G.A.M.E..mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>5</NumberReturned>
             <TotalMatches>12</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else if object_id == vec!["0", "=Artist"] {
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;container id=&quot;0$=Artist$10167&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[package radio]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$24015&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;1 Giant Leap&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$16832&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;1QA&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$1511&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;8 Foot Sativa&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$7&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Á Móti Sól&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>5</NumberReturned>
             <TotalMatches>864</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 3 {
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;container id=&quot;0$=Artist$3187$albums&quot; parentID=&quot;0$=Artist$3187&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;3 albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$items&quot; parentID=&quot;0$=Artist$3187&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;43 items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$=Date&quot; parentID=&quot;0$=Artist$3187&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>3</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 4 {
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;container id=&quot;0$=Artist$3187$albums$*a251&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Amen&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a535&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;15&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Death Before Musick&lt;/dc:title&gt;&lt;dc:date&gt;2004-04-05&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Death*20Before*20Musick/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a2012&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;We Have Come for Your Parents&lt;/dc:title&gt;&lt;dc:date&gt;2000-10-10&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/We*20Have*20Come*20for*20Your*20Parents/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>3</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 5 {
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;item id=&quot;0$=Artist$3187$albums$*a251$*i3830&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Coma America&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/01*20Coma*20America.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5260&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Down Human&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:44.266&quot; size=&quot;30269257&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/02*20Down*20Human.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5397&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Drive&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:08.000&quot; size=&quot;25014468&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/03*20Drive.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i13217&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;No Cure for the Pure&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:23.466&quot; size=&quot;25228115&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/04*20No*20Cure*20for*20the*20Pure.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i21351&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;When a Man Dies a Woman&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;5&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:30.600&quot; size=&quot;28354574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/05*20When*20a*20Man*20Dies*20a*20Woman.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>5</NumberReturned>
             <TotalMatches>14</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else if object_id == vec!["0", "=All Artists"] {
         // TODO generate based on what i have?
-        let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+        let response = "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 &lt;container id=&quot;0$=All Artists$18368&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;amp;U&amp;amp;I&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$19631&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(Damn) This Desert Air&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$18913&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;-(16)-&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$20777&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;? and the Mysterians&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$7222&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[dialogue]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>5</NumberReturned>
             <TotalMatches>3092</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-        (response.to_string(), HTTP_RESPONSE_OK)
+            <UpdateID>25</UpdateID>";
+        Some(response.to_string())
     } else {
         println!("control: unexpected object ID: {object_id:?}");
-        (String::new(), "400 BAD REQUEST")
-    }
+        None
+    };
+    browse_response.map_or_else(|| (String::new(), "400 BAD REQUEST"), |browse_response| {
+        let body = format!(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">{browse_response}
+        </u:BrowseResponse>
+    </s:Body>
+</s:Envelope>"#
+        );
+        (body, HTTP_RESPONSE_OK)
+    })
 }
 
 fn handle_device_connection(
