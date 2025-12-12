@@ -1451,7 +1451,7 @@ Man: "ssdp:discover"
     }
 
     #[test]
-    fn test_handle_search_message() {
+    fn test_handle_rootdevice_search_message() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let boot_id = 1;
         let os_version = "a/1";
@@ -1514,6 +1514,219 @@ CONFIGID.UPNP.ORG: 1\r
 SERVER: a/1 UPnP/2.0 strumur/0.1.0\r
 ST: upnp:rootdevice\r
 USN: uuid:5c863963-f2a2-491e-8b60-079cdadad147::upnp:rootdevice\r
+LOCATION: somewhere?\r
+CACHE-CONTROL: max-age=10\r
+\r
+"
+        );
+    }
+
+    #[test]
+    fn test_handle_uuid_search_message() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let boot_id = 1;
+        let os_version = "a/1";
+        let location = "somewhere?";
+        let max_age = Duration::from_secs(10);
+
+        let buffer = "M-SEARCH * HTTP/1.1\r
+HOST: 239.255.255.250:1900\r
+MAN: \"ssdp:discover\"\r
+MX: 0\r
+ST: uuid:5c863963-f2a2-491e-8b60-079cdadad147\r
+USER-AGENT: OS/version UPnP/2.0 product/version\r
+CPFN.UPNP.ORG: test control point\r
+CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
+            .as_bytes();
+
+        // i've clearly done something wrong...
+        let src = {
+            let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
+            let mut addr_storage = SockAddrStorage::zeroed();
+            let mut len = addr_storage.size_of();
+            let res =
+                unsafe { libc::getsockname(socket.as_raw_fd(), addr_storage.view_as(), &mut len) };
+            if res == -1 {
+                panic!("{}", std::io::Error::last_os_error());
+            }
+            unsafe { SockAddr::new(addr_storage, len) }
+        };
+        let mut test_socket = DontReallySocketToMe::new();
+
+        let mut rng = rand::rng();
+
+        handle_search_message(
+            test_device_uuid,
+            boot_id,
+            os_version,
+            location,
+            max_age,
+            &mut rng,
+            buffer,
+            &src,
+            &mut test_socket,
+        );
+
+        let sent = String::from_utf8(test_socket.get_sent()).unwrap();
+
+        // fun stuff to ignore the DATE header...
+        let mut bits = sent.splitn(2, "DATE: ");
+        let pre_date = bits.next().unwrap();
+        let mut more_bits = bits.next().unwrap().splitn(2, "\r\n");
+        more_bits.next().unwrap(); // skip the date
+        let post_date = more_bits.next().unwrap();
+
+        assert_eq!(pre_date, "HTTP/1.1 200 OK\r\n");
+        assert_eq!(
+            post_date,
+            "EXT:\r
+BOOTID.UPNP.ORG: 1\r
+CONFIGID.UPNP.ORG: 1\r
+SERVER: a/1 UPnP/2.0 strumur/0.1.0\r
+ST: uuid:5c863963-f2a2-491e-8b60-079cdadad147\r
+USN: uuid:5c863963-f2a2-491e-8b60-079cdadad147\r
+LOCATION: somewhere?\r
+CACHE-CONTROL: max-age=10\r
+\r
+"
+        );
+    }
+
+    #[test]
+    fn test_handle_media_server_search_message() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let boot_id = 1;
+        let os_version = "a/1";
+        let location = "somewhere?";
+        let max_age = Duration::from_secs(10);
+
+        let buffer = "M-SEARCH * HTTP/1.1\r
+HOST: 239.255.255.250:1900\r
+MAN: \"ssdp:discover\"\r
+MX: 0\r
+ST: urn:schemas-upnp-org:device:MediaServer:1\r
+USER-AGENT: OS/version UPnP/2.0 product/version\r
+CPFN.UPNP.ORG: test control point\r
+CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
+            .as_bytes();
+
+        // i've clearly done something wrong...
+        let src = {
+            let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
+            let mut addr_storage = SockAddrStorage::zeroed();
+            let mut len = addr_storage.size_of();
+            let res =
+                unsafe { libc::getsockname(socket.as_raw_fd(), addr_storage.view_as(), &mut len) };
+            if res == -1 {
+                panic!("{}", std::io::Error::last_os_error());
+            }
+            unsafe { SockAddr::new(addr_storage, len) }
+        };
+        let mut test_socket = DontReallySocketToMe::new();
+
+        let mut rng = rand::rng();
+
+        handle_search_message(
+            test_device_uuid,
+            boot_id,
+            os_version,
+            location,
+            max_age,
+            &mut rng,
+            buffer,
+            &src,
+            &mut test_socket,
+        );
+
+        let sent = String::from_utf8(test_socket.get_sent()).unwrap();
+
+        // fun stuff to ignore the DATE header...
+        let mut bits = sent.splitn(2, "DATE: ");
+        let pre_date = bits.next().unwrap();
+        let mut more_bits = bits.next().unwrap().splitn(2, "\r\n");
+        more_bits.next().unwrap(); // skip the date
+        let post_date = more_bits.next().unwrap();
+
+        assert_eq!(pre_date, "HTTP/1.1 200 OK\r\n");
+        assert_eq!(
+            post_date,
+            "EXT:\r
+BOOTID.UPNP.ORG: 1\r
+CONFIGID.UPNP.ORG: 1\r
+SERVER: a/1 UPnP/2.0 strumur/0.1.0\r
+ST: urn:schemas-upnp-org:device:MediaServer:1\r
+USN: uuid:5c863963-f2a2-491e-8b60-079cdadad147::urn:schemas-upnp-org:device:MediaServer:1\r
+LOCATION: somewhere?\r
+CACHE-CONTROL: max-age=10\r
+\r
+"
+        );
+    }
+
+    #[test]
+    fn test_handle_content_directory_search_message() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let boot_id = 1;
+        let os_version = "a/1";
+        let location = "somewhere?";
+        let max_age = Duration::from_secs(10);
+
+        let buffer = "M-SEARCH * HTTP/1.1\r
+HOST: 239.255.255.250:1900\r
+MAN: \"ssdp:discover\"\r
+MX: 0\r
+ST: urn:schemas-upnp-org:service:ContentDirectory:1\r
+USER-AGENT: OS/version UPnP/2.0 product/version\r
+CPFN.UPNP.ORG: test control point\r
+CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
+            .as_bytes();
+
+        // i've clearly done something wrong...
+        let src = {
+            let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
+            let mut addr_storage = SockAddrStorage::zeroed();
+            let mut len = addr_storage.size_of();
+            let res =
+                unsafe { libc::getsockname(socket.as_raw_fd(), addr_storage.view_as(), &mut len) };
+            if res == -1 {
+                panic!("{}", std::io::Error::last_os_error());
+            }
+            unsafe { SockAddr::new(addr_storage, len) }
+        };
+        let mut test_socket = DontReallySocketToMe::new();
+
+        let mut rng = rand::rng();
+
+        handle_search_message(
+            test_device_uuid,
+            boot_id,
+            os_version,
+            location,
+            max_age,
+            &mut rng,
+            buffer,
+            &src,
+            &mut test_socket,
+        );
+
+        let sent = String::from_utf8(test_socket.get_sent()).unwrap();
+
+        // fun stuff to ignore the DATE header...
+        let mut bits = sent.splitn(2, "DATE: ");
+        let pre_date = bits.next().unwrap();
+        let mut more_bits = bits.next().unwrap().splitn(2, "\r\n");
+        more_bits.next().unwrap(); // skip the date
+        let post_date = more_bits.next().unwrap();
+
+        assert_eq!(pre_date, "HTTP/1.1 200 OK\r\n");
+        assert_eq!(
+            post_date,
+            "EXT:\r
+BOOTID.UPNP.ORG: 1\r
+CONFIGID.UPNP.ORG: 1\r
+SERVER: a/1 UPnP/2.0 strumur/0.1.0\r
+ST: urn:schemas-upnp-org:service:ContentDirectory:1\r
+USN: uuid:5c863963-f2a2-491e-8b60-079cdadad147::urn:schemas-upnp-org:service:ContentDirectory:1\r
 LOCATION: somewhere?\r
 CACHE-CONTROL: max-age=10\r
 \r
