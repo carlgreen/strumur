@@ -296,6 +296,72 @@ fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> O
     }
 }
 
+fn parse_soap_request(body: &str) -> Option<Vec<String>> {
+    let mut object_id = None;
+    let envelope = Element::parse(body.as_bytes()).unwrap();
+    let body = envelope.get_child("Body").unwrap();
+    match body.get_child("Browse") {
+        Some(browse) => {
+            for child in &browse.children {
+                match child.as_element().unwrap().name.as_str() {
+                    "ObjectID" => {
+                        object_id = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .split('$')
+                                .map(ToString::to_string)
+                                .collect(),
+                        );
+                    }
+                    "BrowseFlag" => {
+                        let browse_flag = child.as_element().unwrap().get_text().unwrap();
+                        if browse_flag == "BrowseDirectChildren" {
+                            println!("direct children. simple.");
+                        } else {
+                            println!("browse flag: {browse_flag}. what's up");
+                        }
+                    }
+                    "Filter" => {
+                        let filter = child.as_element().unwrap().get_text().unwrap();
+                        if filter == "*" {
+                            println!("no filter. simple.");
+                        } else {
+                            println!("some filter: {filter}. what's up");
+                        }
+                    }
+                    "StartingIndex" => {
+                        let starting_index = child.as_element().unwrap().get_text().unwrap();
+                        if starting_index == "0" {
+                            println!("start from zero. simple.");
+                        } else {
+                            println!("start from: {starting_index}. what's up");
+                        }
+                    }
+                    "RequestedCount" => {
+                        let requested_count = child.as_element().unwrap().get_text().unwrap();
+                        println!("only want: {requested_count}. what's up");
+                    }
+                    "SortCriteria" => {
+                        let sort_criteria = child.as_element().unwrap().get_text();
+                        if let Some(sort_criteria) = sort_criteria {
+                            println!("sort criteria: {sort_criteria}. what's up");
+                        } else {
+                            println!("no sort criteria. do i just make this up?");
+                        }
+                    }
+                    anything => println!("what is {anything:?}"),
+                }
+            }
+        }
+        None => panic!("no Browse child"),
+    }
+
+    object_id
+}
+
 fn handle_device_connection(
     device_uuid: Uuid,
     peer_addr: &str,
@@ -339,97 +405,9 @@ fn handle_device_connection(
                     println!("control: no soap action");
                     (String::new(), "400 BAD REQUEST")
                 }, |soap_action| if soap_action == "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"" {
-                    let mut object_id: Option<Vec<String>> = None;
-                    match body {
-                        Some(body) => {
-                            let envelope = Element::parse(body.as_bytes()).unwrap();
-                            let body = envelope.get_child("Body").unwrap();
-                            match body.get_child("Browse") {
-                                Some(browse) => {
-                                    for child in &browse.children {
-                                        match child.as_element().unwrap().name.as_str() {
-                                            "ObjectID" => {
-                                                object_id = Some(child
-                                                    .as_element()
-                                                    .unwrap()
-                                                    .get_text().unwrap()
-                                                    .split('$').map(ToString::to_string).collect());
-                                            }
-                                            "BrowseFlag" => {
-                                                let browse_flag = child
-                                                    .as_element()
-                                                    .unwrap()
-                                                    .get_text()
-                                                    .unwrap();
-                                                if browse_flag == "BrowseDirectChildren" {
-                                                    println!("direct children. simple.");
-                                                } else {
-                                                    println!(
-                                                        "browse flag: {browse_flag}. what's up"
-                                                    );
-                                                }
-                                            }
-                                            "Filter" => {
-                                                let filter = child
-                                                    .as_element()
-                                                    .unwrap()
-                                                    .get_text()
-                                                    .unwrap();
-                                                if filter == "*" {
-                                                    println!("no filter. simple.");
-                                                } else {
-                                                    println!(
-                                                        "some filter: {filter}. what's up"
-                                                    );
-                                                }
-                                            }
-                                            "StartingIndex" => {
-                                                let starting_index = child
-                                                    .as_element()
-                                                    .unwrap()
-                                                    .get_text()
-                                                    .unwrap();
-                                                if starting_index == "0" {
-                                                    println!("start from zero. simple.");
-                                                } else {
-                                                    println!(
-                                                        "start from: {starting_index}. what's up"
-                                                    );
-                                                }
-                                            }
-                                            "RequestedCount" => {
-                                                let requested_count = child
-                                                    .as_element()
-                                                    .unwrap()
-                                                    .get_text()
-                                                    .unwrap();
-                                                println!(
-                                                    "only want: {requested_count}. what's up"
-                                                );
-                                            }
-                                            "SortCriteria" => {
-                                                let sort_criteria =
-                                                    child.as_element().unwrap().get_text();
-                                                if let Some(sort_criteria) = sort_criteria {
-                                                    println!(
-                                                        "sort criteria: {sort_criteria}. what's up"
-                                                    );
-                                                } else {
-                                                    println!(
-                                                        "no sort criteria. do i just make this up?"
-                                                    );
-                                                }
-                                            }
-                                            anything => println!("what is {anything:?}"),
-                                        }
-                                    }
-                                }
-                                None => panic!("no Browse child"),
-                            }
-                        }
-                        None => panic!("no body"),
-                    }
-
+                    let object_id = body.map_or_else(|| {
+                        panic!("no body");
+                    }, |body| parse_soap_request(&body));
 
                     object_id.map_or_else(|| {
                         panic!("no object id");
