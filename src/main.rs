@@ -1,8 +1,8 @@
 extern crate socket2;
 
 use std::collections::HashMap;
-use std::fs::File;
 use std::fs::read_to_string;
+use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::ErrorKind;
@@ -16,8 +16,8 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::Utc;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use uuid::Uuid;
 use xmltree::Element;
@@ -339,103 +339,103 @@ fn handle_device_connection(
                     println!("control: no soap action");
                     (String::new(), "400 BAD REQUEST")
                 }, |soap_action| if soap_action == "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"" {
-                        let mut object_id: Option<Vec<String>> = None;
-                        match body {
-                            Some(body) => {
-                                let envelope = Element::parse(body.as_bytes()).unwrap();
-                                let body = envelope.get_child("Body").unwrap();
-                                match body.get_child("Browse") {
-                                    Some(browse) => {
-                                        for child in &browse.children {
-                                            match child.as_element().unwrap().name.as_str() {
-                                                "ObjectID" => {
-                                                    object_id = Some(child
-                                                        .as_element()
-                                                        .unwrap()
-                                                        .get_text().unwrap()
-                                                        .split('$').map(ToString::to_string).collect());
-                                                }
-                                                "BrowseFlag" => {
-                                                    let browse_flag = child
-                                                        .as_element()
-                                                        .unwrap()
-                                                        .get_text()
-                                                        .unwrap();
-                                                    if browse_flag == "BrowseDirectChildren" {
-                                                        println!("direct children. simple.");
-                                                    } else {
-                                                        println!(
-                                                            "browse flag: {browse_flag}. what's up"
-                                                        );
-                                                    }
-                                                }
-                                                "Filter" => {
-                                                    let filter = child
-                                                        .as_element()
-                                                        .unwrap()
-                                                        .get_text()
-                                                        .unwrap();
-                                                    if filter == "*" {
-                                                        println!("no filter. simple.");
-                                                    } else {
-                                                        println!(
-                                                            "some filter: {filter}. what's up"
-                                                        );
-                                                    }
-                                                }
-                                                "StartingIndex" => {
-                                                    let starting_index = child
-                                                        .as_element()
-                                                        .unwrap()
-                                                        .get_text()
-                                                        .unwrap();
-                                                    if starting_index == "0" {
-                                                        println!("start from zero. simple.");
-                                                    } else {
-                                                        println!(
-                                                            "start from: {starting_index}. what's up"
-                                                        );
-                                                    }
-                                                }
-                                                "RequestedCount" => {
-                                                    let requested_count = child
-                                                        .as_element()
-                                                        .unwrap()
-                                                        .get_text()
-                                                        .unwrap();
+                    let mut object_id: Option<Vec<String>> = None;
+                    match body {
+                        Some(body) => {
+                            let envelope = Element::parse(body.as_bytes()).unwrap();
+                            let body = envelope.get_child("Body").unwrap();
+                            match body.get_child("Browse") {
+                                Some(browse) => {
+                                    for child in &browse.children {
+                                        match child.as_element().unwrap().name.as_str() {
+                                            "ObjectID" => {
+                                                object_id = Some(child
+                                                    .as_element()
+                                                    .unwrap()
+                                                    .get_text().unwrap()
+                                                    .split('$').map(ToString::to_string).collect());
+                                            }
+                                            "BrowseFlag" => {
+                                                let browse_flag = child
+                                                    .as_element()
+                                                    .unwrap()
+                                                    .get_text()
+                                                    .unwrap();
+                                                if browse_flag == "BrowseDirectChildren" {
+                                                    println!("direct children. simple.");
+                                                } else {
                                                     println!(
-                                                        "only want: {requested_count}. what's up"
+                                                        "browse flag: {browse_flag}. what's up"
                                                     );
                                                 }
-                                                "SortCriteria" => {
-                                                    let sort_criteria =
-                                                        child.as_element().unwrap().get_text();
-                                                    if let Some(sort_criteria) = sort_criteria {
-                                                        println!(
-                                                            "sort criteria: {sort_criteria}. what's up"
-                                                        );
-                                                    } else {
-                                                        println!(
-                                                            "no sort criteria. do i just make this up?"
-                                                        );
-                                                    }
-                                                }
-                                                anything => println!("what is {anything:?}"),
                                             }
+                                            "Filter" => {
+                                                let filter = child
+                                                    .as_element()
+                                                    .unwrap()
+                                                    .get_text()
+                                                    .unwrap();
+                                                if filter == "*" {
+                                                    println!("no filter. simple.");
+                                                } else {
+                                                    println!(
+                                                        "some filter: {filter}. what's up"
+                                                    );
+                                                }
+                                            }
+                                            "StartingIndex" => {
+                                                let starting_index = child
+                                                    .as_element()
+                                                    .unwrap()
+                                                    .get_text()
+                                                    .unwrap();
+                                                if starting_index == "0" {
+                                                    println!("start from zero. simple.");
+                                                } else {
+                                                    println!(
+                                                        "start from: {starting_index}. what's up"
+                                                    );
+                                                }
+                                            }
+                                            "RequestedCount" => {
+                                                let requested_count = child
+                                                    .as_element()
+                                                    .unwrap()
+                                                    .get_text()
+                                                    .unwrap();
+                                                println!(
+                                                    "only want: {requested_count}. what's up"
+                                                );
+                                            }
+                                            "SortCriteria" => {
+                                                let sort_criteria =
+                                                    child.as_element().unwrap().get_text();
+                                                if let Some(sort_criteria) = sort_criteria {
+                                                    println!(
+                                                        "sort criteria: {sort_criteria}. what's up"
+                                                    );
+                                                } else {
+                                                    println!(
+                                                        "no sort criteria. do i just make this up?"
+                                                    );
+                                                }
+                                            }
+                                            anything => println!("what is {anything:?}"),
                                         }
                                     }
-                                    None => panic!("no Browse child"),
                                 }
+                                None => panic!("no Browse child"),
                             }
-                            None => panic!("no body"),
                         }
+                        None => panic!("no body"),
+                    }
 
 
-                        object_id.map_or_else(|| {
-                            panic!("no object id");
-                        }, |object_id| if object_id == vec!["0"] {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                    object_id.map_or_else(|| {
+                        panic!("no object id");
+                    }, |object_id| if object_id == vec!["0"] {
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -447,10 +447,10 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id == vec!["0", "albums"] {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else if object_id == vec!["0", "albums"] {
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -462,10 +462,10 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id[0..2] == vec!["0", "albums"] && object_id.len() == 3 { // TODO e.g. 0$albums$*a3 but not e.g. 0$albums$*a3$*i20771
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else if object_id[0..2] == vec!["0", "albums"] && object_id.len() == 3 { // TODO e.g. 0$albums$*a3 but not e.g. 0$albums$*a3$*i20771
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -477,10 +477,10 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id == vec!["0", "=Artist"] {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else if object_id == vec!["0", "=Artist"] {
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -492,10 +492,10 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 3 {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 3 {
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -507,10 +507,10 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 4 {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 4 {
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -522,10 +522,10 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 5 {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 5 {
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -537,10 +537,10 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id == vec!["0", "=All Artists"] {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else if object_id == vec!["0", "=All Artists"] {
+                            // TODO generate based on what i have?
+                            let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
@@ -552,11 +552,11 @@ fn handle_device_connection(
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else {
-                                println!("control: unexpected object ID: {object_id:?}");
-                                (String::new(), "400 BAD REQUEST")
-                            })
+                            (response.to_string(), HTTP_RESPONSE_OK)
+                        } else {
+                            println!("control: unexpected object ID: {object_id:?}");
+                            (String::new(), "400 BAD REQUEST")
+                        })
                     } else {
                         println!("control: unexpected soap action: {soap_action}");
                         (String::new(), "400 BAD REQUEST")
