@@ -339,7 +339,7 @@ fn handle_device_connection(
                     println!("control: no soap action");
                     (String::new(), "400 BAD REQUEST")
                 }, |soap_action| if soap_action == "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"" {
-                        let mut object_id = None;
+                        let mut object_id: Option<Vec<String>> = None;
                         match body {
                             Some(body) => {
                                 let envelope = Element::parse(body.as_bytes()).unwrap();
@@ -352,7 +352,8 @@ fn handle_device_connection(
                                                     object_id = Some(child
                                                         .as_element()
                                                         .unwrap()
-                                                        .get_text().unwrap().into_owned());
+                                                        .get_text().unwrap()
+                                                        .split('$').map(ToString::to_string).collect());
                                                 }
                                                 "BrowseFlag" => {
                                                     let browse_flag = child
@@ -432,7 +433,7 @@ fn handle_device_connection(
 
                         object_id.map_or_else(|| {
                             panic!("no object id");
-                        }, |object_id| if object_id == "0" {
+                        }, |object_id| if object_id == vec!["0"] {
                                 // TODO generate based on what i have?
                                 let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -447,7 +448,7 @@ fn handle_device_connection(
     </s:Body>
 </s:Envelope>"#;
                                 (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id == "0$albums" {
+                            } else if object_id == vec!["0", "albums"] {
                                 // TODO generate based on what i have?
                                 let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -462,7 +463,7 @@ fn handle_device_connection(
     </s:Body>
 </s:Envelope>"#;
                                 (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id.starts_with("0$albums$") { // TODO e.g. 0$albums$*a3 but not e.g. 0$albums$*a3$*i20771
+                            } else if object_id[0..2] == vec!["0", "albums"] && object_id.len() == 3 { // TODO e.g. 0$albums$*a3 but not e.g. 0$albums$*a3$*i20771
                                 // TODO generate based on what i have?
                                 let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -477,7 +478,7 @@ fn handle_device_connection(
     </s:Body>
 </s:Envelope>"#;
                                 (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id == "0$=Artist" {
+                            } else if object_id == vec!["0", "=Artist"] {
                                 // TODO generate based on what i have?
                                 let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -492,37 +493,7 @@ fn handle_device_connection(
     </s:Body>
 </s:Envelope>"#;
                                 (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id.starts_with("0$=Artist$3187$albums$*a251") {
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i3830&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Coma America&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/01*20Coma*20America.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5260&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Down Human&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:44.266&quot; size=&quot;30269257&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/02*20Down*20Human.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5397&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Drive&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:08.000&quot; size=&quot;25014468&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/03*20Drive.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i13217&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;No Cure for the Pure&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:23.466&quot; size=&quot;25228115&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/04*20No*20Cure*20for*20the*20Pure.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i21351&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;When a Man Dies a Woman&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;5&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:30.600&quot; size=&quot;28354574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/05*20When*20a*20Man*20Dies*20a*20Woman.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>5</NumberReturned>
-            <TotalMatches>14</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id.starts_with("0$=Artist$3187$albums") { // TODO e.g. 0$=Artist$3187$albums but not e.g. 0$=Artist$3187$albums$*a251
-                                // TODO generate based on what i have?
-                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;container id=&quot;0$=Artist$3187$albums$*a251&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Amen&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a535&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;15&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Death Before Musick&lt;/dc:title&gt;&lt;dc:date&gt;2004-04-05&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Death*20Before*20Musick/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a2012&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;We Have Come for Your Parents&lt;/dc:title&gt;&lt;dc:date&gt;2000-10-10&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/We*20Have*20Come*20for*20Your*20Parents/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>3</NumberReturned>
-            <TotalMatches>3</TotalMatches>
-            <UpdateID>25</UpdateID>
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#;
-                                (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id.starts_with("0$=Artist$") { // TODO e.g. 0$=Artist$3187 but not e.g. 0$=Artist$3187$albums
+                            } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 3 {
                                 // TODO generate based on what i have?
                                 let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -537,7 +508,37 @@ fn handle_device_connection(
     </s:Body>
 </s:Envelope>"#;
                                 (response.to_string(), HTTP_RESPONSE_OK)
-                            } else if object_id == "0$=All Artists" {
+                            } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 4 {
+                                // TODO generate based on what i have?
+                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
+&lt;container id=&quot;0$=Artist$3187$albums$*a251&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Amen&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a535&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;15&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Death Before Musick&lt;/dc:title&gt;&lt;dc:date&gt;2004-04-05&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Death*20Before*20Musick/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a2012&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;We Have Come for Your Parents&lt;/dc:title&gt;&lt;dc:date&gt;2000-10-10&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/We*20Have*20Come*20for*20Your*20Parents/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>3</NumberReturned>
+            <TotalMatches>3</TotalMatches>
+            <UpdateID>25</UpdateID>
+        </u:BrowseResponse>
+    </s:Body>
+</s:Envelope>"#;
+                                (response.to_string(), HTTP_RESPONSE_OK)
+                            } else if object_id[0..2] == vec!["0", "=Artist"] && object_id.len() == 5 {
+                                // TODO generate based on what i have?
+                                let response = r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
+&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i3830&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Coma America&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/01*20Coma*20America.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5260&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Down Human&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:44.266&quot; size=&quot;30269257&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/02*20Down*20Human.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5397&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Drive&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:08.000&quot; size=&quot;25014468&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/03*20Drive.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i13217&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;No Cure for the Pure&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:23.466&quot; size=&quot;25228115&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/04*20No*20Cure*20for*20the*20Pure.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i21351&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;When a Man Dies a Woman&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;5&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:30.600&quot; size=&quot;28354574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/05*20When*20a*20Man*20Dies*20a*20Woman.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>5</NumberReturned>
+            <TotalMatches>14</TotalMatches>
+            <UpdateID>25</UpdateID>
+        </u:BrowseResponse>
+    </s:Body>
+</s:Envelope>"#;
+                                (response.to_string(), HTTP_RESPONSE_OK)
+                            } else if object_id == vec!["0", "=All Artists"] {
                                 // TODO generate based on what i have?
                                 let response = r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -553,7 +554,7 @@ fn handle_device_connection(
 </s:Envelope>"#;
                                 (response.to_string(), HTTP_RESPONSE_OK)
                             } else {
-                                println!("control: unexpected object ID: {object_id}");
+                                println!("control: unexpected object ID: {object_id:?}");
                                 (String::new(), "400 BAD REQUEST")
                             })
                     } else {
