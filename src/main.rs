@@ -632,6 +632,75 @@ fn advertise_discovery_messages(
     // TODO above messages should be resent periodically
 }
 
+fn extract_host(ssdp_message: &SSDPMessage) -> Option<String> {
+    let host_key = ssdp_message
+        .headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("HOST"))?;
+    ssdp_message.headers.get(host_key).cloned()
+}
+
+fn is_multicast(host: &str) -> bool {
+    if host == SSDP_IPV4_MULTICAST_ADDRESS {
+        true
+    } else {
+        println!("unicast search");
+        let unicast = host.parse::<SocketAddr>().unwrap();
+        println!("  - {}:{}", unicast.ip(), unicast.port());
+        false
+    }
+}
+
+fn extract_mx(ssdp_message: &SSDPMessage) -> Option<u64> {
+    let mx_key = ssdp_message
+        .headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("MX"));
+    mx_key.map(|mx_key| {
+        let mx = ssdp_message.headers.get(mx_key).unwrap();
+        let mx = mx.parse::<u64>().unwrap();
+        if mx > 5 { 5 } else { mx }
+    })
+}
+
+fn extract_st(ssdp_message: &SSDPMessage) -> Option<String> {
+    let st_key = ssdp_message
+        .headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("ST"));
+    let Some(st_key) = st_key else {
+        println!("missing ST header");
+        return None;
+    };
+    let Some(st) = ssdp_message.headers.get(st_key) else {
+        println!("error getting {st_key} header");
+        return None;
+    };
+    Some(st.clone())
+}
+
+fn generate_advertisement(
+    response_date: &str,
+    boot_id: u64,
+    os_version: &str,
+    st: &str,
+    usn: &str,
+    location: &str,
+    max_age: Duration,
+) -> String {
+    format!(
+        "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
+        max_age.as_secs()
+    )
+}
+
+fn send_advertisement(usn: &str, advertisement: &str, socket: &mut dyn SocketToMe, src: &SockAddr) {
+    println!("send {usn}");
+    if let Err(err) = socket.send_to(advertisement.as_bytes(), src) {
+        println!("error sending advertisement: {err}");
+    }
+}
+
 fn handle_search_message(
     device_uuid: Uuid,
     boot_id: u64,
@@ -687,23 +756,11 @@ fn handle_search_message(
                     // CPUUID.UPNP.ORG: uuid of the control point
 
                     // either 239.255.255.250:1900 for multicast or unicast to this ip address and port
-                    let host_key = ssdp_message
-                        .headers
-                        .keys()
-                        .find(|k| k.eq_ignore_ascii_case("HOST"));
-                    let Some(host_key) = host_key else {
+                    let Some(host) = extract_host(&ssdp_message) else {
                         println!("missing HOST header, ignoring");
                         return;
                     };
-                    let host = ssdp_message.headers.get(host_key).unwrap();
-                    let multicast = if host == SSDP_IPV4_MULTICAST_ADDRESS {
-                        true
-                    } else {
-                        println!("unicast search");
-                        let unicast = host.parse::<SocketAddr>().unwrap();
-                        println!("  - {}:{}", unicast.ip(), unicast.port());
-                        false
-                    };
+                    let multicast = is_multicast(&host);
 
                     // if multicast and contains TCPPORT.UPNP.ORG header then TODO
                     if multicast && ssdp_message.headers.contains_key("TCPPORT.UPNP.ORG") {
@@ -714,14 +771,8 @@ fn handle_search_message(
                     // the device shall silently discard and ignore the search request. If the MX header field specifies
                     // a field value greater than 5, the device should assume that it contained the value 5 or less.
                     let mx = if multicast {
-                        let mx_key = ssdp_message
-                            .headers
-                            .keys()
-                            .find(|k| k.eq_ignore_ascii_case("MX"));
-                        if let Some(mx_key) = mx_key {
-                            let mx = ssdp_message.headers.get(mx_key).unwrap();
-                            let mx = mx.parse::<u64>().unwrap();
-                            Some(if mx > 5 { 5 } else { mx })
+                        if let Some(mx) = extract_mx(&ssdp_message) {
+                            Some(mx)
                         } else {
                             println!("multicast search missing MX header, ignoring");
                             return;
@@ -738,16 +789,7 @@ fn handle_search_message(
                     // header field of the M-SEARCH request is “ssdp:all”, “upnp:rootdevice”, “uuid:” followed by a
                     // UUID that exactly matches the one advertised by the device, or if the M-SEARCH request
                     // matches a device type or service type supported by the device.
-                    let st_key = ssdp_message
-                        .headers
-                        .keys()
-                        .find(|k| k.eq_ignore_ascii_case("ST"));
-                    let Some(st_key) = st_key else {
-                        println!("missing ST header");
-                        return;
-                    };
-                    let Some(st) = ssdp_message.headers.get(st_key) else {
-                        println!("error getting {st_key} header");
+                    let Some(st) = extract_st(&ssdp_message) else {
                         return;
                     };
 
@@ -782,53 +824,61 @@ fn handle_search_message(
                     if st == "ssdp:all" || st == "upnp:rootdevice" {
                         let st = "upnp:rootdevice";
                         let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
-                        let advertisement = format!(
-                            "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
-                            max_age.as_secs()
+                        let advertisement = generate_advertisement(
+                            &response_date,
+                            boot_id,
+                            os_version,
+                            st,
+                            &usn,
+                            location,
+                            max_age,
                         );
-                        println!("send {usn}");
-                        if let Err(err) = socket.send_to(advertisement.as_bytes(), src) {
-                            println!("error sending advertisement: {err}");
-                        }
+                        send_advertisement(&usn, &advertisement, socket, src);
                     }
 
                     if st == "ssdp:all" || st == format!("uuid:{device_uuid}").as_str() {
                         let st = format!("uuid:{device_uuid}");
                         let usn = format!("uuid:{device_uuid}");
-                        let advertisement = format!(
-                            "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
-                            max_age.as_secs()
+                        let advertisement = generate_advertisement(
+                            &response_date,
+                            boot_id,
+                            os_version,
+                            &st,
+                            &usn,
+                            location,
+                            max_age,
                         );
-                        println!("send {usn}");
-                        if let Err(err) = socket.send_to(advertisement.as_bytes(), src) {
-                            println!("error sending advertisement: {err}");
-                        }
+                        send_advertisement(&usn, &advertisement, socket, src);
                     }
 
                     if st == "ssdp:all" || st == "urn:schemas-upnp-org:device:MediaServer:1" {
                         let st = "urn:schemas-upnp-org:device:MediaServer:1";
                         let usn = format!("uuid:{device_uuid}::{st}");
-                        let advertisement = format!(
-                            "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
-                            max_age.as_secs()
+                        let advertisement = generate_advertisement(
+                            &response_date,
+                            boot_id,
+                            os_version,
+                            st,
+                            &usn,
+                            location,
+                            max_age,
                         );
-                        println!("send {usn}");
-                        if let Err(err) = socket.send_to(advertisement.as_bytes(), src) {
-                            println!("error sending advertisement: {err}");
-                        }
+                        send_advertisement(&usn, &advertisement, socket, src);
                     }
 
                     if st == "ssdp:all" || st == "urn:schemas-upnp-org:service:ContentDirectory:1" {
                         let st = "urn:schemas-upnp-org:service:ContentDirectory:1";
                         let usn = format!("uuid:{device_uuid}::{st}");
-                        let advertisement = format!(
-                            "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
-                            max_age.as_secs()
+                        let advertisement = generate_advertisement(
+                            &response_date,
+                            boot_id,
+                            os_version,
+                            st,
+                            &usn,
+                            location,
+                            max_age,
                         );
-                        println!("send {usn}");
-                        if let Err(err) = socket.send_to(advertisement.as_bytes(), src) {
-                            println!("error sending advertisement: {err}");
-                        }
+                        send_advertisement(&usn, &advertisement, socket, src);
                     }
 
                     // TODO ConnectionManager service
