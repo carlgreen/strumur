@@ -646,12 +646,19 @@ fn advertise_discovery_messages(
     // TODO above messages should be resent periodically
 }
 
-fn extract_host(ssdp_message: &SSDPMessage) -> Option<String> {
+fn extract_host(
+    ssdp_message: &SSDPMessage,
+) -> std::result::Result<String, HandleSearchMessageError> {
     let host_key = ssdp_message
         .headers
         .keys()
-        .find(|k| k.eq_ignore_ascii_case("HOST"))?;
-    ssdp_message.headers.get(host_key).cloned()
+        .find(|k| k.eq_ignore_ascii_case("HOST"))
+        .ok_or(HandleSearchMessageError::MissingHostHeader)?;
+    ssdp_message
+        .headers
+        .get(host_key)
+        .ok_or(HandleSearchMessageError::MissingHostHeader)
+        .cloned()
 }
 
 fn is_multicast(host: &str) -> bool {
@@ -665,32 +672,35 @@ fn is_multicast(host: &str) -> bool {
     }
 }
 
-fn extract_mx(ssdp_message: &SSDPMessage) -> Option<u64> {
+fn extract_mx(ssdp_message: &SSDPMessage) -> std::result::Result<u64, HandleSearchMessageError> {
     let mx_key = ssdp_message
         .headers
         .keys()
         .find(|k| k.eq_ignore_ascii_case("MX"));
-    mx_key.map(|mx_key| {
-        let mx = ssdp_message.headers.get(mx_key).unwrap();
-        let mx = mx.parse::<u64>().unwrap();
-        if mx > 5 { 5 } else { mx }
-    })
+    mx_key.map_or(
+        Err(HandleSearchMessageError::MissingMulticastMxHeader),
+        |mx_key| {
+            let mx = ssdp_message
+                .headers
+                .get(mx_key)
+                .ok_or(HandleSearchMessageError::MissingMulticastMxHeader)?;
+            let mx = mx.parse::<u64>().unwrap();
+            Ok(if mx > 5 { 5 } else { mx })
+        },
+    )
 }
 
-fn extract_st(ssdp_message: &SSDPMessage) -> Option<String> {
+fn extract_st(ssdp_message: &SSDPMessage) -> std::result::Result<String, HandleSearchMessageError> {
     let st_key = ssdp_message
         .headers
         .keys()
         .find(|k| k.eq_ignore_ascii_case("ST"));
-    let Some(st_key) = st_key else {
-        println!("missing ST header");
-        return None;
-    };
-    let Some(st) = ssdp_message.headers.get(st_key) else {
-        println!("error getting {st_key} header");
-        return None;
-    };
-    Some(st.clone())
+    let st_key = st_key.ok_or(HandleSearchMessageError::MissingStHeader)?;
+    let st = ssdp_message
+        .headers
+        .get(st_key)
+        .ok_or(HandleSearchMessageError::MissingStHeader)?;
+    Ok(st.clone())
 }
 
 fn generate_advertisement(
@@ -749,8 +759,7 @@ impl std::fmt::Display for HandleSearchMessageError {
                 write!(f, "multicast search missing MX header, ignoring")
             }
             Self::MissingStHeader => {
-                // TODO which is it?
-                write!(f, "missing ST header or error getting header")
+                write!(f, "missing ST header")
             }
             Self::SearchTargetUuidMismatch(st) => {
                 write!(f, "unintended search target reciptient: {st}")
@@ -812,9 +821,9 @@ fn handle_search_message(
                     ))
                 }
                 HTTP_METHOD_SEARCH => {
-                    let Some(cp_ip) = src.as_socket_ipv4() else {
-                        return Err(HandleSearchMessageError::NoIPv4(Box::new(src.clone())));
-                    };
+                    let cp_ip = src
+                        .as_socket_ipv4()
+                        .ok_or_else(|| HandleSearchMessageError::NoIPv4(Box::new(src.clone())))?;
                     println!("search from {:?}: {ssdp_message:?}", cp_ip.ip());
 
                     // expect like:
@@ -828,9 +837,7 @@ fn handle_search_message(
                     // CPUUID.UPNP.ORG: uuid of the control point
 
                     // either 239.255.255.250:1900 for multicast or unicast to this ip address and port
-                    let Some(host) = extract_host(&ssdp_message) else {
-                        return Err(HandleSearchMessageError::MissingHostHeader);
-                    };
+                    let host = extract_host(&ssdp_message)?;
                     let multicast = is_multicast(&host);
 
                     // if multicast and contains TCPPORT.UPNP.ORG header then TODO
@@ -842,11 +849,7 @@ fn handle_search_message(
                     // the device shall silently discard and ignore the search request. If the MX header field specifies
                     // a field value greater than 5, the device should assume that it contained the value 5 or less.
                     let mx = if multicast {
-                        if let Some(mx) = extract_mx(&ssdp_message) {
-                            Some(mx)
-                        } else {
-                            return Err(HandleSearchMessageError::MissingMulticastMxHeader);
-                        }
+                        Some(extract_mx(&ssdp_message)?)
                     } else {
                         None
                     };
@@ -859,9 +862,7 @@ fn handle_search_message(
                     // header field of the M-SEARCH request is “ssdp:all”, “upnp:rootdevice”, “uuid:” followed by a
                     // UUID that exactly matches the one advertised by the device, or if the M-SEARCH request
                     // matches a device type or service type supported by the device.
-                    let Some(st) = extract_st(&ssdp_message) else {
-                        return Err(HandleSearchMessageError::MissingStHeader);
-                    };
+                    let st = extract_st(&ssdp_message)?;
 
                     // TODO ConnectionManager service
                     if st == "ssdp:all"
