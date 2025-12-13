@@ -92,6 +92,24 @@ impl SocketToMe for ReallySocketToMe {
     }
 }
 
+#[derive(Clone)]
+struct SysInfo {
+    device_uuid: Uuid,
+    os_version: String,
+    boot_id: u64,
+}
+
+impl SysInfo {
+    fn new(device_uuid: Uuid, os_version: &str, boot_id: u64) -> Self {
+        let os_version = os_version.into();
+        Self {
+            device_uuid,
+            os_version,
+            boot_id,
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let mut rng = rand::rng();
 
@@ -186,15 +204,9 @@ fn main() -> Result<()> {
         .unwrap()
         .as_secs();
 
-    advertise_discovery_messages(
-        device_uuid,
-        boot_id,
-        &os_version,
-        location,
-        max_age,
-        addr,
-        &socket,
-    );
+    let sys_info = SysInfo::new(device_uuid, &os_version, boot_id);
+
+    advertise_discovery_messages(&sys_info, location, max_age, addr, &socket);
 
     loop {
         let mut buffer = Vec::with_capacity(1024);
@@ -204,15 +216,14 @@ fn main() -> Result<()> {
                     buffer.set_len(received);
                 }
 
-                let os_version = os_version.clone();
+                let sys_info = sys_info.clone();
+                // let os_version = os_version.clone();
                 let mut socket = ReallySocketToMe::new(socket.try_clone().unwrap());
                 thread::spawn(move || {
                     let mut rng = rand::rng();
 
                     handle_search_message(
-                        device_uuid,
-                        boot_id,
-                        &os_version,
+                        &sys_info,
                         location,
                         max_age,
                         &mut rng,
@@ -555,14 +566,15 @@ fn handle_device_connection(
 }
 
 fn advertise_discovery_messages(
-    device_uuid: Uuid,
-    boot_id: u64,
-    os_version: &str,
+    sys_info: &SysInfo,
     location: &str,
     max_age: Duration,
     addr: SocketAddr,
     socket: &Socket,
 ) {
+    let device_uuid = sys_info.device_uuid;
+    let boot_id = sys_info.boot_id;
+    let os_version = sys_info.os_version.clone();
     // To advertise its capabilities, a device multicasts a number of discovery messages. Specifically,
     // a root device shall multicast:
 
@@ -681,13 +693,14 @@ fn extract_st(ssdp_message: &SSDPMessage) -> Option<String> {
 
 fn generate_advertisement(
     response_date: &str,
-    boot_id: u64,
-    os_version: &str,
+    sys_info: &SysInfo,
     st: &str,
     usn: &str,
     location: &str,
     max_age: Duration,
 ) -> String {
+    let boot_id = sys_info.boot_id;
+    let os_version = &sys_info.os_version;
     format!(
         "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
@@ -702,9 +715,7 @@ fn send_advertisement(usn: &str, advertisement: &str, socket: &mut dyn SocketToM
 }
 
 fn handle_search_message(
-    device_uuid: Uuid,
-    boot_id: u64,
-    os_version: &str,
+    sys_info: &SysInfo,
     location: &str,
     max_age: Duration,
     rng: &mut ThreadRng,
@@ -712,6 +723,8 @@ fn handle_search_message(
     src: &SockAddr,
     socket: &mut dyn SocketToMe,
 ) {
+    let device_uuid = sys_info.device_uuid;
+
     // When a new control point is added to the network, it is allowed to multicast a discovery
     // message searching for interesting devices, services, or both.
     // All devices shall listen to the standard multicast address for these messages and shall
@@ -826,8 +839,7 @@ fn handle_search_message(
                         let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
                         let advertisement = generate_advertisement(
                             &response_date,
-                            boot_id,
-                            os_version,
+                            sys_info,
                             st,
                             &usn,
                             location,
@@ -841,8 +853,7 @@ fn handle_search_message(
                         let usn = format!("uuid:{device_uuid}");
                         let advertisement = generate_advertisement(
                             &response_date,
-                            boot_id,
-                            os_version,
+                            sys_info,
                             &st,
                             &usn,
                             location,
@@ -856,8 +867,7 @@ fn handle_search_message(
                         let usn = format!("uuid:{device_uuid}::{st}");
                         let advertisement = generate_advertisement(
                             &response_date,
-                            boot_id,
-                            os_version,
+                            sys_info,
                             st,
                             &usn,
                             location,
@@ -871,8 +881,7 @@ fn handle_search_message(
                         let usn = format!("uuid:{device_uuid}::{st}");
                         let advertisement = generate_advertisement(
                             &response_date,
-                            boot_id,
-                            os_version,
+                            sys_info,
                             st,
                             &usn,
                             location,
@@ -1525,11 +1534,16 @@ Man: "ssdp:discover"
         (pre_date.into(), post_date.into())
     }
 
+    fn new_test_sysinfo() -> SysInfo {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let os_version = "a/1";
+        let boot_id = 1;
+        SysInfo::new(test_device_uuid, os_version, boot_id)
+    }
+
     #[test]
     fn test_handle_rootdevice_search_message() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let boot_id = 1;
-        let os_version = "a/1";
+        let sys_info = new_test_sysinfo();
         let location = "somewhere?";
         let max_age = Duration::from_secs(10);
 
@@ -1549,9 +1563,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut rng = rand::rng();
 
         handle_search_message(
-            test_device_uuid,
-            boot_id,
-            os_version,
+            &sys_info,
             location,
             max_age,
             &mut rng,
@@ -1580,9 +1592,7 @@ CACHE-CONTROL: max-age=10\r
 
     #[test]
     fn test_handle_uuid_search_message() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let boot_id = 1;
-        let os_version = "a/1";
+        let sys_info = new_test_sysinfo();
         let location = "somewhere?";
         let max_age = Duration::from_secs(10);
 
@@ -1602,9 +1612,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut rng = rand::rng();
 
         handle_search_message(
-            test_device_uuid,
-            boot_id,
-            os_version,
+            &sys_info,
             location,
             max_age,
             &mut rng,
@@ -1633,9 +1641,7 @@ CACHE-CONTROL: max-age=10\r
 
     #[test]
     fn test_handle_media_server_search_message() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let boot_id = 1;
-        let os_version = "a/1";
+        let sys_info = new_test_sysinfo();
         let location = "somewhere?";
         let max_age = Duration::from_secs(10);
 
@@ -1655,9 +1661,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut rng = rand::rng();
 
         handle_search_message(
-            test_device_uuid,
-            boot_id,
-            os_version,
+            &sys_info,
             location,
             max_age,
             &mut rng,
@@ -1686,9 +1690,7 @@ CACHE-CONTROL: max-age=10\r
 
     #[test]
     fn test_handle_content_directory_search_message() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let boot_id = 1;
-        let os_version = "a/1";
+        let sys_info = new_test_sysinfo();
         let location = "somewhere?";
         let max_age = Duration::from_secs(10);
 
@@ -1708,9 +1710,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut rng = rand::rng();
 
         handle_search_message(
-            test_device_uuid,
-            boot_id,
-            os_version,
+            &sys_info,
             location,
             max_age,
             &mut rng,
