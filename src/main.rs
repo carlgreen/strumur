@@ -799,178 +799,153 @@ fn handle_search_message(
     // port number specified in the SEARCHPORT.UPNP.ORG header field and shall respond if any
     // of their root devices, embedded devices or services matches the search criteria in the
     // discovery message.
-    match parse_ssdp_message(data) {
-        Ok(ssdp_message) => {
-            if ssdp_message.request_line
-                == format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}")
-            {
-                return Err(HandleSearchMessageError::UnhandledRequestLine(
-                    ssdp_message.request_line,
-                ));
-            }
-            let (method, _request_target, _protocol) =
-                parse_request_line(&ssdp_message.request_line).unwrap();
-            match method.as_str() {
-                HTTP_METHOD_NOTIFY => {
-                    // println!(
-                    //     "notify from {:?}: {ssdp_message:?}",
-                    //     src.as_socket_ipv4().unwrap().ip()
-                    // );
-                    Err(HandleSearchMessageError::MethodNotSupported(
-                        HTTP_METHOD_NOTIFY.to_string(),
-                    ))
-                }
-                HTTP_METHOD_SEARCH => {
-                    let cp_ip = src
-                        .as_socket_ipv4()
-                        .ok_or_else(|| HandleSearchMessageError::NoIPv4(Box::new(src.clone())))?;
-                    println!("search from {:?}: {ssdp_message:?}", cp_ip.ip());
 
-                    // expect like:
-                    // M-SEARCH * HTTP/1.1
-                    // HOST: 239.255.255.250:1900
-                    // MAN: "ssdp:discover"
-                    // MX: seconds to delay response
-                    // ST: search target
-                    // USER-AGENT: OS/version UPnP/2.0 product/version
-                    // CPFN.UPNP.ORG: friendly name of the control point
-                    // CPUUID.UPNP.ORG: uuid of the control point
+    let ssdp_message =
+        parse_ssdp_message(data).map_err(HandleSearchMessageError::InvalidSSDPMessage)?;
 
-                    // either 239.255.255.250:1900 for multicast or unicast to this ip address and port
-                    let host = extract_host(&ssdp_message)?;
-                    let multicast = is_multicast(&host);
-
-                    // if multicast and contains TCPPORT.UPNP.ORG header then TODO
-                    if multicast && ssdp_message.headers.contains_key("TCPPORT.UPNP.ORG") {
-                        unimplemented!("TCPPORT.UPNP.ORG handling not implemented");
-                    }
-
-                    // For multicast M-SEARCH requests, if the search request does not contain an MX header field,
-                    // the device shall silently discard and ignore the search request. If the MX header field specifies
-                    // a field value greater than 5, the device should assume that it contained the value 5 or less.
-                    let mx = if multicast {
-                        Some(extract_mx(&ssdp_message)?)
-                    } else {
-                        None
-                    };
-
-                    // If a device implements “urn:schemas-upnp-org:service:xyz:2”, it shall
-                    // respond to search requests for both that type and “urn:schemas-upnp-org:service:xyz:1”. The
-                    // response shall specify the same version as was contained in the search request.
-
-                    // Devices respond if the ST
-                    // header field of the M-SEARCH request is “ssdp:all”, “upnp:rootdevice”, “uuid:” followed by a
-                    // UUID that exactly matches the one advertised by the device, or if the M-SEARCH request
-                    // matches a device type or service type supported by the device.
-                    let st = extract_st(&ssdp_message)?;
-
-                    // TODO ConnectionManager service
-                    if st == "ssdp:all"
-                        || st == "upnp:rootdevice"
-                        || st == format!("uuid:{device_uuid}").as_str()
-                        || st == "urn:schemas-upnp-org:device:MediaServer:1"
-                        || st == "urn:schemas-upnp-org:service:ContentDirectory:1"
-                    // || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
-                    {
-                        println!("ok search target: {st}");
-                    } else if st.starts_with(format!("uuid:{device_uuid}").as_str()) {
-                        println!("unexpected search target format: {st}");
-                    } else if st.starts_with("uuid:") {
-                        return Err(HandleSearchMessageError::SearchTargetUuidMismatch(st));
-                    } else {
-                        return Err(HandleSearchMessageError::SearchTargetUnknown(st));
-                    }
-
-                    // if mulitcast, wait a random duration between 0 and MX seconds
-                    // if unicast, response within 1 second (i.e. don't wait)
-                    if let Some(mx) = mx {
-                        let d = Duration::from_secs(rng.random_range(0..=mx));
-                        thread::sleep(d);
-                    }
-
-                    let response_date = format_rfc1123(Utc::now());
-
-                    if st == "ssdp:all" || st == "upnp:rootdevice" {
-                        let st = "upnp:rootdevice";
-                        let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
-                        let advertisement = generate_advertisement(
-                            &response_date,
-                            sys_info,
-                            st,
-                            &usn,
-                            location,
-                            max_age,
-                        );
-                        send_advertisement(&usn, &advertisement, socket, src);
-                    }
-
-                    if st == "ssdp:all" || st == format!("uuid:{device_uuid}").as_str() {
-                        let st = format!("uuid:{device_uuid}");
-                        let usn = format!("uuid:{device_uuid}");
-                        let advertisement = generate_advertisement(
-                            &response_date,
-                            sys_info,
-                            &st,
-                            &usn,
-                            location,
-                            max_age,
-                        );
-                        send_advertisement(&usn, &advertisement, socket, src);
-                    }
-
-                    if st == "ssdp:all" || st == "urn:schemas-upnp-org:device:MediaServer:1" {
-                        let st = "urn:schemas-upnp-org:device:MediaServer:1";
-                        let usn = format!("uuid:{device_uuid}::{st}");
-                        let advertisement = generate_advertisement(
-                            &response_date,
-                            sys_info,
-                            st,
-                            &usn,
-                            location,
-                            max_age,
-                        );
-                        send_advertisement(&usn, &advertisement, socket, src);
-                    }
-
-                    if st == "ssdp:all" || st == "urn:schemas-upnp-org:service:ContentDirectory:1" {
-                        let st = "urn:schemas-upnp-org:service:ContentDirectory:1";
-                        let usn = format!("uuid:{device_uuid}::{st}");
-                        let advertisement = generate_advertisement(
-                            &response_date,
-                            sys_info,
-                            st,
-                            &usn,
-                            location,
-                            max_age,
-                        );
-                        send_advertisement(&usn, &advertisement, socket, src);
-                    }
-
-                    // TODO ConnectionManager service
-                    // if st == "ssdp:all"
-                    //     || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
-                    // {
-                    //     let st = "urn:schemas-upnp-org:service:ConnectionManager:1";
-                    //     let usn = format!("uuid:{device_uuid}::{st}");
-                    //     let advertisement = format!(
-                    //         "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
-                    //         max_age.as_secs()
-                    //     );
-                    //     println!("send {usn}");
-                    //     if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
-                    //     {
-                    //         println!("error sending advertisement: {err}");
-                    //     }
-                    // }
-
-                    Ok(())
-                }
-                _ => Err(HandleSearchMessageError::MethodUnknown(
-                    ssdp_message.request_line,
-                )),
-            }
+    if ssdp_message.request_line
+        == format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}")
+    {
+        return Err(HandleSearchMessageError::UnhandledRequestLine(
+            ssdp_message.request_line,
+        ));
+    }
+    let (method, _request_target, _protocol) =
+        parse_request_line(&ssdp_message.request_line).unwrap();
+    match method.as_str() {
+        HTTP_METHOD_NOTIFY => {
+            // println!(
+            //     "notify from {:?}: {ssdp_message:?}",
+            //     src.as_socket_ipv4().unwrap().ip()
+            // );
+            Err(HandleSearchMessageError::MethodNotSupported(
+                HTTP_METHOD_NOTIFY.to_string(),
+            ))
         }
-        Err(err) => Err(HandleSearchMessageError::InvalidSSDPMessage(err)),
+        HTTP_METHOD_SEARCH => {
+            let cp_ip = src
+                .as_socket_ipv4()
+                .ok_or_else(|| HandleSearchMessageError::NoIPv4(Box::new(src.clone())))?;
+            println!("search from {:?}: {ssdp_message:?}", cp_ip.ip());
+
+            // expect like:
+            // M-SEARCH * HTTP/1.1
+            // HOST: 239.255.255.250:1900
+            // MAN: "ssdp:discover"
+            // MX: seconds to delay response
+            // ST: search target
+            // USER-AGENT: OS/version UPnP/2.0 product/version
+            // CPFN.UPNP.ORG: friendly name of the control point
+            // CPUUID.UPNP.ORG: uuid of the control point
+
+            // either 239.255.255.250:1900 for multicast or unicast to this ip address and port
+            let host = extract_host(&ssdp_message)?;
+            let multicast = is_multicast(&host);
+
+            // if multicast and contains TCPPORT.UPNP.ORG header then TODO
+            if multicast && ssdp_message.headers.contains_key("TCPPORT.UPNP.ORG") {
+                unimplemented!("TCPPORT.UPNP.ORG handling not implemented");
+            }
+
+            // For multicast M-SEARCH requests, if the search request does not contain an MX header field,
+            // the device shall silently discard and ignore the search request. If the MX header field specifies
+            // a field value greater than 5, the device should assume that it contained the value 5 or less.
+            let mx = if multicast {
+                Some(extract_mx(&ssdp_message)?)
+            } else {
+                None
+            };
+
+            // If a device implements “urn:schemas-upnp-org:service:xyz:2”, it shall
+            // respond to search requests for both that type and “urn:schemas-upnp-org:service:xyz:1”. The
+            // response shall specify the same version as was contained in the search request.
+
+            // Devices respond if the ST
+            // header field of the M-SEARCH request is “ssdp:all”, “upnp:rootdevice”, “uuid:” followed by a
+            // UUID that exactly matches the one advertised by the device, or if the M-SEARCH request
+            // matches a device type or service type supported by the device.
+            let st = extract_st(&ssdp_message)?;
+
+            // TODO ConnectionManager service
+            if st == "ssdp:all"
+                || st == "upnp:rootdevice"
+                || st == format!("uuid:{device_uuid}").as_str()
+                || st == "urn:schemas-upnp-org:device:MediaServer:1"
+                || st == "urn:schemas-upnp-org:service:ContentDirectory:1"
+            // || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
+            {
+                println!("ok search target: {st}");
+            } else if st.starts_with(format!("uuid:{device_uuid}").as_str()) {
+                println!("unexpected search target format: {st}");
+            } else if st.starts_with("uuid:") {
+                return Err(HandleSearchMessageError::SearchTargetUuidMismatch(st));
+            } else {
+                return Err(HandleSearchMessageError::SearchTargetUnknown(st));
+            }
+
+            // if mulitcast, wait a random duration between 0 and MX seconds
+            // if unicast, response within 1 second (i.e. don't wait)
+            if let Some(mx) = mx {
+                let d = Duration::from_secs(rng.random_range(0..=mx));
+                thread::sleep(d);
+            }
+
+            let response_date = format_rfc1123(Utc::now());
+
+            if st == "ssdp:all" || st == "upnp:rootdevice" {
+                let st = "upnp:rootdevice";
+                let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
+                let advertisement =
+                    generate_advertisement(&response_date, sys_info, st, &usn, location, max_age);
+                send_advertisement(&usn, &advertisement, socket, src);
+            }
+
+            if st == "ssdp:all" || st == format!("uuid:{device_uuid}").as_str() {
+                let st = format!("uuid:{device_uuid}");
+                let usn = format!("uuid:{device_uuid}");
+                let advertisement =
+                    generate_advertisement(&response_date, sys_info, &st, &usn, location, max_age);
+                send_advertisement(&usn, &advertisement, socket, src);
+            }
+
+            if st == "ssdp:all" || st == "urn:schemas-upnp-org:device:MediaServer:1" {
+                let st = "urn:schemas-upnp-org:device:MediaServer:1";
+                let usn = format!("uuid:{device_uuid}::{st}");
+                let advertisement =
+                    generate_advertisement(&response_date, sys_info, st, &usn, location, max_age);
+                send_advertisement(&usn, &advertisement, socket, src);
+            }
+
+            if st == "ssdp:all" || st == "urn:schemas-upnp-org:service:ContentDirectory:1" {
+                let st = "urn:schemas-upnp-org:service:ContentDirectory:1";
+                let usn = format!("uuid:{device_uuid}::{st}");
+                let advertisement =
+                    generate_advertisement(&response_date, sys_info, st, &usn, location, max_age);
+                send_advertisement(&usn, &advertisement, socket, src);
+            }
+
+            // TODO ConnectionManager service
+            // if st == "ssdp:all"
+            //     || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
+            // {
+            //     let st = "urn:schemas-upnp-org:service:ConnectionManager:1";
+            //     let usn = format!("uuid:{device_uuid}::{st}");
+            //     let advertisement = format!(
+            //         "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
+            //         max_age.as_secs()
+            //     );
+            //     println!("send {usn}");
+            //     if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
+            //     {
+            //         println!("error sending advertisement: {err}");
+            //     }
+            // }
+
+            Ok(())
+        }
+        _ => Err(HandleSearchMessageError::MethodUnknown(
+            ssdp_message.request_line,
+        )),
     }
 }
 
