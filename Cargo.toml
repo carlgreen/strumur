@@ -13,3 +13,4 @@ xmltree = "0.12"
 
 [dev-dependencies]
 libc = "0.2"
+x-diff-rs = "0.4.1"
