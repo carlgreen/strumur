@@ -222,7 +222,7 @@ fn main() -> Result<()> {
                 thread::spawn(move || {
                     let mut rng = rand::rng();
 
-                    handle_search_message(
+                    if let Err(err) = handle_search_message(
                         &sys_info,
                         location,
                         max_age,
@@ -230,7 +230,9 @@ fn main() -> Result<()> {
                         &buffer,
                         &src,
                         &mut socket,
-                    );
+                    ) {
+                        println!("error handling search message: {err}");
+                    }
                 });
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => {} // keep waiting
@@ -714,6 +716,60 @@ fn send_advertisement(usn: &str, advertisement: &str, socket: &mut dyn SocketToM
     }
 }
 
+#[derive(Debug)]
+enum HandleSearchMessageError {
+    InvalidSSDPMessage(String),
+    UnhandledRequestLine(String),
+    NoIPv4(Box<SockAddr>),
+    MissingHostHeader,
+    MissingMulticastMxHeader,
+    MissingStHeader,
+    SearchTargetUuidMismatch(String),
+    SearchTargetUnknown(String),
+    MethodNotSupported(String),
+    MethodUnknown(String),
+}
+
+impl std::fmt::Display for HandleSearchMessageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::InvalidSSDPMessage(err) => {
+                write!(f, "failed to parse ssdp message: {err}")
+            }
+            Self::UnhandledRequestLine(ssdp_message) => {
+                write!(f, "what do i do with {ssdp_message:#?}")
+            }
+            Self::NoIPv4(src) => {
+                write!(f, "{src:?} is not an IPv4 source")
+            }
+            Self::MissingHostHeader => {
+                write!(f, "missing HOST header, ignoring")
+            }
+            Self::MissingMulticastMxHeader => {
+                write!(f, "multicast search missing MX header, ignoring")
+            }
+            Self::MissingStHeader => {
+                // TODO which is it?
+                write!(f, "missing ST header or error getting header")
+            }
+            Self::SearchTargetUuidMismatch(st) => {
+                write!(f, "unintended search target reciptient: {st}")
+            }
+            Self::SearchTargetUnknown(st) => {
+                write!(f, "unknown search target {st}")
+            }
+            Self::MethodNotSupported(method) => {
+                write!(f, "method {method} not supported")
+            }
+            Self::MethodUnknown(request_line) => {
+                write!(f, "something else: {request_line}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for HandleSearchMessageError {}
+
 fn handle_search_message(
     sys_info: &SysInfo,
     location: &str,
@@ -722,7 +778,7 @@ fn handle_search_message(
     data: &[u8],
     src: &SockAddr,
     socket: &mut dyn SocketToMe,
-) {
+) -> std::result::Result<(), HandleSearchMessageError> {
     let device_uuid = sys_info.device_uuid;
 
     // When a new control point is added to the network, it is allowed to multicast a discovery
@@ -739,8 +795,9 @@ fn handle_search_message(
             if ssdp_message.request_line
                 == format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}")
             {
-                println!("what do i do with {ssdp_message:#?}");
-                return;
+                return Err(HandleSearchMessageError::UnhandledRequestLine(
+                    ssdp_message.request_line,
+                ));
             }
             let (method, _request_target, _protocol) =
                 parse_request_line(&ssdp_message.request_line).unwrap();
@@ -750,11 +807,13 @@ fn handle_search_message(
                     //     "notify from {:?}: {ssdp_message:?}",
                     //     src.as_socket_ipv4().unwrap().ip()
                     // );
+                    Err(HandleSearchMessageError::MethodNotSupported(
+                        HTTP_METHOD_NOTIFY.to_string(),
+                    ))
                 }
                 HTTP_METHOD_SEARCH => {
                     let Some(cp_ip) = src.as_socket_ipv4() else {
-                        println!("{src:?} is not an IPv4 source");
-                        return;
+                        return Err(HandleSearchMessageError::NoIPv4(Box::new(src.clone())));
                     };
                     println!("search from {:?}: {ssdp_message:?}", cp_ip.ip());
 
@@ -770,8 +829,7 @@ fn handle_search_message(
 
                     // either 239.255.255.250:1900 for multicast or unicast to this ip address and port
                     let Some(host) = extract_host(&ssdp_message) else {
-                        println!("missing HOST header, ignoring");
-                        return;
+                        return Err(HandleSearchMessageError::MissingHostHeader);
                     };
                     let multicast = is_multicast(&host);
 
@@ -787,8 +845,7 @@ fn handle_search_message(
                         if let Some(mx) = extract_mx(&ssdp_message) {
                             Some(mx)
                         } else {
-                            println!("multicast search missing MX header, ignoring");
-                            return;
+                            return Err(HandleSearchMessageError::MissingMulticastMxHeader);
                         }
                     } else {
                         None
@@ -803,7 +860,7 @@ fn handle_search_message(
                     // UUID that exactly matches the one advertised by the device, or if the M-SEARCH request
                     // matches a device type or service type supported by the device.
                     let Some(st) = extract_st(&ssdp_message) else {
-                        return;
+                        return Err(HandleSearchMessageError::MissingStHeader);
                     };
 
                     // TODO ConnectionManager service
@@ -818,11 +875,9 @@ fn handle_search_message(
                     } else if st.starts_with(format!("uuid:{device_uuid}").as_str()) {
                         println!("unexpected search target format: {st}");
                     } else if st.starts_with("uuid:") {
-                        println!("unintended search target reciptient: {st}");
-                        return;
+                        return Err(HandleSearchMessageError::SearchTargetUuidMismatch(st));
                     } else {
-                        println!("unknown search target {st}");
-                        return;
+                        return Err(HandleSearchMessageError::SearchTargetUnknown(st));
                     }
 
                     // if mulitcast, wait a random duration between 0 and MX seconds
@@ -906,13 +961,15 @@ fn handle_search_message(
                     //         println!("error sending advertisement: {err}");
                     //     }
                     // }
+
+                    Ok(())
                 }
-                _ => println!("something else: {}", ssdp_message.request_line),
+                _ => Err(HandleSearchMessageError::MethodUnknown(
+                    ssdp_message.request_line,
+                )),
             }
         }
-        Err(err) => {
-            println!("failed to parse ssdp message: {err}");
-        }
+        Err(err) => Err(HandleSearchMessageError::InvalidSSDPMessage(err)),
     }
 }
 
@@ -1570,7 +1627,8 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
-        );
+        )
+        .unwrap();
 
         let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
 
@@ -1619,7 +1677,8 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
-        );
+        )
+        .unwrap();
 
         let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
 
@@ -1668,7 +1727,8 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
-        );
+        )
+        .unwrap();
 
         let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
 
@@ -1717,7 +1777,8 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
-        );
+        )
+        .unwrap();
 
         let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
 
