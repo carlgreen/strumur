@@ -552,6 +552,15 @@ fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u
     (object_id, starting_index, requested_count)
 }
 
+fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
+    format!("
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>")
+}
+
 fn generate_browse_response(
     collection: &Collection,
     object_id: &[String],
@@ -595,13 +604,7 @@ fn generate_browse_response(
                 + "&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
                 + "&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
                 + "&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;";
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>10</NumberReturned>
-            <TotalMatches>10</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, 10, 10))
         }
         [root, next] if root == "0" && next == "albums" => {
             let total_matches = collection
@@ -643,14 +646,7 @@ fn generate_browse_response(
                     }
                 }
             }
-
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>{number_returned}</NumberReturned>
-            <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, number_returned, total_matches))
         }
         [root, next, album_id] if root == "0" && next == "albums" => {
             println!("lets find {album_id}");
@@ -693,13 +689,7 @@ fn generate_browse_response(
                     "&lt;item id=&quot;0$albums${album_id}$*i{id}&quot; parentID=&quot;0$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>{number_returned}</NumberReturned>
-            <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, number_returned, total_matches))
         }
         [root, next] if root == "0" && next == "=Artist" => {
             let total_matches = collection.artists.len();
@@ -722,13 +712,7 @@ fn generate_browse_response(
                     "&lt;container id=&quot;0$=Artist${id}&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>{number_returned}</NumberReturned>
-            <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, number_returned, total_matches))
         }
         [root, next, artist_id] if root == "0" && next == "=Artist" => {
             let things = ["albums", "items", "Date"];
@@ -772,13 +756,7 @@ fn generate_browse_response(
                     "&lt;container id=&quot;0$=Artist${artist_id}${sub_id}&quot; parentID=&quot;0$=Artist${artist_id}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>{number_returned}</NumberReturned>
-            <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, number_returned, total_matches))
         }
         [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
             let artist = collection
@@ -809,13 +787,7 @@ fn generate_browse_response(
                     "&lt;container id=&quot;0$=Artist${artist_id}$albums${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>{number_returned}</NumberReturned>
-            <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, number_returned, total_matches))
         }
         [root, next, artist_id, artist_what, album_id]
             if root == "0" && next == "=Artist" && artist_what == "albums" =>
@@ -854,13 +826,7 @@ fn generate_browse_response(
                     "&lt;item id=&quot;0$=Artist${artist_id}$albums${album_id}${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>{number_returned}</NumberReturned>
-            <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, number_returned, total_matches))
         }
         [root, next] if root == "0" && next == "=All Artists" => {
             let total_matches = collection.artists.len();
@@ -883,13 +849,7 @@ fn generate_browse_response(
                     "&lt;container id=&quot;0$=All Artists${id}&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            let response = format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>{number_returned}</NumberReturned>
-            <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>");
-            Some(response)
+            Some(format_response(&result, number_returned, total_matches))
         }
         _ => {
             println!("control: unexpected object ID: {object_id:?}");
