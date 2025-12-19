@@ -1,6 +1,7 @@
 extern crate socket2;
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::fs::File;
 use std::fs::read_to_string;
 use std::io::BufRead;
@@ -8,13 +9,14 @@ use std::io::BufReader;
 use std::io::ErrorKind;
 use std::io::Read;
 use std::io::Result;
-use std::io::Write;
+use std::io::Write as _;
 use std::net::TcpListener;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use chrono::NaiveDate;
 use chrono::Utc;
 use rand::Rng;
 use rand::rngs::ThreadRng;
@@ -110,6 +112,134 @@ impl SysInfo {
     }
 }
 
+#[derive(Clone, Debug)]
+struct Artist {
+    name: String,
+    albums: Vec<Album>,
+}
+
+#[derive(Clone, Debug)]
+struct Album {
+    title: String,
+    date: NaiveDate,
+    tracks: Vec<Track>,
+    cover: String,
+}
+
+#[derive(Clone, Debug)]
+struct Track {
+    number: u8,
+    title: String,
+    file: String,
+}
+
+#[derive(Clone, Debug)]
+struct Collection {
+    artists: Vec<Artist>,
+}
+
+fn make_album(artist_name: &str, album_title: &str, release_date: &str) -> Album {
+    let date = release_date.parse::<NaiveDate>().unwrap();
+    Album {
+        title: album_title.to_string(),
+        // date: NaiveDate::from_ymd_opt(1996, 2, 12).expect("invalid or out-of-range date"),
+        date,
+        tracks: vec![],
+        cover: format!("Music/{artist_name}/{album_title}/cover.jpg"),
+    }
+}
+
+fn make_track(artist_name: &str, album_title: &str, track_number: u8, track_title: &str) -> Track {
+    Track {
+        number: track_number,
+        title: track_title.to_string(),
+        file: format!("Music/{artist_name}/{album_title}/{track_number:02} {track_title}.flac")
+            .replace(' ', "*20"),
+    }
+}
+
+impl Collection {
+    fn fake() -> Self {
+        let mut a1 = make_album("abc", "a1", "1996-02-12");
+        a1.tracks = vec![
+            make_track("abc", "a1", 1, "a11"),
+            make_track("abc", "a1", 2, "a12"),
+            make_track("abc", "a1", 3, "a13"),
+            make_track("abc", "a1", 4, "a14"),
+        ];
+        let mut g1 = make_album("ghi", "g1", "1996-02-12");
+        g1.tracks = vec![
+            make_track("ghi", "g1", 1, "g11"),
+            make_track("ghi", "g1", 2, "g12"),
+            make_track("ghi", "g1", 3, "g13"),
+        ];
+        let mut h2 = make_album("ghi", "h2", "2002-07-30");
+        h2.tracks = vec![
+            make_track("ghi", "h2", 1, "h21"),
+            make_track("ghi", "h2", 2, "h22"),
+            make_track("ghi", "h2", 3, "h23"),
+            make_track("ghi", "h2", 4, "h24"),
+        ];
+        let mut i3 = make_album("ghi", "i3", "2011-11-11");
+        i3.tracks = vec![
+            make_track("ghi", "i3", 1, "i31"),
+            make_track("ghi", "i3", 2, "i32"),
+        ];
+        let j1 = make_album("jk", "j1", "1980-01-01");
+        let l1 = make_album("lm", "l1", "1982-02-02");
+        let n1 = make_album("nop", "n1", "1984-04-01");
+        let q1 = make_album("qrs", "q1", "1986-06-06");
+        let t1 = make_album("tuv", "t1", "1988-08-08");
+        let w1 = make_album("w", "w1", "1990-10-10");
+        let x1 = make_album("xyz", "x1", "1992-12-12");
+
+        Self {
+            artists: vec![
+                Artist {
+                    name: "abc".to_string(),
+                    albums: vec![a1],
+                },
+                Artist {
+                    name: "def".to_string(),
+                    albums: vec![make_album("def", "d1", "2005-07-02")],
+                },
+                Artist {
+                    name: "ghi".to_string(),
+                    albums: vec![g1, h2, i3],
+                },
+                Artist {
+                    name: "jk".to_string(),
+                    albums: vec![j1],
+                },
+                Artist {
+                    name: "lm".to_string(),
+                    albums: vec![l1],
+                },
+                Artist {
+                    name: "nop".to_string(),
+                    albums: vec![n1],
+                },
+                Artist {
+                    name: "qrs".to_string(),
+                    albums: vec![q1],
+                },
+                Artist {
+                    name: "tuv".to_string(),
+                    albums: vec![t1],
+                },
+                Artist {
+                    name: "w".to_string(),
+                    albums: vec![w1],
+                },
+                Artist {
+                    name: "xyz".to_string(),
+                    albums: vec![x1],
+                },
+            ],
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let mut rng = rand::rng();
 
@@ -134,17 +264,32 @@ fn main() -> Result<()> {
         }
     };
 
+    let collection = Collection::fake();
+
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
+        let addr = listener.local_addr().map_or_else(
+            |_| "unknown".to_string(),
+            |a| "http://".to_owned() + &a.to_string(),
+        );
         println!("listening on {}", listener.local_addr().unwrap());
         for stream in listener.incoming() {
             let stream = stream.unwrap();
+            let addr = addr.clone();
             let peer_addr = stream
                 .peer_addr()
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
+            let collection = collection.clone(); // TODO i don't want to clone this.
 
             thread::spawn(move || {
-                handle_device_connection(device_uuid, &peer_addr, &stream, &stream);
+                handle_device_connection(
+                    device_uuid,
+                    &addr,
+                    &peer_addr,
+                    &collection,
+                    &stream,
+                    &stream,
+                );
             });
         }
     });
@@ -329,8 +474,10 @@ fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> O
     }
 }
 
-fn parse_soap_request(body: &str) -> Option<Vec<String>> {
+fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
     let mut object_id = None;
+    let mut starting_index: Option<u16> = None;
+    let mut requested_count: Option<u16> = None;
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
     match body.get_child("Browse") {
@@ -366,16 +513,26 @@ fn parse_soap_request(body: &str) -> Option<Vec<String>> {
                         }
                     }
                     "StartingIndex" => {
-                        let starting_index = child.as_element().unwrap().get_text().unwrap();
-                        if starting_index == "0" {
-                            println!("start from zero. simple.");
-                        } else {
-                            println!("start from: {starting_index}. what's up");
-                        }
+                        starting_index = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        );
                     }
                     "RequestedCount" => {
-                        let requested_count = child.as_element().unwrap().get_text().unwrap();
-                        println!("only want: {requested_count}. what's up");
+                        requested_count = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        );
                     }
                     "SortCriteria" => {
                         let sort_criteria = child.as_element().unwrap().get_text();
@@ -392,92 +549,347 @@ fn parse_soap_request(body: &str) -> Option<Vec<String>> {
         None => panic!("no Browse child"),
     }
 
-    object_id
+    (object_id, starting_index, requested_count)
 }
 
-fn generate_browse_response(object_id: &[String]) -> (String, &'static str) {
+fn generate_browse_response(
+    collection: &Collection,
+    object_id: &[String],
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    addr: &str,
+) -> (String, &'static str) {
     let browse_response = match object_id {
         [root] if root == "0" => {
-            // TODO generate based on what i have?
-            let response = "
+            let album_count = collection
+                .artists
+                .iter()
+                .map(|artist| artist.albums.len())
+                .sum::<usize>();
+            let albums = format!(
+                "&lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_count} albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+            );
+            let items_count = collection
+                .artists
+                .iter()
+                .map(|artist| {
+                    artist
+                        .albums
+                        .iter()
+                        .map(|album| album.tracks.len())
+                        .sum::<usize>()
+                })
+                .sum::<usize>();
+            let items = format!(
+                "&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{items_count} items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+            );
+
+            // how much of this do i even care about?
+            let result = albums
+                + &items
+                + "&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;0 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                + "&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                + "&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                + "&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                + "&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                + "&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                + "&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                + "&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;";
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;2093 albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;22366 items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;706 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+{result}&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>10</NumberReturned>
             <TotalMatches>10</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
         [root, next] if root == "0" && next == "albums" => {
-            // TODO generate based on what i have?
-            let response = "
+            let total_matches = collection
+                .artists
+                .iter()
+                .map(|artist| artist.albums.len())
+                .sum::<usize>();
+            let starting_index = starting_index.unwrap().into();
+            let requested_count: usize = requested_count.unwrap().into();
+            let mut number_returned = 0;
+            let mut result = String::new();
+            let mut some_id = 0;
+            let mut skipped = 0;
+            'artists: for artist in &collection.artists {
+                // move on quickly if we're not up to the starting index
+                if skipped + artist.albums.len() <= starting_index {
+                    skipped += artist.albums.len();
+                    continue;
+                }
+                let artist_name = &artist.name;
+                for album in artist
+                    .albums
+                    .iter()
+                    .skip(starting_index - skipped)
+                    .take(requested_count - number_returned)
+                {
+                    number_returned += 1;
+                    let album_title = &album.title;
+                    let date = album.date.to_string();
+                    let track_count = album.tracks.len();
+                    let cover = format!("{}/{}", addr, album.cover);
+                    write!(
+                        result,
+                        "&lt;container id=&quot;0$albums$*a{some_id}&quot; parentID=&quot;0$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
+                    ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+                    some_id += 1;
+                    if number_returned >= requested_count {
+                        break 'artists;
+                    }
+                }
+            }
+
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;container id=&quot;0$albums$*a0&quot; parentID=&quot;0$albums&quot; childCount=&quot;5&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;74 Jailbreak&lt;/dc:title&gt;&lt;dc:date&gt;1984-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;AC/DC&lt;/upnp:artist&gt;&lt;dc:creator&gt;AC/DC&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;AC/DC&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/AC_DC/*2774*20Jailbreak/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a1&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Allelujah! Don&amp;apos;t Bend! Ascend!&lt;/dc:title&gt;&lt;dc:date&gt;2012-10-15&lt;/dc:date&gt;&lt;upnp:artist&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;dc:creator&gt;Godspeed You! Black Emperor&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Godspeed You! Black Emperor&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Godspeed*20You!*20Black*20Emperor/*27Allelujah!*20Don*27t*20Bend!*20Ascend!/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a2&quot; parentID=&quot;0$albums&quot; childCount=&quot;9&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;apos;Sno Angel Like You&lt;/dc:title&gt;&lt;upnp:genre&gt;Indie&lt;/upnp:genre&gt;&lt;dc:date&gt;2006-03-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;dc:creator&gt;Howe Gelb&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Howe Gelb&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Howe*20Gelb/*27Sno*20Angel*20Like*20You/02*20Paradise*20Here*20Abouts.mp3/$!picture-1938-34544.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a3&quot; parentID=&quot;0$albums&quot; childCount=&quot;12&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(VV:2) Venomous Villain&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, W. Pentz, A. Brooks, Di, ile, D., G. Jr. Valencia, I. Vasquetelle, G. Lamar Owens, W. Tolbert, L. McConnell, K. Thornton, M. Delaey, M. Delaney, L. Herron&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a4&quot; parentID=&quot;0$albums&quot; childCount=&quot;1&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(What&amp;apos;s the Story) Morning Glory?&lt;/dc:title&gt;&lt;upnp:genre&gt;Rock&lt;/upnp:genre&gt;&lt;dc:date&gt;1995-01-01&lt;/dc:date&gt;&lt;upnp:artist&gt;Oasis&lt;/upnp:artist&gt;&lt;dc:creator&gt;Oasis&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Oasis&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;Noel Gallagher&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Oasis/(What*27s*20the*20Story)*20Morning*20Glory_/12*20Champagne*20Supernova.mp3/$!picture-636-65528.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>500</NumberReturned>
-            <TotalMatches>2094</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
-        [root, next, _album_id] if root == "0" && next == "albums" => {
-            // TODO generate based on what i have?
-            let response = "
+        [root, next, album_id] if root == "0" && next == "albums" => {
+            println!("lets find {album_id}");
+            // dont' worry about this
+            let mut some_id = 0;
+            let mut found = None;
+            'artists: for artist in &collection.artists {
+                for album in &artist.albums {
+                    if &format!("*a{}", some_id + 1) == album_id {
+                        found = Some((artist, album));
+                        break 'artists;
+                    }
+                    some_id += 1;
+                }
+            }
+            let (artist, album) = found.unwrap_or_else(|| panic!("album {album_id} not found"));
+            let total_matches = album.tracks.len();
+            let starting_index = starting_index.unwrap().into();
+            let requested_count = requested_count.unwrap().into();
+            let mut number_returned = 0;
+            let artist_name = &artist.name;
+            let album_title = &album.title;
+            let date = album.date.to_string();
+            let cover = format!("{}/{}", addr, album.cover);
+            let mut result = String::new();
+            for (i, track) in album
+                .tracks
+                .iter()
+                .skip(starting_index)
+                .take(requested_count)
+                .enumerate()
+            {
+                number_returned += 1;
+                let id = starting_index + i + 1; // WTF
+                let track_title = &track.title;
+                let track_number = track.number;
+                let file = format!("{}/{}", addr, track.file);
+                write!(
+                    result,
+                    "&lt;item id=&quot;0$albums${album_id}$*i{id}&quot; parentID=&quot;0$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            }
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;item id=&quot;0$albums$*a3$*i20771&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Viktormizer (intro)&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:48.884&quot; size=&quot;6836179&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i1635&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Back End&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, W. Pentz&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/02*20Viktor*20Vaughn*20-*20Back*20End.mp3/$!picture-2696-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:33.161&quot; size=&quot;8609049&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/02*20Viktor*20Vaughn*20-*20Back*20End.mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i6218&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Fall Back / Titty Fat&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;A. Brooks, D. Dumile, Di, ile, D., G. Jr. Valencia&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/03*20Viktor*20Vaughn*20-*20Fall*20Back*20_*20Titty*20Fat.mp3/$!picture-2743-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:33.762&quot; size=&quot;8633152&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/03*20Viktor*20Vaughn*20-*20Fall*20Back*20_*20Titty*20Fat.mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i5207&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Doom on Vik&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, D. Dumile, G. Jr. Valencia, I. Vasquetelle&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/04*20Viktor*20Vaughn*20-*20Doom*20on*20Vik.mp3/$!picture-2724-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:01:53.505&quot; size=&quot;4618805&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/04*20Viktor*20Vaughn*20-*20Doom*20on*20Vik.mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a3$*i15037&quot; parentID=&quot;0$albums$*a3&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;R.A.P. G.A.M.E.&lt;/dc:title&gt;&lt;upnp:genre&gt;Hip Hop&lt;/upnp:genre&gt;&lt;dc:date&gt;2004-08-03&lt;/dc:date&gt;&lt;upnp:album&gt;(VV:2) Venomous Villain&lt;/upnp:album&gt;&lt;upnp:artist&gt;Viktor Vaughn feat. Manchild &amp;amp; Iz-Real&lt;/upnp:artist&gt;&lt;dc:creator&gt;Viktor Vaughn feat. Manchild &amp;amp; Iz-Real&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Viktor Vaughn&lt;/upnp:artist&gt;&lt;upnp:artist role=&quot;Composer&quot;&gt;MF Doom, G. Lamar Owens, I. Vasquetelle, W. Tolbert&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;5&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/05*20Viktor*20Vaughn*20feat.*20Manchild*20*26*20Iz-Real*20-*20R.A.P.*20G.A.M.E..mp3/$!picture-3014-70292.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:04:20.208&quot; size=&quot;10493110&quot; bitrate=&quot;40000&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/05*20Viktor*20Vaughn*20feat.*20Manchild*20*26*20Iz-Real*20-*20R.A.P.*20G.A.M.E..mp3&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>5</NumberReturned>
-            <TotalMatches>12</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
         [root, next] if root == "0" && next == "=Artist" => {
-            // TODO generate based on what i have?
-            let response = "
+            let total_matches = collection.artists.len();
+            let starting_index = starting_index.unwrap().into();
+            let requested_count = requested_count.unwrap().into();
+            let mut number_returned = 0;
+            let mut result = String::new();
+            for (i, artist) in collection
+                .artists
+                .iter()
+                .skip(starting_index)
+                .take(requested_count)
+                .enumerate()
+            {
+                number_returned += 1;
+                let id = starting_index + i + 1; // WTF
+                let name = &artist.name;
+                write!(
+                    result,
+                    "&lt;container id=&quot;0$=Artist${id}&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            }
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;container id=&quot;0$=Artist$10167&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[package radio]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$24015&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;1 Giant Leap&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$16832&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;1QA&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$1511&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;8 Foot Sativa&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$7&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Á Móti Sól&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>5</NumberReturned>
-            <TotalMatches>864</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
-        [root, next, _artist_id] if root == "0" && next == "=Artist" => {
-            // TODO generate based on what i have?
-            let response = "
+        [root, next, artist_id] if root == "0" && next == "=Artist" => {
+            let things = ["albums", "items", "Date"];
+            let starting_index = starting_index.unwrap().into();
+            let requested_count = requested_count.unwrap().into();
+            let total_matches = things.len();
+            let artist = collection
+                .artists
+                .get(artist_id.parse::<usize>().unwrap() - 1)
+                .unwrap();
+            let mut number_returned = 0;
+            let mut result = String::new();
+
+            for thing in things.iter().skip(starting_index).take(requested_count) {
+                number_returned += 1;
+                let (sub_id, title) = match *thing {
+                    "albums" => {
+                        let sub_id = (*thing).to_string();
+                        let albums = artist.albums.len();
+                        let title = format!("{albums} albums");
+                        (sub_id, title)
+                    }
+                    "items" => {
+                        let sub_id = (*thing).to_string();
+                        let items = artist
+                            .albums
+                            .iter()
+                            .map(|album| album.tracks.len())
+                            .sum::<usize>();
+                        let title = format!("{items} items");
+                        (sub_id, title)
+                    }
+                    _ => {
+                        let sub_id = format!("={thing}");
+                        let title = (*thing).to_string();
+                        (sub_id, title)
+                    }
+                };
+                write!(
+                    result,
+                    "&lt;container id=&quot;0$=Artist${artist_id}${sub_id}&quot; parentID=&quot;0$=Artist${artist_id}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            }
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;container id=&quot;0$=Artist$3187$albums&quot; parentID=&quot;0$=Artist$3187&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;3 albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$items&quot; parentID=&quot;0$=Artist$3187&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;43 items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$=Date&quot; parentID=&quot;0$=Artist$3187&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>3</NumberReturned>
-            <TotalMatches>3</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
-        [root, next, _artist_id, _artist_what] if root == "0" && next == "=Artist" => {
-            // TODO generate based on what i have?
-            let response = "
+        [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
+            let artist = collection
+                .artists
+                .get(artist_id.parse::<usize>().unwrap() - 1)
+                .unwrap();
+            let total_matches = artist.albums.len();
+            let starting_index = starting_index.unwrap().into();
+            let requested_count = requested_count.unwrap().into();
+            let mut number_returned = 0;
+            let artist_name = &artist.name;
+            let mut result = String::new();
+            for (i, album) in artist
+                .albums
+                .iter()
+                .skip(starting_index)
+                .take(requested_count)
+                .enumerate()
+            {
+                number_returned += 1;
+                let id = starting_index + i + 1; // WTF
+                let title = &album.title;
+                let date = album.date.to_string();
+                let track_count = album.tracks.len();
+                let cover = format!("{}/{}", addr, album.cover);
+                write!(
+                    result,
+                    "&lt;container id=&quot;0$=Artist${artist_id}$albums${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            }
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;container id=&quot;0$=Artist$3187$albums$*a251&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Amen&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a535&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;15&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Death Before Musick&lt;/dc:title&gt;&lt;dc:date&gt;2004-04-05&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Death*20Before*20Musick/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$3187$albums$*a2012&quot; parentID=&quot;0$=Artist$3187$albums&quot; childCount=&quot;14&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;We Have Come for Your Parents&lt;/dc:title&gt;&lt;dc:date&gt;2000-10-10&lt;/dc:date&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/We*20Have*20Come*20for*20Your*20Parents/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>3</NumberReturned>
-            <TotalMatches>3</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
-        [root, next, _artist_id, _artist_what, _artist_that]
-            if root == "0" && next == "=Artist" =>
+        [root, next, artist_id, artist_what, album_id]
+            if root == "0" && next == "=Artist" && artist_what == "albums" =>
         {
-            // TODO generate based on what i have?
-            let response = "
+            let artist = collection
+                .artists
+                .get(artist_id.parse::<usize>().unwrap() - 1)
+                .unwrap();
+            let album = artist
+                .albums
+                .get(album_id.parse::<usize>().unwrap() - 1)
+                .unwrap();
+            let total_matches = album.tracks.len();
+            let starting_index = starting_index.unwrap().into();
+            let requested_count = requested_count.unwrap().into();
+            let mut number_returned = 0;
+            let artist_name = &artist.name;
+            let album_title = &album.title;
+            let date = album.date.to_string();
+            let cover = format!("{}/{}", addr, album.cover);
+            let mut result = String::new();
+            for (i, track) in album
+                .tracks
+                .iter()
+                .skip(starting_index)
+                .take(requested_count)
+                .enumerate()
+            {
+                number_returned += 1;
+                let id = starting_index + i + 1; // WTF
+                let track_title = &track.title;
+                let track_number = track.number;
+                let file = format!("{}/{}", addr, track.file);
+                write!(
+                    result,
+                    "&lt;item id=&quot;0$=Artist${artist_id}$albums${album_id}${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            }
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i3830&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Coma America&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/01*20Coma*20America.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5260&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Down Human&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:44.266&quot; size=&quot;30269257&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/02*20Down*20Human.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i5397&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;Drive&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:08.000&quot; size=&quot;25014468&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/03*20Drive.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i13217&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;No Cure for the Pure&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:23.466&quot; size=&quot;25228115&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/04*20No*20Cure*20for*20the*20Pure.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$=Artist$3187$albums$*a251$*i21351&quot; parentID=&quot;0$=Artist$3187$albums$*a251&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;When a Man Dies a Woman&lt;/dc:title&gt;&lt;dc:date&gt;1999-09-21&lt;/dc:date&gt;&lt;upnp:album&gt;Amen&lt;/upnp:album&gt;&lt;upnp:artist&gt;Amen&lt;/upnp:artist&gt;&lt;dc:creator&gt;Amen&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;Amen&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;5&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:03:30.600&quot; size=&quot;28354574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/05*20When*20a*20Man*20Dies*20a*20Woman.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>5</NumberReturned>
-            <TotalMatches>14</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
         [root, next] if root == "0" && next == "=All Artists" => {
-            // TODO generate based on what i have?
-            let response = "
+            let total_matches = collection.artists.len();
+            let starting_index = starting_index.unwrap().into();
+            let requested_count = requested_count.unwrap().into();
+            let mut number_returned = 0;
+            let mut result = String::new();
+            for (i, artist) in collection
+                .artists
+                .iter()
+                .skip(starting_index)
+                .take(requested_count)
+                .enumerate()
+            {
+                number_returned += 1;
+                let id = starting_index + i + 1; // WTF
+                let name = &artist.name;
+                write!(
+                    result,
+                    "&lt;container id=&quot;0$=All Artists${id}&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            }
+            let response = format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-&lt;container id=&quot;0$=All Artists$18368&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;&amp;amp;U&amp;amp;I&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$19631&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;(Damn) This Desert Air&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$18913&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;-(16)-&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$20777&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;? and the Mysterians&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$7222&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[dialogue]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>5</NumberReturned>
-            <TotalMatches>3092</TotalMatches>
-            <UpdateID>25</UpdateID>";
-            Some(response.to_string())
+{result}&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>{number_returned}</NumberReturned>
+            <TotalMatches>{total_matches}</TotalMatches>
+            <UpdateID>25</UpdateID>");
+            Some(response)
         }
         _ => {
             println!("control: unexpected object ID: {object_id:?}");
@@ -500,7 +912,9 @@ fn generate_browse_response(object_id: &[String]) -> (String, &'static str) {
 
 fn handle_device_connection(
     device_uuid: Uuid,
+    addr: &str,
     peer_addr: &str,
+    collection: &Collection,
     input_stream: impl std::io::Read,
     mut output_stream: impl std::io::Write,
 ) {
@@ -544,7 +958,7 @@ fn handle_device_connection(
                 },
                 |soap_action| {
                     if soap_action == "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"" {
-                        let object_id = body.map_or_else(
+                        let (object_id, starting_index, requested_count) = body.map_or_else(
                             || {
                                 panic!("no body");
                             },
@@ -555,7 +969,15 @@ fn handle_device_connection(
                             || {
                                 panic!("no object id");
                             },
-                            |object_id| generate_browse_response(&object_id),
+                            |object_id| {
+                                generate_browse_response(
+                                    collection,
+                                    &object_id,
+                                    starting_index,
+                                    requested_count,
+                                    addr,
+                                )
+                            },
                         )
                     } else {
                         println!("control: unexpected soap action: {soap_action}");
@@ -1041,15 +1463,28 @@ mod tests {
 
     use super::*;
 
+    fn generate_test_collection() -> Collection {
+        Collection::fake()
+    }
+
     #[test]
     fn test_handle_get_device() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
+        let collection = generate_test_collection();
         let input = "GET /Device.xml HTTP/1.1\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1074,12 +1509,21 @@ mod tests {
     #[test]
     fn test_handle_get_content_directory() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
+        let collection = generate_test_collection();
         let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1101,7 +1545,11 @@ mod tests {
         assert!(body.contains("<name>Browse</name>"));
     }
 
-    fn generate_browse_request(object_id: &str) -> String {
+    fn generate_browse_request(
+        object_id: &str,
+        starting_index: u16,
+        requested_count: u16,
+    ) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
         let body = format!(
@@ -1112,8 +1560,8 @@ mod tests {
             <ObjectID>{object_id}</ObjectID>
             <BrowseFlag>BrowseDirectChildren</BrowseFlag>
             <Filter>*</Filter>
-            <StartingIndex>0</StartingIndex>
-            <RequestedCount>500</RequestedCount>
+            <StartingIndex>{starting_index}</StartingIndex>
+            <RequestedCount>{requested_count}</RequestedCount>
             <SortCriteria></SortCriteria>
         </u:Browse>
     </s:Body>
@@ -1182,12 +1630,21 @@ mod tests {
     #[test]
     fn test_handle_browse_content_root() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0");
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1210,15 +1667,15 @@ mod tests {
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
     <container id="0$albums" parentID="0" restricted="1" searchable="1">
-        <dc:title>2093 albums</dc:title>
+        <dc:title>12 albums</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
     <container id="0$items" parentID="0" restricted="1" searchable="1">
-        <dc:title>22366 items</dc:title>
+        <dc:title>13 items</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
     <container id="0$playlists" parentID="0" restricted="1" searchable="1">
-        <dc:title>706 playlists</dc:title>
+        <dc:title>0 playlists</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
     <container id="0$=Artist" parentID="0" restricted="1" searchable="1">
@@ -1259,99 +1716,21 @@ mod tests {
     #[test]
     fn test_handle_browse_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0$albums");
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$albums", 0, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
-
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
-
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
-
-        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
-
-        compare_xml(
-            &result,
-            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$albums$*a0" parentID="0$albums" childCount="5" restricted="1" searchable="1">
-        <dc:title>&apos;74 Jailbreak</dc:title>
-        <dc:date>1984-10-15</dc:date>
-        <upnp:artist>AC/DC</upnp:artist>
-        <dc:creator>AC/DC</dc:creator>
-        <upnp:artist role="AlbumArtist">AC/DC</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/AC_DC/*2774*20Jailbreak/cover.jpg</upnp:albumArtURI>
-        <upnp:class>object.container.album.musicAlbum</upnp:class>
-    </container>
-    <container id="0$albums$*a1" parentID="0$albums" childCount="1" restricted="1" searchable="1">
-        <dc:title>&apos;Allelujah! Don&apos;t Bend! Ascend!</dc:title>
-        <dc:date>2012-10-15</dc:date>
-        <upnp:artist>Godspeed You! Black Emperor</upnp:artist>
-        <dc:creator>Godspeed You! Black Emperor</dc:creator>
-        <upnp:artist role="AlbumArtist">Godspeed You! Black Emperor</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Godspeed*20You!*20Black*20Emperor/*27Allelujah!*20Don*27t*20Bend!*20Ascend!/cover.jpg</upnp:albumArtURI>
-        <upnp:class>object.container.album.musicAlbum</upnp:class>
-    </container>
-    <container id="0$albums$*a2" parentID="0$albums" childCount="9" restricted="1" searchable="1">
-        <dc:title>&apos;Sno Angel Like You</dc:title>
-        <upnp:genre>Indie</upnp:genre>
-        <dc:date>2006-03-21</dc:date>
-        <upnp:artist>Howe Gelb</upnp:artist>
-        <dc:creator>Howe Gelb</dc:creator>
-        <upnp:artist role="AlbumArtist">Howe Gelb</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Howe*20Gelb/*27Sno*20Angel*20Like*20You/02*20Paradise*20Here*20Abouts.mp3/$!picture-1938-34544.jpg</upnp:albumArtURI>
-        <upnp:class>object.container.album.musicAlbum</upnp:class>
-    </container>
-    <container id="0$albums$*a3" parentID="0$albums" childCount="12" restricted="1" searchable="1">
-        <dc:title>(VV:2) Venomous Villain</dc:title>
-        <upnp:genre>Hip Hop</upnp:genre>
-        <dc:date>2004-08-03</dc:date>
-        <upnp:artist>Viktor Vaughn</upnp:artist>
-        <dc:creator>Viktor Vaughn</dc:creator>
-        <upnp:artist role="AlbumArtist">Viktor Vaughn</upnp:artist>
-        <upnp:artist role="Composer">MF Doom, D. Dumile, W. Pentz, A. Brooks, Di, ile, D., G. Jr. Valencia, I. Vasquetelle, G. Lamar Owens, W. Tolbert, L. McConnell, K. Thornton, M. Delaey, M. Delaney, L. Herron</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg</upnp:albumArtURI>
-        <upnp:class>object.container.album.musicAlbum</upnp:class>
-    </container>
-    <container id="0$albums$*a4" parentID="0$albums" childCount="1" restricted="1" searchable="1">
-        <dc:title>(What&apos;s the Story) Morning Glory?</dc:title>
-        <upnp:genre>Rock</upnp:genre>
-        <dc:date>1995-01-01</dc:date>
-        <upnp:artist>Oasis</upnp:artist>
-        <dc:creator>Oasis</dc:creator>
-        <upnp:artist role="AlbumArtist">Oasis</upnp:artist>
-        <upnp:artist role="Composer">Noel Gallagher</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Oasis/(What*27s*20the*20Story)*20Morning*20Glory_/12*20Champagne*20Supernova.mp3/$!picture-636-65528.jpg</upnp:albumArtURI>
-        <upnp:class>object.container.album.musicAlbum</upnp:class>
-    </container>
-</DIDL-Lite>"#,
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
         );
-        assert_eq!(number_returned, 500);
-        assert_eq!(total_matches, 2094);
-        assert_eq!(update_id, "25");
-    }
-
-    #[test]
-    fn test_handle_browse_an_album_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0$albums$*a3");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
-
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1370,79 +1749,55 @@ mod tests {
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
+        // think about genre, composer, etc.
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <item id="0$albums$*a3$*i20771" parentID="0$albums$*a3" restricted="1">
-        <dc:title>Viktormizer (intro)</dc:title>
-        <upnp:genre>Hip Hop</upnp:genre>
-        <dc:date>2004-08-03</dc:date>
-        <upnp:album>(VV:2) Venomous Villain</upnp:album>
-        <upnp:artist>Viktor Vaughn</upnp:artist>
-        <dc:creator>Viktor Vaughn</dc:creator>
-        <upnp:artist role="AlbumArtist">Viktor Vaughn</upnp:artist>
-        <upnp:artist role="Composer">MF Doom</upnp:artist>
-        <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3/$!picture-2699-70292.jpg</upnp:albumArtURI>
-        <res duration="0:02:48.884" size="6836179" bitrate="40000" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/01*20Viktor*20Vaughn*20-*20Viktormizer*20(intro).mp3</res>
-        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-    </item>
-    <item id="0$albums$*a3$*i1635" parentID="0$albums$*a3" restricted="1">
-        <dc:title>Back End</dc:title>
-        <upnp:genre>Hip Hop</upnp:genre>
-        <dc:date>2004-08-03</dc:date>
-        <upnp:album>(VV:2) Venomous Villain</upnp:album>
-        <upnp:artist>Viktor Vaughn</upnp:artist>
-        <dc:creator>Viktor Vaughn</dc:creator>
-        <upnp:artist role="AlbumArtist">Viktor Vaughn</upnp:artist>
-        <upnp:artist role="Composer">MF Doom, D. Dumile, W. Pentz</upnp:artist>
-        <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/02*20Viktor*20Vaughn*20-*20Back*20End.mp3/$!picture-2696-70292.jpg</upnp:albumArtURI>
-        <res duration="0:03:33.161" size="8609049" bitrate="40000" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/02*20Viktor*20Vaughn*20-*20Back*20End.mp3</res>
-        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-    </item>
-    <item id="0$albums$*a3$*i6218" parentID="0$albums$*a3" restricted="1">
-        <dc:title>Fall Back / Titty Fat</dc:title>
-        <upnp:genre>Hip Hop</upnp:genre>
-        <dc:date>2004-08-03</dc:date>
-        <upnp:album>(VV:2) Venomous Villain</upnp:album>
-        <upnp:artist>Viktor Vaughn</upnp:artist>
-        <dc:creator>Viktor Vaughn</dc:creator>
-        <upnp:artist role="AlbumArtist">Viktor Vaughn</upnp:artist>
-        <upnp:artist role="Composer">A. Brooks, D. Dumile, Di, ile, D., G. Jr. Valencia</upnp:artist>
-        <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/03*20Viktor*20Vaughn*20-*20Fall*20Back*20_*20Titty*20Fat.mp3/$!picture-2743-70292.jpg</upnp:albumArtURI>
-        <res duration="0:03:33.762" size="8633152" bitrate="40000" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/03*20Viktor*20Vaughn*20-*20Fall*20Back*20_*20Titty*20Fat.mp3</res>
-        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-    </item>
-    <item id="0$albums$*a3$*i5207" parentID="0$albums$*a3" restricted="1">
-        <dc:title>Doom on Vik</dc:title>
-        <upnp:genre>Hip Hop</upnp:genre>
-        <dc:date>2004-08-03</dc:date>
-        <upnp:album>(VV:2) Venomous Villain</upnp:album>
-        <upnp:artist>Viktor Vaughn</upnp:artist>
-        <dc:creator>Viktor Vaughn</dc:creator>
-        <upnp:artist role="AlbumArtist">Viktor Vaughn</upnp:artist>
-        <upnp:artist role="Composer">MF Doom, D. Dumile, G. Jr. Valencia, I. Vasquetelle</upnp:artist>
-        <upnp:originalTrackNumber>4</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/04*20Viktor*20Vaughn*20-*20Doom*20on*20Vik.mp3/$!picture-2724-70292.jpg</upnp:albumArtURI>
-        <res duration="0:01:53.505" size="4618805" bitrate="40000" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/04*20Viktor*20Vaughn*20-*20Doom*20on*20Vik.mp3</res>
-        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-    </item>
-    <item id="0$albums$*a3$*i15037" parentID="0$albums$*a3" restricted="1">
-        <dc:title>R.A.P. G.A.M.E.</dc:title>
-        <upnp:genre>Hip Hop</upnp:genre>
-        <dc:date>2004-08-03</dc:date>
-        <upnp:album>(VV:2) Venomous Villain</upnp:album>
-        <upnp:artist>Viktor Vaughn feat. Manchild &amp; Iz-Real</upnp:artist>
-        <dc:creator>Viktor Vaughn feat. Manchild &amp; Iz-Real</dc:creator>
-        <upnp:artist role="AlbumArtist">Viktor Vaughn</upnp:artist>
-        <upnp:artist role="Composer">MF Doom, G. Lamar Owens, I. Vasquetelle, W. Tolbert</upnp:artist>
-        <upnp:originalTrackNumber>5</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/05*20Viktor*20Vaughn*20feat.*20Manchild*20*26*20Iz-Real*20-*20R.A.P.*20G.A.M.E..mp3/$!picture-3014-70292.jpg</upnp:albumArtURI>
-        <res duration="0:04:20.208" size="10493110" bitrate="40000" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_PN=MP3;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Viktor*20Vaughn/(VV*3a2)*20Venomous*20Villain/05*20Viktor*20Vaughn*20feat.*20Manchild*20*26*20Iz-Real*20-*20R.A.P.*20G.A.M.E..mp3</res>
-        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-    </item>
+    <container id="0$albums$*a0" parentID="0$albums" childCount="4" restricted="1" searchable="1">
+        <dc:title>a1</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:artist>abc</upnp:artist>
+        <dc:creator>abc</dc:creator>
+        <upnp:artist role="AlbumArtist">abc</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/abc/a1/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a1" parentID="0$albums" childCount="0" restricted="1" searchable="1">
+        <dc:title>d1</dc:title>
+        <dc:date>2005-07-02</dc:date>
+        <upnp:artist>def</upnp:artist>
+        <dc:creator>def</dc:creator>
+        <upnp:artist role="AlbumArtist">def</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/def/d1/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a2" parentID="0$albums" childCount="3" restricted="1" searchable="1">
+        <dc:title>g1</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a3" parentID="0$albums" childCount="4" restricted="1" searchable="1">
+        <dc:title>h2</dc:title>
+        <dc:date>2002-07-30</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a4" parentID="0$albums" childCount="2" restricted="1" searchable="1">
+        <dc:title>i3</dc:title>
+        <dc:date>2011-11-11</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
 </DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 5);
@@ -1451,14 +1806,106 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_browse_artists_content() {
+    fn test_handle_browse_an_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0$=Artist");
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$albums$*a3", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        // think about genre, composer, etc.
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+    <item id="0$albums$*a3$*i1" parentID="0$albums$*a3" restricted="1">
+        <dc:title>g11</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/01*20g11.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a3$*i2" parentID="0$albums$*a3" restricted="1">
+        <dc:title>g12</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/02*20g12.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a3$*i3" parentID="0$albums$*a3" restricted="1">
+        <dc:title>g13</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/03*20g13.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 3);
+        assert_eq!(total_matches, 3);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_artists_content() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
+        let peer_addr = "1.2.3.4";
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist", 0, 5);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1480,42 +1927,51 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=Artist$10167" parentID="0$=Artist" restricted="1" searchable="1">
-        <dc:title>[package radio]</dc:title>
+    <container id="0$=Artist$1" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>abc</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$24015" parentID="0$=Artist" restricted="1" searchable="1">
-        <dc:title>1 Giant Leap</dc:title>
+    <container id="0$=Artist$2" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>def</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$16832" parentID="0$=Artist" restricted="1" searchable="1">
-        <dc:title>1QA</dc:title>
+    <container id="0$=Artist$3" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>ghi</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$1511" parentID="0$=Artist" restricted="1" searchable="1">
-        <dc:title>8 Foot Sativa</dc:title>
+    <container id="0$=Artist$4" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>jk</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$7" parentID="0$=Artist" restricted="1" searchable="1">
-        <dc:title>Á Móti Sól</dc:title>
+    <container id="0$=Artist$5" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>lm</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
 </DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 5);
-        assert_eq!(total_matches, 864);
+        assert_eq!(total_matches, 10);
         assert_eq!(update_id, "25");
     }
 
     #[test]
     fn test_handle_browse_an_artist_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0$=Artist$3187");
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist$3", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1537,15 +1993,15 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=Artist$3187$albums" parentID="0$=Artist$3187" restricted="1" searchable="1">
+    <container id="0$=Artist$3$albums" parentID="0$=Artist$3" restricted="1" searchable="1">
         <dc:title>3 albums</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
-    <container id="0$=Artist$3187$items" parentID="0$=Artist$3187" restricted="1" searchable="1">
-        <dc:title>43 items</dc:title>
+    <container id="0$=Artist$3$items" parentID="0$=Artist$3" restricted="1" searchable="1">
+        <dc:title>9 items</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
-    <container id="0$=Artist$3187$=Date" parentID="0$=Artist$3187" restricted="1" searchable="1">
+    <container id="0$=Artist$3$=Date" parentID="0$=Artist$3" restricted="1" searchable="1">
         <dc:title>Date</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
@@ -1559,12 +2015,21 @@ mod tests {
     #[test]
     fn test_handle_browse_an_artist_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0$=Artist$3187$albums");
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist$3$albums", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1586,31 +2051,31 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=Artist$3187$albums$*a251" parentID="0$=Artist$3187$albums" childCount="14" restricted="1" searchable="1">
-        <dc:title>Amen</dc:title>
-        <dc:date>1999-09-21</dc:date>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg</upnp:albumArtURI>
+    <container id="0$=Artist$3$albums$1" parentID="0$=Artist$3$albums" childCount="3" restricted="1" searchable="1">
+        <dc:title>g1</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=Artist$3187$albums$*a535" parentID="0$=Artist$3187$albums" childCount="15" restricted="1" searchable="1">
-        <dc:title>Death Before Musick</dc:title>
-        <dc:date>2004-04-05</dc:date>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/Death*20Before*20Musick/cover.jpg</upnp:albumArtURI>
+    <container id="0$=Artist$3$albums$2" parentID="0$=Artist$3$albums" childCount="4" restricted="1" searchable="1">
+        <dc:title>h2</dc:title>
+        <dc:date>2002-07-30</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=Artist$3187$albums$*a2012" parentID="0$=Artist$3187$albums" childCount="14" restricted="1" searchable="1">
-        <dc:title>We Have Come for Your Parents</dc:title>
-        <dc:date>2000-10-10</dc:date>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/We*20Have*20Come*20for*20Your*20Parents/cover.jpg</upnp:albumArtURI>
+    <container id="0$=Artist$3$albums$3" parentID="0$=Artist$3$albums" childCount="2" restricted="1" searchable="1">
+        <dc:title>i3</dc:title>
+        <dc:date>2011-11-11</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
 </DIDL-Lite>"#,
@@ -1623,12 +2088,21 @@ mod tests {
     #[test]
     fn test_handle_browse_an_artist_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0$=Artist$3187$albums$*a251");
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist$3$albums$1", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1650,82 +2124,67 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <item id="0$=Artist$3187$albums$*a251$*i3830" parentID="0$=Artist$3187$albums$*a251" restricted="1">
-        <dc:title>Coma America</dc:title>
-        <dc:date>1999-09-21</dc:date>
-        <upnp:album>Amen</upnp:album>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
+    <item id="0$=Artist$3$albums$1$1" parentID="0$=Artist$3$albums$1" restricted="1">
+        <dc:title>g11</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/01*20Coma*20America.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/01*20g11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$=Artist$3187$albums$*a251$*i5260" parentID="0$=Artist$3187$albums$*a251" restricted="1">
-        <dc:title>Down Human</dc:title>
-        <dc:date>1999-09-21</dc:date>
-        <upnp:album>Amen</upnp:album>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
+    <item id="0$=Artist$3$albums$1$2" parentID="0$=Artist$3$albums$1" restricted="1">
+        <dc:title>g12</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg</upnp:albumArtURI>
-        <res duration="0:03:44.266" size="30269257" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/02*20Down*20Human.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$=Artist$3187$albums$*a251$*i5397" parentID="0$=Artist$3187$albums$*a251" restricted="1">
-        <dc:title>Drive</dc:title>
-        <dc:date>1999-09-21</dc:date>
-        <upnp:album>Amen</upnp:album>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
+    <item id="0$=Artist$3$albums$1$3" parentID="0$=Artist$3$albums$1" restricted="1">
+        <dc:title>g13</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg</upnp:albumArtURI>
-        <res duration="0:03:08.000" size="25014468" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/03*20Drive.flac</res>
-        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-    </item>
-    <item id="0$=Artist$3187$albums$*a251$*i13217" parentID="0$=Artist$3187$albums$*a251" restricted="1">
-        <dc:title>No Cure for the Pure</dc:title>
-        <dc:date>1999-09-21</dc:date>
-        <upnp:album>Amen</upnp:album>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
-        <upnp:originalTrackNumber>4</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg</upnp:albumArtURI>
-        <res duration="0:03:23.466" size="25228115" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/04*20No*20Cure*20for*20the*20Pure.flac</res>
-        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-    </item>
-    <item id="0$=Artist$3187$albums$*a251$*i21351" parentID="0$=Artist$3187$albums$*a251" restricted="1">
-        <dc:title>When a Man Dies a Woman</dc:title>
-        <dc:date>1999-09-21</dc:date>
-        <upnp:album>Amen</upnp:album>
-        <upnp:artist>Amen</upnp:artist>
-        <dc:creator>Amen</dc:creator>
-        <upnp:artist role="AlbumArtist">Amen</upnp:artist>
-        <upnp:originalTrackNumber>5</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/cover.jpg</upnp:albumArtURI>
-        <res duration="0:03:30.600" size="28354574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://192.168.1.2:9790/minimserver/*/Music/Amen/Amen/05*20When*20a*20Man*20Dies*20a*20Woman.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/03*20g13.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
 </DIDL-Lite>"#,
         );
-        assert_eq!(number_returned, 5);
-        assert_eq!(total_matches, 14);
+        assert_eq!(number_returned, 3);
+        assert_eq!(total_matches, 3);
         assert_eq!(update_id, "25");
     }
 
     #[test]
     fn test_handle_browse_all_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234";
         let peer_addr = "1.2.3.4";
-        let input = generate_browse_request("0$=All Artists");
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=All Artists", 0, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
-        handle_device_connection(test_device_uuid, peer_addr, input.as_bytes(), &mut cursor);
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
 
         let result = String::from_utf8(cursor.into_inner()).unwrap();
         let mut lines = result.lines();
@@ -1747,30 +2206,30 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=All Artists$18368" parentID="0$=All Artists" restricted="1" searchable="1">
-        <dc:title>&amp;U&amp;I</dc:title>
+    <container id="0$=All Artists$1" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>abc</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$19631" parentID="0$=All Artists" restricted="1" searchable="1">
-        <dc:title>(Damn) This Desert Air</dc:title>
+    <container id="0$=All Artists$2" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>def</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$18913" parentID="0$=All Artists" restricted="1" searchable="1">
-        <dc:title>-(16)-</dc:title>
+    <container id="0$=All Artists$3" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>ghi</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$20777" parentID="0$=All Artists" restricted="1" searchable="1">
-        <dc:title>? and the Mysterians</dc:title>
+    <container id="0$=All Artists$4" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>jk</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$7222" parentID="0$=All Artists" restricted="1" searchable="1">
-        <dc:title>[dialogue]</dc:title>
+    <container id="0$=All Artists$5" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>lm</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
 </DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 5);
-        assert_eq!(total_matches, 3092);
+        assert_eq!(total_matches, 10);
         assert_eq!(update_id, "25");
     }
 
