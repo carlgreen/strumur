@@ -649,7 +649,6 @@ fn generate_browse_response(
             Some(format_response(&result, number_returned, total_matches))
         }
         [root, next, album_id] if root == "0" && next == "albums" => {
-            println!("lets find {album_id}");
             // dont' worry about this
             let mut some_id = 0;
             let mut found = None;
