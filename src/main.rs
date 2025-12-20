@@ -874,13 +874,18 @@ fn generate_browse_all_artists_response(
 }
 
 fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
-    let result = xml::escape::escape_str_attribute(result);
-    format!("
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
-{result}&lt;/DIDL-Lite&gt;</Result>
+    let result = format!(
+        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+{result}</DIDL-Lite>"#
+    );
+    let result = xml::escape::escape_str_attribute(&result);
+    format!(
+        "
+            <Result>{result}</Result>
             <NumberReturned>{number_returned}</NumberReturned>
             <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>")
+            <UpdateID>25</UpdateID>"
+    )
 }
 
 fn generate_browse_response(
