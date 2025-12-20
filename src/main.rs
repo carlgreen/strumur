@@ -271,7 +271,7 @@ fn main() -> Result<()> {
         println!("listening on {}", listener.local_addr().unwrap());
         for stream in listener.incoming() {
             let stream = stream.unwrap();
-            let addr = format!("http://{}", stream.local_addr().unwrap());
+            let addr = format!("http://{}/Content", stream.local_addr().unwrap());
             let peer_addr = stream
                 .peer_addr()
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
@@ -1033,6 +1033,42 @@ fn handle_device_connection(
                 },
             )
         }
+        something if something.starts_with("GET /Content/") => {
+            if something.contains("cover.jpg") {
+                let content = include_bytes!("cover.jpg");
+                let length = content.len();
+                let status_line =
+                    format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
+                let response_headers = format!(
+                    "{status_line}\r\nContent-Type: image/jpeg\r\nContent-Length: {length}\r\n\r\n"
+                );
+                let response = [response_headers.as_bytes(), content].concat();
+                if let Err(err) = output_stream.write_all(&response[..]) {
+                    println!("error writing response: {err}");
+                }
+                return;
+            } else if something.contains(".flac") {
+                let content = include_bytes!("riff.flac");
+                let length = content.len();
+                let status_line =
+                    format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
+                let response_headers = format!(
+                    "{status_line}\r\nContent-Type: audio/flac\r\nContent-Length: {length}\r\n\r\n"
+                );
+                let response = [response_headers.as_bytes(), content].concat();
+                if let Err(err) = output_stream.write_all(&response[..]) {
+                    println!("error writing response: {err}");
+                }
+                return;
+            }
+
+            println!("unsupported /Content request for {something}");
+
+            (
+                format!("unsupported /Content request for {something}"),
+                "501 NOT IMPLEMENTED",
+            )
+        }
         _ => {
             println!("unknown request line: {request_line}");
 
@@ -1519,7 +1555,7 @@ mod tests {
     #[test]
     fn test_handle_get_device() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = "GET /Device.xml HTTP/1.1\r\n";
@@ -1558,7 +1594,7 @@ mod tests {
     #[test]
     fn test_handle_get_content_directory() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
@@ -1679,7 +1715,7 @@ mod tests {
     #[test]
     fn test_handle_browse_content_root() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0", 0, 500);
@@ -1765,7 +1801,7 @@ mod tests {
     #[test]
     fn test_handle_browse_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$albums", 0, 5);
@@ -1808,7 +1844,7 @@ mod tests {
         <upnp:artist>abc</upnp:artist>
         <dc:creator>abc</dc:creator>
         <upnp:artist role="AlbumArtist">abc</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/abc/a1/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/abc/a1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$albums$*a1" parentID="0$albums" childCount="0" restricted="1" searchable="1">
@@ -1817,7 +1853,7 @@ mod tests {
         <upnp:artist>def</upnp:artist>
         <dc:creator>def</dc:creator>
         <upnp:artist role="AlbumArtist">def</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/def/d1/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/def/d1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$albums$*a2" parentID="0$albums" childCount="3" restricted="1" searchable="1">
@@ -1826,7 +1862,7 @@ mod tests {
         <upnp:artist>ghi</upnp:artist>
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$albums$*a3" parentID="0$albums" childCount="4" restricted="1" searchable="1">
@@ -1835,7 +1871,7 @@ mod tests {
         <upnp:artist>ghi</upnp:artist>
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$albums$*a4" parentID="0$albums" childCount="2" restricted="1" searchable="1">
@@ -1844,7 +1880,7 @@ mod tests {
         <upnp:artist>ghi</upnp:artist>
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
 </DIDL-Lite>"#,
@@ -1857,7 +1893,7 @@ mod tests {
     #[test]
     fn test_handle_browse_an_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$albums$*a3", 0, 500);
@@ -1902,8 +1938,8 @@ mod tests {
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/01*20g11.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$albums$*a3$*i2" parentID="0$albums$*a3" restricted="1">
@@ -1914,8 +1950,8 @@ mod tests {
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/02*20g12.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$albums$*a3$*i3" parentID="0$albums$*a3" restricted="1">
@@ -1926,8 +1962,8 @@ mod tests {
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/03*20g13.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
 </DIDL-Lite>"#,
@@ -1940,7 +1976,7 @@ mod tests {
     #[test]
     fn test_handle_browse_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist", 0, 5);
@@ -2006,7 +2042,7 @@ mod tests {
     #[test]
     fn test_handle_browse_an_artist_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3", 0, 500);
@@ -2064,7 +2100,7 @@ mod tests {
     #[test]
     fn test_handle_browse_an_artist_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3$albums", 0, 500);
@@ -2106,7 +2142,7 @@ mod tests {
         <upnp:artist>ghi</upnp:artist>
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$=Artist$3$albums$2" parentID="0$=Artist$3$albums" childCount="4" restricted="1" searchable="1">
@@ -2115,7 +2151,7 @@ mod tests {
         <upnp:artist>ghi</upnp:artist>
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$=Artist$3$albums$3" parentID="0$=Artist$3$albums" childCount="2" restricted="1" searchable="1">
@@ -2124,7 +2160,7 @@ mod tests {
         <upnp:artist>ghi</upnp:artist>
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
 </DIDL-Lite>"#,
@@ -2137,7 +2173,7 @@ mod tests {
     #[test]
     fn test_handle_browse_an_artist_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3$albums$1", 0, 500);
@@ -2181,8 +2217,8 @@ mod tests {
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/01*20g11.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$=Artist$3$albums$1$2" parentID="0$=Artist$3$albums$1" restricted="1">
@@ -2193,8 +2229,8 @@ mod tests {
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/02*20g12.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$=Artist$3$albums$1$3" parentID="0$=Artist$3$albums$1" restricted="1">
@@ -2205,8 +2241,8 @@ mod tests {
         <dc:creator>ghi</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Music/ghi/g1/03*20g13.flac</res>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
 </DIDL-Lite>"#,
@@ -2219,7 +2255,7 @@ mod tests {
     #[test]
     fn test_handle_browse_all_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234";
+        let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists", 0, 5);
@@ -2280,6 +2316,145 @@ mod tests {
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
         assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_request_cover() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let peer_addr = "1.2.3.4";
+        let collection = generate_test_collection();
+        let input = "GET /Content/something/cover.jpg HTTP/1.1\r\n\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let mut line = Vec::new();
+        cursor.set_position(0);
+        let mut prev = None;
+        loop {
+            let mut buf = [0u8; 1];
+            cursor.read_exact(&mut buf).unwrap();
+            if prev == Some(b'\r') && buf[0] == b'\n' {
+                line.pop().unwrap(); // get rid of the \r
+                break;
+            }
+            line.push(buf[0]);
+            prev = Some(buf[0]);
+        }
+
+        assert_eq!(
+            String::from_utf8(line).unwrap(),
+            "HTTP/1.1 200 OK".to_string()
+        );
+
+        loop {
+            let mut line = Vec::new();
+            let mut prev = None;
+            loop {
+                let mut buf = [0u8; 1];
+                cursor.read_exact(&mut buf).unwrap();
+                if prev == Some(b'\r') && buf[0] == b'\n' {
+                    line.pop().unwrap(); // get rid of the \r
+                    break;
+                }
+                line.push(buf[0]);
+                prev = Some(buf[0]);
+            }
+            if line.is_empty() {
+                break;
+            }
+            // TODO check/use String::from_utf8(line).unwrap() ?
+        }
+
+        let mut body = Vec::new();
+        cursor.read_to_end(&mut body).unwrap();
+
+        // for now, can just check against the only image being returned
+
+        // let mut decoder = Decoder::new(&body[..]);
+        // let result = decoder.decode();
+        // assert!(
+        //     result.is_ok(),
+        //     "failed to decode image: {}",
+        //     result.err().unwrap()
+        // );
+
+        let want = include_bytes!("cover.jpg");
+        assert_eq!(body.as_slice(), want);
+    }
+
+    #[test]
+    fn test_request_song() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let peer_addr = "1.2.3.4";
+        let collection = generate_test_collection();
+        let input = "GET /Content/something/06*20big*20noise.flac HTTP/1.1\r\n\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let mut line = Vec::new();
+        cursor.set_position(0);
+        let mut prev = None;
+        loop {
+            let mut buf = [0u8; 1];
+            cursor.read_exact(&mut buf).unwrap();
+            if prev == Some(b'\r') && buf[0] == b'\n' {
+                line.pop().unwrap(); // get rid of the \r
+                break;
+            }
+            line.push(buf[0]);
+            prev = Some(buf[0]);
+        }
+
+        assert_eq!(
+            String::from_utf8(line).unwrap(),
+            "HTTP/1.1 200 OK".to_string()
+        );
+
+        loop {
+            let mut line = Vec::new();
+            let mut prev = None;
+            loop {
+                let mut buf = [0u8; 1];
+                cursor.read_exact(&mut buf).unwrap();
+                if prev == Some(b'\r') && buf[0] == b'\n' {
+                    line.pop().unwrap(); // get rid of the \r
+                    break;
+                }
+                line.push(buf[0]);
+                prev = Some(buf[0]);
+            }
+            if line.is_empty() {
+                break;
+            }
+            // TODO check/use String::from_utf8(line).unwrap() ?
+        }
+
+        let mut body = Vec::new();
+        cursor.read_to_end(&mut body).unwrap();
+
+        // for now, can just check against the only song being returned
+        let want = include_bytes!("riff.flac");
+        assert_eq!(body.as_slice(), want);
     }
 
     #[test]
