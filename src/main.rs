@@ -1034,26 +1034,22 @@ fn handle_device_connection(
             )
         }
         something if something.starts_with("GET /Content/") => {
-            if something.contains("cover.jpg") {
-                let content = include_bytes!("cover.jpg");
-                let length = content.len();
-                let status_line =
-                    format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
-                let response_headers = format!(
-                    "{status_line}\r\nContent-Type: image/jpeg\r\nContent-Length: {length}\r\n\r\n"
-                );
-                let response = [response_headers.as_bytes(), content].concat();
-                if let Err(err) = output_stream.write_all(&response[..]) {
-                    println!("error writing response: {err}");
-                }
-                return;
+            let content = if something.contains("cover.jpg") {
+                Some(("image/jpeg", &include_bytes!("cover.jpg")[..]))
             } else if something.contains(".flac") {
-                let content = include_bytes!("riff.flac");
+                Some(("audio/flac", &include_bytes!("riff.flac")[..]))
+            } else {
+                println!("unsupported /Content request for {something}");
+
+                None
+            };
+
+            if let Some((content_type, content)) = content {
                 let length = content.len();
                 let status_line =
                     format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
                 let response_headers = format!(
-                    "{status_line}\r\nContent-Type: audio/flac\r\nContent-Length: {length}\r\n\r\n"
+                    "{status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\n\r\n"
                 );
                 let response = [response_headers.as_bytes(), content].concat();
                 if let Err(err) = output_stream.write_all(&response[..]) {
@@ -1061,8 +1057,6 @@ fn handle_device_connection(
                 }
                 return;
             }
-
-            println!("unsupported /Content request for {something}");
 
             (
                 format!("unsupported /Content request for {something}"),
