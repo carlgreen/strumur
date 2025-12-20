@@ -555,7 +555,7 @@ fn generate_browse_root_response(collection: &Collection) -> String {
         .map(|artist| artist.albums.len())
         .sum::<usize>();
     let albums = format!(
-        "&lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_count} albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        r#"<container id="0$albums" parentID="0" restricted="1" searchable="1"><dc:title>{album_count} albums</dc:title><upnp:class>object.container</upnp:class></container>"#
     );
     let items_count = collection
         .artists
@@ -569,20 +569,20 @@ fn generate_browse_root_response(collection: &Collection) -> String {
         })
         .sum::<usize>();
     let items = format!(
-        "&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{items_count} items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        r#"<container id="0$items" parentID="0" restricted="1" searchable="1"><dc:title>{items_count} items</dc:title><upnp:class>object.container</upnp:class></container>"#
     );
 
     // how much of this do i even care about?
     let result = albums
         + &items
-        + "&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;0 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-        + "&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-        + "&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-        + "&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-        + "&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-        + "&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-        + "&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-        + "&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;";
+        + r#"<container id="0$playlists" parentID="0" restricted="1" searchable="1"><dc:title>0 playlists</dc:title><upnp:class>object.container</upnp:class></container>"#
+        + r#"<container id="0$=Artist" parentID="0" restricted="1" searchable="1"><dc:title>Artist</dc:title><upnp:class>object.container</upnp:class></container>"#
+        + r#"<container id="0$=Date" parentID="0" restricted="1" searchable="1"><dc:title>Date</dc:title><upnp:class>object.container</upnp:class></container>"#
+        + r#"<container id="0$=Genre" parentID="0" restricted="1" searchable="1"><dc:title>Genre</dc:title><upnp:class>object.container</upnp:class></container>"#
+        + r#"<container id="0$=All Artists" parentID="0" restricted="1" searchable="1"><dc:title>All Artists</dc:title><upnp:class>object.container</upnp:class></container>"#
+        + r#"<container id="0$=Composer" parentID="0" restricted="1" searchable="1"><dc:title>Composer</dc:title><upnp:class>object.container</upnp:class></container>"#
+        + r#"<container id="0$untagged" parentID="0" restricted="1" searchable="1"><dc:title>[untagged]</dc:title><upnp:class>object.container</upnp:class></container>"#
+        + r#"<container id="0$folders" parentID="0" restricted="1" searchable="1"><dc:title>[folder view]</dc:title><upnp:class>object.container.storageFolder</upnp:class></container>"#;
     format_response(&result, 10, 10)
 }
 
@@ -622,9 +622,9 @@ fn generate_browse_albums_response(
             let track_count = album.tracks.len();
             let cover = format!("{}/{}", addr, album.cover);
             write!(
-                        result,
-                        "&lt;container id=&quot;0$albums$*a{some_id}&quot; parentID=&quot;0$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
-                    ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+                result,
+                r#"<container id="0$albums$*a{some_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:date>{date}</dc:date><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+            ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             some_id += 1;
             if number_returned >= requested_count {
                 break 'artists;
@@ -676,9 +676,9 @@ fn generate_browse_an_album_response(
         let track_number = track.number;
         let file = format!("{}/{}", addr, track.file);
         write!(
-                    result,
-                    "&lt;item id=&quot;0$albums${album_id}$*i{id}&quot; parentID=&quot;0$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            result,
+            r#"<item id="0$albums${album_id}$*i{id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -704,9 +704,10 @@ fn generate_browse_artists_response(
         let id = starting_index + i + 1; // WTF
         let name = &artist.name;
         write!(
-                    result,
-                    "&lt;container id=&quot;0$=Artist${id}&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            result,
+            r#"<container id="0$=Artist${id}" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>{name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
+        )
+        .unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -754,9 +755,9 @@ fn generate_browse_an_artist_response(
             }
         };
         write!(
-                    result,
-                    "&lt;container id=&quot;0$=Artist${artist_id}${sub_id}&quot; parentID=&quot;0$=Artist${artist_id}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            result,
+            r#"<container id="0$=Artist${artist_id}${sub_id}" parentID="0$=Artist${artist_id}" restricted="1" searchable="1"><dc:title>{title}</dc:title><upnp:class>object.container</upnp:class></container>"#
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -792,9 +793,9 @@ fn generate_browse_an_artist_albums_response(
         let track_count = album.tracks.len();
         let cover = format!("{}/{}", addr, album.cover);
         write!(
-                    result,
-                    "&lt;container id=&quot;0$=Artist${artist_id}$albums${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            result,
+            r#"<container id="0$=Artist${artist_id}$albums${id}" parentID="0$=Artist${artist_id}$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{title}</dc:title><dc:date>{date}</dc:date><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -837,9 +838,9 @@ fn generate_browse_an_artist_album_response(
         let track_number = track.number;
         let file = format!("{}/{}", addr, track.file);
         write!(
-                    result,
-                    "&lt;item id=&quot;0$=Artist${artist_id}$albums${album_id}${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            result,
+            r#"<item id="0$=Artist${artist_id}$albums${album_id}${id}" parentID="0$=Artist${artist_id}$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -865,14 +866,15 @@ fn generate_browse_all_artists_response(
         let id = starting_index + i + 1; // WTF
         let name = &artist.name;
         write!(
-                    result,
-                    "&lt;container id=&quot;0$=All Artists${id}&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            result,
+            r#"<container id="0$=All Artists${id}" parentID="0$=All Artists" restricted="1" searchable="1"><dc:title>{name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
 }
 
 fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
+    let result = xml::escape::escape_str_attribute(result);
     format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
 {result}&lt;/DIDL-Lite&gt;</Result>

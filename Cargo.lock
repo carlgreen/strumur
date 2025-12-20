@@ -492,6 +492,7 @@ dependencies = [
  "socket2",
  "uuid",
  "x-diff-rs",
+ "xml",
  "xmltree",
 ]
 

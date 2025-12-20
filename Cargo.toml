@@ -9,6 +9,7 @@ os_info = "3.13.0"
 rand = "0.9.2"
 socket2 = { version = "0.6" }
 uuid = { version = "1.18", features = ["v4"] }
+xml = "1.2"
 xmltree = "0.12"
 
 [dev-dependencies]
