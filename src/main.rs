@@ -268,14 +268,10 @@ fn main() -> Result<()> {
 
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
-        let addr = listener.local_addr().map_or_else(
-            |_| "unknown".to_string(),
-            |a| "http://".to_owned() + &a.to_string(),
-        );
         println!("listening on {}", listener.local_addr().unwrap());
         for stream in listener.incoming() {
             let stream = stream.unwrap();
-            let addr = addr.clone();
+            let addr = format!("http://{}", stream.local_addr().unwrap());
             let peer_addr = stream
                 .peer_addr()
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
