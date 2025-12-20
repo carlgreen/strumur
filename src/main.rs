@@ -1045,7 +1045,9 @@ fn handle_device_connection(
     };
     let length = content.len();
     let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {result}");
-    let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{content}");
+    let response = format!(
+        "{status_line}\r\nContent-Type: text/xml; charset=utf-8\r\nContent-Length: {length}\r\n\r\n{content}"
+    );
     if let Err(err) = output_stream.write_all(response.as_bytes()) {
         println!("error writing response: {err}");
     }
