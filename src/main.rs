@@ -552,6 +552,330 @@ fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u
     (object_id, starting_index, requested_count)
 }
 
+fn generate_browse_root_response(collection: &Collection) -> String {
+    let album_count = collection
+        .artists
+        .iter()
+        .map(|artist| artist.albums.len())
+        .sum::<usize>();
+    let albums = format!(
+        "&lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_count} albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+    );
+    let items_count = collection
+        .artists
+        .iter()
+        .map(|artist| {
+            artist
+                .albums
+                .iter()
+                .map(|album| album.tracks.len())
+                .sum::<usize>()
+        })
+        .sum::<usize>();
+    let items = format!(
+        "&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{items_count} items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+    );
+
+    // how much of this do i even care about?
+    let result = albums
+        + &items
+        + "&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;0 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        + "&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        + "&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        + "&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        + "&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        + "&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        + "&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+        + "&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;";
+    format_response(&result, 10, 10)
+}
+
+fn generate_browse_albums_response(
+    collection: &Collection,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    addr: &str,
+) -> String {
+    let total_matches = collection
+        .artists
+        .iter()
+        .map(|artist| artist.albums.len())
+        .sum::<usize>();
+    let starting_index = starting_index.unwrap().into();
+    let requested_count: usize = requested_count.unwrap().into();
+    let mut number_returned = 0;
+    let mut result = String::new();
+    let mut some_id = 0;
+    let mut skipped = 0;
+    'artists: for artist in &collection.artists {
+        // move on quickly if we're not up to the starting index
+        if skipped + artist.albums.len() <= starting_index {
+            skipped += artist.albums.len();
+            continue;
+        }
+        let artist_name = &artist.name;
+        for album in artist
+            .albums
+            .iter()
+            .skip(starting_index - skipped)
+            .take(requested_count - number_returned)
+        {
+            number_returned += 1;
+            let album_title = &album.title;
+            let date = album.date.to_string();
+            let track_count = album.tracks.len();
+            let cover = format!("{}/{}", addr, album.cover);
+            write!(
+                        result,
+                        "&lt;container id=&quot;0$albums$*a{some_id}&quot; parentID=&quot;0$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
+                    ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            some_id += 1;
+            if number_returned >= requested_count {
+                break 'artists;
+            }
+        }
+    }
+    format_response(&result, number_returned, total_matches)
+}
+
+fn generate_browse_an_album_response(
+    collection: &Collection,
+    album_id: &str,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    addr: &str,
+) -> String {
+    // dont' worry about this
+    let mut some_id = 0;
+    let mut found = None;
+    'artists: for artist in &collection.artists {
+        for album in &artist.albums {
+            if format!("*a{}", some_id + 1) == album_id {
+                found = Some((artist, album));
+                break 'artists;
+            }
+            some_id += 1;
+        }
+    }
+    let (artist, album) = found.unwrap_or_else(|| panic!("album {album_id} not found"));
+    let total_matches = album.tracks.len();
+    let starting_index = starting_index.unwrap().into();
+    let requested_count = requested_count.unwrap().into();
+    let mut number_returned = 0;
+    let artist_name = &artist.name;
+    let album_title = &album.title;
+    let date = album.date.to_string();
+    let cover = format!("{}/{}", addr, album.cover);
+    let mut result = String::new();
+    for (i, track) in album
+        .tracks
+        .iter()
+        .skip(starting_index)
+        .take(requested_count)
+        .enumerate()
+    {
+        number_returned += 1;
+        let id = starting_index + i + 1; // WTF
+        let track_title = &track.title;
+        let track_number = track.number;
+        let file = format!("{}/{}", addr, track.file);
+        write!(
+                    result,
+                    "&lt;item id=&quot;0$albums${album_id}$*i{id}&quot; parentID=&quot;0$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+    }
+    format_response(&result, number_returned, total_matches)
+}
+
+fn generate_browse_artists_response(
+    collection: &Collection,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+) -> String {
+    let total_matches = collection.artists.len();
+    let starting_index = starting_index.unwrap().into();
+    let requested_count = requested_count.unwrap().into();
+    let mut number_returned = 0;
+    let mut result = String::new();
+    for (i, artist) in collection
+        .artists
+        .iter()
+        .skip(starting_index)
+        .take(requested_count)
+        .enumerate()
+    {
+        number_returned += 1;
+        let id = starting_index + i + 1; // WTF
+        let name = &artist.name;
+        write!(
+                    result,
+                    "&lt;container id=&quot;0$=Artist${id}&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+    }
+    format_response(&result, number_returned, total_matches)
+}
+
+fn generate_browse_an_artist_response(
+    collection: &Collection,
+    artist_id: &str,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+) -> String {
+    let things = ["albums", "items", "Date"];
+    let starting_index = starting_index.unwrap().into();
+    let requested_count = requested_count.unwrap().into();
+    let total_matches = things.len();
+    let artist = collection
+        .artists
+        .get(artist_id.parse::<usize>().unwrap() - 1)
+        .unwrap();
+    let mut number_returned = 0;
+    let mut result = String::new();
+
+    for thing in things.iter().skip(starting_index).take(requested_count) {
+        number_returned += 1;
+        let (sub_id, title) = match *thing {
+            "albums" => {
+                let sub_id = (*thing).to_string();
+                let albums = artist.albums.len();
+                let title = format!("{albums} albums");
+                (sub_id, title)
+            }
+            "items" => {
+                let sub_id = (*thing).to_string();
+                let items = artist
+                    .albums
+                    .iter()
+                    .map(|album| album.tracks.len())
+                    .sum::<usize>();
+                let title = format!("{items} items");
+                (sub_id, title)
+            }
+            _ => {
+                let sub_id = format!("={thing}");
+                let title = (*thing).to_string();
+                (sub_id, title)
+            }
+        };
+        write!(
+                    result,
+                    "&lt;container id=&quot;0$=Artist${artist_id}${sub_id}&quot; parentID=&quot;0$=Artist${artist_id}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+    }
+    format_response(&result, number_returned, total_matches)
+}
+
+fn generate_browse_an_artist_albums_response(
+    collection: &Collection,
+    artist_id: &str,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    addr: &str,
+) -> String {
+    let artist = collection
+        .artists
+        .get(artist_id.parse::<usize>().unwrap() - 1)
+        .unwrap();
+    let total_matches = artist.albums.len();
+    let starting_index = starting_index.unwrap().into();
+    let requested_count = requested_count.unwrap().into();
+    let mut number_returned = 0;
+    let artist_name = &artist.name;
+    let mut result = String::new();
+    for (i, album) in artist
+        .albums
+        .iter()
+        .skip(starting_index)
+        .take(requested_count)
+        .enumerate()
+    {
+        number_returned += 1;
+        let id = starting_index + i + 1; // WTF
+        let title = &album.title;
+        let date = album.date.to_string();
+        let track_count = album.tracks.len();
+        let cover = format!("{}/{}", addr, album.cover);
+        write!(
+                    result,
+                    "&lt;container id=&quot;0$=Artist${artist_id}$albums${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+    }
+    format_response(&result, number_returned, total_matches)
+}
+
+fn generate_browse_an_artist_album_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    addr: &str,
+) -> String {
+    let artist = collection
+        .artists
+        .get(artist_id.parse::<usize>().unwrap() - 1)
+        .unwrap();
+    let album = artist
+        .albums
+        .get(album_id.parse::<usize>().unwrap() - 1)
+        .unwrap();
+    let total_matches = album.tracks.len();
+    let starting_index = starting_index.unwrap().into();
+    let requested_count = requested_count.unwrap().into();
+    let mut number_returned = 0;
+    let artist_name = &artist.name;
+    let album_title = &album.title;
+    let date = album.date.to_string();
+    let cover = format!("{}/{}", addr, album.cover);
+    let mut result = String::new();
+    for (i, track) in album
+        .tracks
+        .iter()
+        .skip(starting_index)
+        .take(requested_count)
+        .enumerate()
+    {
+        number_returned += 1;
+        let id = starting_index + i + 1; // WTF
+        let track_title = &track.title;
+        let track_number = track.number;
+        let file = format!("{}/{}", addr, track.file);
+        write!(
+                    result,
+                    "&lt;item id=&quot;0$=Artist${artist_id}$albums${album_id}${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+    }
+    format_response(&result, number_returned, total_matches)
+}
+
+fn generate_browse_all_artists_response(
+    collection: &Collection,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+) -> String {
+    let total_matches = collection.artists.len();
+    let starting_index = starting_index.unwrap().into();
+    let requested_count = requested_count.unwrap().into();
+    let mut number_returned = 0;
+    let mut result = String::new();
+    for (i, artist) in collection
+        .artists
+        .iter()
+        .skip(starting_index)
+        .take(requested_count)
+        .enumerate()
+    {
+        number_returned += 1;
+        let id = starting_index + i + 1; // WTF
+        let name = &artist.name;
+        write!(
+                    result,
+                    "&lt;container id=&quot;0$=All Artists${id}&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
+                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+    }
+    format_response(&result, number_returned, total_matches)
+}
+
 fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
     format!("
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;
@@ -568,293 +892,61 @@ fn generate_browse_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> (String, &'static str) {
-    let browse_response = match object_id {
-        [root] if root == "0" => {
-            let album_count = collection
-                .artists
-                .iter()
-                .map(|artist| artist.albums.len())
-                .sum::<usize>();
-            let albums = format!(
-                "&lt;container id=&quot;0$albums&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_count} albums&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-            );
-            let items_count = collection
-                .artists
-                .iter()
-                .map(|artist| {
-                    artist
-                        .albums
-                        .iter()
-                        .map(|album| album.tracks.len())
-                        .sum::<usize>()
-                })
-                .sum::<usize>();
-            let items = format!(
-                "&lt;container id=&quot;0$items&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{items_count} items&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-            );
-
-            // how much of this do i even care about?
-            let result = albums
-                + &items
-                + "&lt;container id=&quot;0$playlists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;0 playlists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                + "&lt;container id=&quot;0$=Artist&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Artist&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                + "&lt;container id=&quot;0$=Date&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Date&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                + "&lt;container id=&quot;0$=Genre&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Genre&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                + "&lt;container id=&quot;0$=All Artists&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;All Artists&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                + "&lt;container id=&quot;0$=Composer&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;Composer&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                + "&lt;container id=&quot;0$untagged&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[untagged]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                + "&lt;container id=&quot;0$folders&quot; parentID=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;[folder view]&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.storageFolder&lt;/upnp:class&gt;&lt;/container&gt;";
-            Some(format_response(&result, 10, 10))
-        }
-        [root, next] if root == "0" && next == "albums" => {
-            let total_matches = collection
-                .artists
-                .iter()
-                .map(|artist| artist.albums.len())
-                .sum::<usize>();
-            let starting_index = starting_index.unwrap().into();
-            let requested_count: usize = requested_count.unwrap().into();
-            let mut number_returned = 0;
-            let mut result = String::new();
-            let mut some_id = 0;
-            let mut skipped = 0;
-            'artists: for artist in &collection.artists {
-                // move on quickly if we're not up to the starting index
-                if skipped + artist.albums.len() <= starting_index {
-                    skipped += artist.albums.len();
-                    continue;
-                }
-                let artist_name = &artist.name;
-                for album in artist
-                    .albums
-                    .iter()
-                    .skip(starting_index - skipped)
-                    .take(requested_count - number_returned)
-                {
-                    number_returned += 1;
-                    let album_title = &album.title;
-                    let date = album.date.to_string();
-                    let track_count = album.tracks.len();
-                    let cover = format!("{}/{}", addr, album.cover);
-                    write!(
-                        result,
-                        "&lt;container id=&quot;0$albums$*a{some_id}&quot; parentID=&quot;0$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{album_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
-                    ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-                    some_id += 1;
-                    if number_returned >= requested_count {
-                        break 'artists;
-                    }
-                }
+    let browse_response =
+        match object_id {
+            [root] if root == "0" => Some(generate_browse_root_response(collection)),
+            [root, next] if root == "0" && next == "albums" => Some(
+                generate_browse_albums_response(collection, starting_index, requested_count, addr),
+            ),
+            [root, next, album_id] if root == "0" && next == "albums" => {
+                Some(generate_browse_an_album_response(
+                    collection,
+                    album_id,
+                    starting_index,
+                    requested_count,
+                    addr,
+                ))
             }
-            Some(format_response(&result, number_returned, total_matches))
-        }
-        [root, next, album_id] if root == "0" && next == "albums" => {
-            // dont' worry about this
-            let mut some_id = 0;
-            let mut found = None;
-            'artists: for artist in &collection.artists {
-                for album in &artist.albums {
-                    if &format!("*a{}", some_id + 1) == album_id {
-                        found = Some((artist, album));
-                        break 'artists;
-                    }
-                    some_id += 1;
-                }
+            [root, next] if root == "0" && next == "=Artist" => Some(
+                generate_browse_artists_response(collection, starting_index, requested_count),
+            ),
+            [root, next, artist_id] if root == "0" && next == "=Artist" => {
+                Some(generate_browse_an_artist_response(
+                    collection,
+                    artist_id,
+                    starting_index,
+                    requested_count,
+                ))
             }
-            let (artist, album) = found.unwrap_or_else(|| panic!("album {album_id} not found"));
-            let total_matches = album.tracks.len();
-            let starting_index = starting_index.unwrap().into();
-            let requested_count = requested_count.unwrap().into();
-            let mut number_returned = 0;
-            let artist_name = &artist.name;
-            let album_title = &album.title;
-            let date = album.date.to_string();
-            let cover = format!("{}/{}", addr, album.cover);
-            let mut result = String::new();
-            for (i, track) in album
-                .tracks
-                .iter()
-                .skip(starting_index)
-                .take(requested_count)
-                .enumerate()
+            [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
+                Some(generate_browse_an_artist_albums_response(
+                    collection,
+                    artist_id,
+                    starting_index,
+                    requested_count,
+                    addr,
+                ))
+            }
+            [root, next, artist_id, artist_what, album_id]
+                if root == "0" && next == "=Artist" && artist_what == "albums" =>
             {
-                number_returned += 1;
-                let id = starting_index + i + 1; // WTF
-                let track_title = &track.title;
-                let track_number = track.number;
-                let file = format!("{}/{}", addr, track.file);
-                write!(
-                    result,
-                    "&lt;item id=&quot;0$albums${album_id}$*i{id}&quot; parentID=&quot;0$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+                Some(generate_browse_an_artist_album_response(
+                    collection,
+                    artist_id,
+                    album_id,
+                    starting_index,
+                    requested_count,
+                    addr,
+                ))
             }
-            Some(format_response(&result, number_returned, total_matches))
-        }
-        [root, next] if root == "0" && next == "=Artist" => {
-            let total_matches = collection.artists.len();
-            let starting_index = starting_index.unwrap().into();
-            let requested_count = requested_count.unwrap().into();
-            let mut number_returned = 0;
-            let mut result = String::new();
-            for (i, artist) in collection
-                .artists
-                .iter()
-                .skip(starting_index)
-                .take(requested_count)
-                .enumerate()
-            {
-                number_returned += 1;
-                let id = starting_index + i + 1; // WTF
-                let name = &artist.name;
-                write!(
-                    result,
-                    "&lt;container id=&quot;0$=Artist${id}&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+            [root, next] if root == "0" && next == "=All Artists" => Some(
+                generate_browse_all_artists_response(collection, starting_index, requested_count),
+            ),
+            _ => {
+                println!("control: unexpected object ID: {object_id:?}");
+                None
             }
-            Some(format_response(&result, number_returned, total_matches))
-        }
-        [root, next, artist_id] if root == "0" && next == "=Artist" => {
-            let things = ["albums", "items", "Date"];
-            let starting_index = starting_index.unwrap().into();
-            let requested_count = requested_count.unwrap().into();
-            let total_matches = things.len();
-            let artist = collection
-                .artists
-                .get(artist_id.parse::<usize>().unwrap() - 1)
-                .unwrap();
-            let mut number_returned = 0;
-            let mut result = String::new();
-
-            for thing in things.iter().skip(starting_index).take(requested_count) {
-                number_returned += 1;
-                let (sub_id, title) = match *thing {
-                    "albums" => {
-                        let sub_id = (*thing).to_string();
-                        let albums = artist.albums.len();
-                        let title = format!("{albums} albums");
-                        (sub_id, title)
-                    }
-                    "items" => {
-                        let sub_id = (*thing).to_string();
-                        let items = artist
-                            .albums
-                            .iter()
-                            .map(|album| album.tracks.len())
-                            .sum::<usize>();
-                        let title = format!("{items} items");
-                        (sub_id, title)
-                    }
-                    _ => {
-                        let sub_id = format!("={thing}");
-                        let title = (*thing).to_string();
-                        (sub_id, title)
-                    }
-                };
-                write!(
-                    result,
-                    "&lt;container id=&quot;0$=Artist${artist_id}${sub_id}&quot; parentID=&quot;0$=Artist${artist_id}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container&lt;/upnp:class&gt;&lt;/container&gt;"
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-            }
-            Some(format_response(&result, number_returned, total_matches))
-        }
-        [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
-            let artist = collection
-                .artists
-                .get(artist_id.parse::<usize>().unwrap() - 1)
-                .unwrap();
-            let total_matches = artist.albums.len();
-            let starting_index = starting_index.unwrap().into();
-            let requested_count = requested_count.unwrap().into();
-            let mut number_returned = 0;
-            let artist_name = &artist.name;
-            let mut result = String::new();
-            for (i, album) in artist
-                .albums
-                .iter()
-                .skip(starting_index)
-                .take(requested_count)
-                .enumerate()
-            {
-                number_returned += 1;
-                let id = starting_index + i + 1; // WTF
-                let title = &album.title;
-                let date = album.date.to_string();
-                let track_count = album.tracks.len();
-                let cover = format!("{}/{}", addr, album.cover);
-                write!(
-                    result,
-                    "&lt;container id=&quot;0$=Artist${artist_id}$albums${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums&quot; childCount=&quot;{track_count}&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;",
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-            }
-            Some(format_response(&result, number_returned, total_matches))
-        }
-        [root, next, artist_id, artist_what, album_id]
-            if root == "0" && next == "=Artist" && artist_what == "albums" =>
-        {
-            let artist = collection
-                .artists
-                .get(artist_id.parse::<usize>().unwrap() - 1)
-                .unwrap();
-            let album = artist
-                .albums
-                .get(album_id.parse::<usize>().unwrap() - 1)
-                .unwrap();
-            let total_matches = album.tracks.len();
-            let starting_index = starting_index.unwrap().into();
-            let requested_count = requested_count.unwrap().into();
-            let mut number_returned = 0;
-            let artist_name = &artist.name;
-            let album_title = &album.title;
-            let date = album.date.to_string();
-            let cover = format!("{}/{}", addr, album.cover);
-            let mut result = String::new();
-            for (i, track) in album
-                .tracks
-                .iter()
-                .skip(starting_index)
-                .take(requested_count)
-                .enumerate()
-            {
-                number_returned += 1;
-                let id = starting_index + i + 1; // WTF
-                let track_title = &track.title;
-                let track_number = track.number;
-                let file = format!("{}/{}", addr, track.file);
-                write!(
-                    result,
-                    "&lt;item id=&quot;0$=Artist${artist_id}$albums${album_id}${id}&quot; parentID=&quot;0$=Artist${artist_id}$albums${album_id}&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;{track_title}&lt;/dc:title&gt;&lt;dc:date&gt;{date}&lt;/dc:date&gt;&lt;upnp:album&gt;{album_title}&lt;/upnp:album&gt;&lt;upnp:artist&gt;{artist_name}&lt;/upnp:artist&gt;&lt;dc:creator&gt;{artist_name}&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;{artist_name}&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;{track_number}&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;{cover}&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; bitrate=&quot;176400&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;{file}&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;",
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-            }
-            Some(format_response(&result, number_returned, total_matches))
-        }
-        [root, next] if root == "0" && next == "=All Artists" => {
-            let total_matches = collection.artists.len();
-            let starting_index = starting_index.unwrap().into();
-            let requested_count = requested_count.unwrap().into();
-            let mut number_returned = 0;
-            let mut result = String::new();
-            for (i, artist) in collection
-                .artists
-                .iter()
-                .skip(starting_index)
-                .take(requested_count)
-                .enumerate()
-            {
-                number_returned += 1;
-                let id = starting_index + i + 1; // WTF
-                let name = &artist.name;
-                write!(
-                    result,
-                    "&lt;container id=&quot;0$=All Artists${id}&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;{name}&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;"
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-            }
-            Some(format_response(&result, number_returned, total_matches))
-        }
-        _ => {
-            println!("control: unexpected object ID: {object_id:?}");
-            None
-        }
-    };
+        };
     browse_response.map_or_else(|| (String::new(), "400 BAD REQUEST"), |browse_response| {
         let body = format!(
             r#"<?xml version="1.0" encoding="utf-8"?>
