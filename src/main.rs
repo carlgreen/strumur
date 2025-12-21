@@ -2,6 +2,7 @@ extern crate socket2;
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::fs;
 use std::fs::File;
 use std::fs::read_to_string;
 use std::io::BufRead;
@@ -138,108 +139,94 @@ struct Collection {
     artists: Vec<Artist>,
 }
 
-fn make_album(artist_name: &str, album_title: &str, release_date: &str) -> Album {
-    let date = release_date.parse::<NaiveDate>().unwrap();
-    Album {
-        title: album_title.to_string(),
-        // date: NaiveDate::from_ymd_opt(1996, 2, 12).expect("invalid or out-of-range date"),
-        date,
-        tracks: vec![],
-        cover: format!("Music/{artist_name}/{album_title}/cover.jpg"),
-    }
-}
+fn populate_collection(location: &str) -> Collection {
+    let mut collection = Collection { artists: vec![] };
 
-fn make_track(artist_name: &str, album_title: &str, track_number: u8, track_title: &str) -> Track {
-    Track {
-        number: track_number,
-        title: track_title.to_string(),
-        file: format!("Music/{artist_name}/{album_title}/{track_number:02} {track_title}.flac")
-            .replace(' ', "*20"),
-    }
-}
-
-impl Collection {
-    fn fake() -> Self {
-        let mut a1 = make_album("a<bc", "a1", "1996-02-12");
-        a1.tracks = vec![
-            make_track("a<bc", "a1", 1, "a11"),
-            make_track("a<bc", "a1", 2, "a12"),
-            make_track("a<bc", "a1", 3, "a13"),
-            make_track("a<bc", "a1", 4, "a14"),
-        ];
-        let mut g1 = make_album("ghi", "g1", "1996-02-12");
-        g1.tracks = vec![
-            make_track("ghi", "g1", 1, "g<11"),
-            make_track("ghi", "g1", 2, "g12"),
-            make_track("ghi", "g1", 3, "g13"),
-        ];
-        let mut h2 = make_album("ghi", "h2", "2002-07-30");
-        h2.tracks = vec![
-            make_track("ghi", "h2", 1, "h21"),
-            make_track("ghi", "h2", 2, "h22"),
-            make_track("ghi", "h2", 3, "h23"),
-            make_track("ghi", "h2", 4, "h24"),
-        ];
-        let mut i3 = make_album("ghi", "i3", "2011-11-11");
-        i3.tracks = vec![
-            make_track("ghi", "i3", 1, "i31"),
-            make_track("ghi", "i3", 2, "i32"),
-        ];
-        let j1 = make_album("jk", "j1", "1980-01-01");
-        let l1 = make_album("lm", "l1", "1982-02-02");
-        let n1 = make_album("nop", "n1", "1984-04-01");
-        let q1 = make_album("qrs", "q1", "1986-06-06");
-        let t1 = make_album("tuv", "t1", "1988-08-08");
-        let w1 = make_album("w", "w1", "1990-10-10");
-        let x1 = make_album("xyz", "x1", "1992-12-12");
-
-        Self {
-            artists: vec![
-                Artist {
-                    name: "a<bc".to_string(),
-                    albums: vec![a1],
-                },
-                Artist {
-                    name: "def".to_string(),
-                    albums: vec![make_album("def", "d<1", "2005-07-02")],
-                },
-                Artist {
-                    name: "ghi".to_string(),
-                    albums: vec![g1, h2, i3],
-                },
-                Artist {
-                    name: "jk".to_string(),
-                    albums: vec![j1],
-                },
-                Artist {
-                    name: "lm".to_string(),
-                    albums: vec![l1],
-                },
-                Artist {
-                    name: "nop".to_string(),
-                    albums: vec![n1],
-                },
-                Artist {
-                    name: "qrs".to_string(),
-                    albums: vec![q1],
-                },
-                Artist {
-                    name: "tuv".to_string(),
-                    albums: vec![t1],
-                },
-                Artist {
-                    name: "w".to_string(),
-                    albums: vec![w1],
-                },
-                Artist {
-                    name: "xyz".to_string(),
-                    albums: vec![x1],
-                },
-            ],
+    // naively assume folder structure is great!
+    let artist_dirs = fs::read_dir(location).expect("no Music folder location in home directory");
+    for path in artist_dirs.flatten() {
+        if !path.file_type().unwrap().is_dir() {
+            println!("non-directory found, ignoring: {}", path.path().display());
+            continue;
         }
-    }
-}
 
+        let artist_name = path.file_name().into_string().unwrap();
+        let mut artist = Artist {
+            name: artist_name.clone(),
+            albums: vec![],
+        };
+
+        let album_dirs = fs::read_dir(path.path()).unwrap();
+        for path in album_dirs.flatten() {
+            if !path.file_type().unwrap().is_dir() {
+                println!("non-directory found, ignoring: {}", path.path().display());
+                continue;
+            }
+
+            let album_title = path.file_name().into_string().unwrap();
+            let mut album = Album {
+                title: album_title.clone(),
+                date: Utc::now().naive_utc().date(), // placeholder
+                tracks: vec![],
+                cover: String::new(),
+            };
+
+            let album_files = fs::read_dir(path.path()).unwrap();
+            for path in album_files.flatten() {
+                if !path.file_type().unwrap().is_file() {
+                    println!("non-file found, ignoring: {}", path.path().display());
+                    continue;
+                }
+
+                let file_name = path.file_name().into_string().unwrap();
+                let p = path.path();
+                let ext = match p.extension() {
+                    Some(ext) => ext.to_str().unwrap(),
+                    None if p.starts_with(".") => p
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .strip_prefix('.')
+                        .unwrap(),
+                    None => {
+                        println!("skipping no extesion {file_name}");
+                        continue;
+                    }
+                };
+
+                match ext.to_lowercase().as_str() {
+                    "flac" | "m4a" | "m4p" | "mp3" | "ogg" | "wav" | "wma" => {
+                        let track = Track {
+                            number: 0,
+                            title: file_name,
+                            file: path.path().display().to_string(),
+                        };
+                        album.tracks.push(track);
+                    }
+                    "m4v" | "mpeg" => {
+                        println!("skipping video file {file_name}");
+                    }
+                    "m3u" => {
+                        println!("skipping playlist {file_name}");
+                    }
+                    "gif" | "jpg" | "jpeg" | "png" => {
+                        // TODO find cover
+                    }
+                    _ => {
+                        println!("skipping unknown extension {file_name}");
+                    }
+                }
+            }
+
+            artist.albums.push(album);
+        }
+
+        collection.artists.push(artist);
+    }
+
+    collection
+}
 fn main() -> Result<()> {
     let mut rng = rand::rng();
 
@@ -264,7 +251,7 @@ fn main() -> Result<()> {
         }
     };
 
-    let collection = Collection::fake();
+    let collection = populate_collection("../../Music/");
 
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
@@ -1556,8 +1543,109 @@ mod tests {
 
     use super::*;
 
+    fn make_album(artist_name: &str, album_title: &str, release_date: &str) -> Album {
+        let date = release_date.parse::<NaiveDate>().unwrap();
+        Album {
+            title: album_title.to_string(),
+            // date: NaiveDate::from_ymd_opt(1996, 2, 12).expect("invalid or out-of-range date"),
+            date,
+            tracks: vec![],
+            cover: format!("Music/{artist_name}/{album_title}/cover.jpg"),
+        }
+    }
+
+    fn make_track(
+        artist_name: &str,
+        album_title: &str,
+        track_number: u8,
+        track_title: &str,
+    ) -> Track {
+        Track {
+            number: track_number,
+            title: track_title.to_string(),
+            file: format!("Music/{artist_name}/{album_title}/{track_number:02} {track_title}.flac")
+                .replace(' ', "*20"),
+        }
+    }
+
     fn generate_test_collection() -> Collection {
-        Collection::fake()
+        let mut a1 = make_album("a<bc", "a1", "1996-02-12");
+        a1.tracks = vec![
+            make_track("a<bc", "a1", 1, "a11"),
+            make_track("a<bc", "a1", 2, "a12"),
+            make_track("a<bc", "a1", 3, "a13"),
+            make_track("a<bc", "a1", 4, "a14"),
+        ];
+        let mut g1 = make_album("ghi", "g1", "1996-02-12");
+        g1.tracks = vec![
+            make_track("ghi", "g1", 1, "g<11"),
+            make_track("ghi", "g1", 2, "g12"),
+            make_track("ghi", "g1", 3, "g13"),
+        ];
+        let mut h2 = make_album("ghi", "h2", "2002-07-30");
+        h2.tracks = vec![
+            make_track("ghi", "h2", 1, "h21"),
+            make_track("ghi", "h2", 2, "h22"),
+            make_track("ghi", "h2", 3, "h23"),
+            make_track("ghi", "h2", 4, "h24"),
+        ];
+        let mut i3 = make_album("ghi", "i3", "2011-11-11");
+        i3.tracks = vec![
+            make_track("ghi", "i3", 1, "i31"),
+            make_track("ghi", "i3", 2, "i32"),
+        ];
+        let j1 = make_album("jk", "j1", "1980-01-01");
+        let l1 = make_album("lm", "l1", "1982-02-02");
+        let n1 = make_album("nop", "n1", "1984-04-01");
+        let q1 = make_album("qrs", "q1", "1986-06-06");
+        let t1 = make_album("tuv", "t1", "1988-08-08");
+        let w1 = make_album("w", "w1", "1990-10-10");
+        let x1 = make_album("xyz", "x1", "1992-12-12");
+
+        Collection {
+            artists: vec![
+                Artist {
+                    name: "a<bc".to_string(),
+                    albums: vec![a1],
+                },
+                Artist {
+                    name: "def".to_string(),
+                    albums: vec![make_album("def", "d<1", "2005-07-02")],
+                },
+                Artist {
+                    name: "ghi".to_string(),
+                    albums: vec![g1, h2, i3],
+                },
+                Artist {
+                    name: "jk".to_string(),
+                    albums: vec![j1],
+                },
+                Artist {
+                    name: "lm".to_string(),
+                    albums: vec![l1],
+                },
+                Artist {
+                    name: "nop".to_string(),
+                    albums: vec![n1],
+                },
+                Artist {
+                    name: "qrs".to_string(),
+                    albums: vec![q1],
+                },
+                Artist {
+                    name: "tuv".to_string(),
+                    albums: vec![t1],
+                },
+                Artist {
+                    name: "w".to_string(),
+                    albums: vec![w1],
+                },
+                Artist {
+                    name: "xyz".to_string(),
+                    albums: vec![x1],
+                },
+            ],
+        }
     }
 
     #[test]
