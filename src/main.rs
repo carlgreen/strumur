@@ -1087,58 +1087,8 @@ fn handle_device_connection(
             )
         }
         something if something.starts_with("GET /Content/") => {
-            let content = if something.contains("cover.jpg") {
-                let request_path = urlencoding::decode(
-                    something
-                        .strip_prefix("GET /Content/")
-                        .unwrap()
-                        .strip_suffix(" HTTP/1.1")
-                        .unwrap(),
-                )
-                .unwrap();
-                let file = collection.base.join(request_path.as_ref());
-                let content = match fs::read(&file) {
-                    Ok(content) => content,
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                        let status_line = format!(
-                            "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} 404 NOT FOUND\r\n\r\n"
-                        );
-                        if let Err(err) = output_stream.write_all(status_line.as_bytes()) {
-                            println!("error writing response: {err}");
-                        }
-                        return;
-                    }
-                    Err(err) => {
-                        panic!("could not read {}: {err}", file.display());
-                    }
-                };
-                Some(("image/jpeg", content))
-            } else if something.contains(".flac") {
-                Some(("audio/flac", include_bytes!("riff.flac").to_vec()))
-            } else {
-                println!("unsupported /Content request for {something}");
-
-                None
-            };
-
-            if let Some((content_type, content)) = content {
-                let length = content.len();
-                let status_line =
-                    format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}");
-                let response_headers = format!(
-                    "{status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\n\r\n"
-                );
-                let response = [response_headers.as_bytes(), &content[..]].concat();
-                if let Err(err) = output_stream.write_all(&response[..]) {
-                    println!("error writing response: {err}");
-                }
-                return;
-            }
-
-            (
-                format!("unsupported /Content request for {something}"),
-                "501 NOT IMPLEMENTED",
-            )
+            content_handler(something, collection, output_stream);
+            return;
         }
         _ => {
             println!("unknown request line: {request_line}");
@@ -1146,13 +1096,83 @@ fn handle_device_connection(
             (String::new(), "404 NOT FOUND")
         }
     };
+
+    write_response(
+        result,
+        Some("text/xml; charset=utf-8"),
+        content.as_bytes(),
+        &mut output_stream,
+    );
+}
+
+fn write_response(
+    result: &str,
+    content_type: Option<&str>,
+    content: &[u8],
+    output_stream: &mut impl std::io::Write,
+) {
     let length = content.len();
     let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {result}");
-    let response = format!(
-        "{status_line}\r\nContent-Type: text/xml; charset=utf-8\r\nContent-Length: {length}\r\n\r\n{content}"
-    );
-    if let Err(err) = output_stream.write_all(response.as_bytes()) {
+    let content_type_header = content_type.map_or_else(String::new, |content_type| {
+        format!("\r\nContent-Type: {content_type}")
+    });
+    let response_headers =
+        format!("{status_line}{content_type_header}\r\nContent-Length: {length}\r\n\r\n");
+    let response = [response_headers.as_bytes(), content].concat();
+    if let Err(err) = output_stream.write_all(&response[..]) {
         println!("error writing response: {err}");
+    }
+}
+
+fn content_handler(
+    request_line: &str,
+    collection: &Collection,
+    mut output_stream: impl std::io::Write,
+) {
+    let content = if request_line.contains("cover.jpg") {
+        let request_path = urlencoding::decode(
+            request_line
+                .strip_prefix("GET /Content/")
+                .unwrap()
+                .strip_suffix(" HTTP/1.1")
+                .unwrap(),
+        )
+        .unwrap();
+        let file = collection.base.join(request_path.as_ref());
+        let content = match fs::read(&file) {
+            Ok(content) => content,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                write_response("404 NOT FOUND", None, &[], &mut output_stream);
+                return;
+            }
+            Err(err) => {
+                panic!("could not read {}: {err}", file.display());
+            }
+        };
+        Some(("image/jpeg", content))
+    } else if request_line.contains(".flac") {
+        Some(("audio/flac", include_bytes!("riff.flac").to_vec()))
+    } else {
+        println!("unsupported /Content request for {request_line}");
+
+        None
+    };
+
+    if let Some((content_type, content)) = content {
+        write_response(
+            HTTP_RESPONSE_OK,
+            Some(content_type),
+            &content,
+            &mut output_stream,
+        );
+    } else {
+        let content = format!("unsupported /Content request for {request_line}");
+        write_response(
+            "501 NOT IMPLEMENTED",
+            Some("text/plain; charset=utf-8"),
+            content.as_bytes(),
+            &mut output_stream,
+        );
     }
 }
 
