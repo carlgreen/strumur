@@ -237,13 +237,8 @@ fn populate_collection(location: &str) -> Collection {
                     }
                 }
                 if let Some(cover) = cover {
-                    let url = cover
-                        .strip_prefix(location)
-                        .unwrap()
-                        .components()
-                        .map(|c| urlencoding::encode(c.as_os_str().to_str().unwrap()).to_string())
-                        .collect::<Vec<String>>()
-                        .join("/");
+                    // TODO maybe this should store the local path, and encode it etc. on request?
+                    let url = encode_path_for_url(&cover, location);
                     album.cover = url;
                 } else {
                     println!("no suitable artwork found for {album_title} in {images:#?}");
@@ -273,6 +268,15 @@ fn find_something(images: &[PathBuf], name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn encode_path_for_url(path: &Path, location: &str) -> String {
+    path.strip_prefix(location)
+        .unwrap()
+        .components()
+        .map(|c| urlencoding::encode(c.as_os_str().to_str().unwrap()).to_string())
+        .collect::<Vec<String>>()
+        .join("/")
 }
 
 fn main() -> Result<()> {
