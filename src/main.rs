@@ -13,6 +13,8 @@ use std::io::Result;
 use std::io::Write as _;
 use std::net::TcpListener;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::Path;
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -136,11 +138,15 @@ struct Track {
 
 #[derive(Clone, Debug)]
 struct Collection {
+    base: PathBuf,
     artists: Vec<Artist>,
 }
 
 fn populate_collection(location: &str) -> Collection {
-    let mut collection = Collection { artists: vec![] };
+    let mut collection = Collection {
+        base: Path::new(location).to_path_buf(),
+        artists: vec![],
+    };
 
     // naively assume folder structure is great!
     let artist_dirs = fs::read_dir(location).expect("no Music folder location in home directory");
@@ -170,6 +176,8 @@ fn populate_collection(location: &str) -> Collection {
                 tracks: vec![],
                 cover: String::new(),
             };
+
+            let mut images = Vec::new();
 
             let album_files = fs::read_dir(path.path()).unwrap();
             for path in album_files.flatten() {
@@ -211,11 +219,34 @@ fn populate_collection(location: &str) -> Collection {
                         println!("skipping playlist {file_name}");
                     }
                     "gif" | "jpg" | "jpeg" | "png" => {
-                        // TODO find cover
+                        images.push(path.path());
                     }
                     _ => {
                         println!("skipping unknown extension {file_name}");
                     }
+                }
+            }
+
+            if !images.is_empty() {
+                let mut cover = None;
+                let candidates = vec!["cover.jpg", "folder.jpg"];
+                for candidate in candidates {
+                    cover = find_something(&images, candidate);
+                    if cover.is_some() {
+                        break;
+                    }
+                }
+                if let Some(cover) = cover {
+                    let url = cover
+                        .strip_prefix(location)
+                        .unwrap()
+                        .components()
+                        .map(|c| urlencoding::encode(c.as_os_str().to_str().unwrap()).to_string())
+                        .collect::<Vec<String>>()
+                        .join("/");
+                    album.cover = url;
+                } else {
+                    println!("no suitable artwork found for {album_title} in {images:#?}");
                 }
             }
 
@@ -227,6 +258,23 @@ fn populate_collection(location: &str) -> Collection {
 
     collection
 }
+
+fn find_something(images: &[PathBuf], name: &str) -> Option<PathBuf> {
+    for image in images {
+        if image
+            .file_name()
+            .unwrap()
+            .to_ascii_lowercase()
+            .to_str()
+            .unwrap()
+            == name.to_ascii_lowercase()
+        {
+            return Some(image.clone());
+        }
+    }
+    None
+}
+
 fn main() -> Result<()> {
     let mut rng = rand::rng();
 
@@ -1036,9 +1084,33 @@ fn handle_device_connection(
         }
         something if something.starts_with("GET /Content/") => {
             let content = if something.contains("cover.jpg") {
-                Some(("image/jpeg", &include_bytes!("cover.jpg")[..]))
+                let request_path = urlencoding::decode(
+                    something
+                        .strip_prefix("GET /Content/")
+                        .unwrap()
+                        .strip_suffix(" HTTP/1.1")
+                        .unwrap(),
+                )
+                .unwrap();
+                let file = collection.base.join(request_path.as_ref());
+                let content = match fs::read(&file) {
+                    Ok(content) => content,
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                        let status_line = format!(
+                            "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} 404 NOT FOUND\r\n\r\n"
+                        );
+                        if let Err(err) = output_stream.write_all(status_line.as_bytes()) {
+                            println!("error writing response: {err}");
+                        }
+                        return;
+                    }
+                    Err(err) => {
+                        panic!("could not read {}: {err}", file.display());
+                    }
+                };
+                Some(("image/jpeg", content))
             } else if something.contains(".flac") {
-                Some(("audio/flac", &include_bytes!("riff.flac")[..]))
+                Some(("audio/flac", include_bytes!("riff.flac").to_vec()))
             } else {
                 println!("unsupported /Content request for {something}");
 
@@ -1052,7 +1124,7 @@ fn handle_device_connection(
                 let response_headers = format!(
                     "{status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\n\r\n"
                 );
-                let response = [response_headers.as_bytes(), content].concat();
+                let response = [response_headers.as_bytes(), &content[..]].concat();
                 if let Err(err) = output_stream.write_all(&response[..]) {
                     println!("error writing response: {err}");
                 }
@@ -1603,6 +1675,7 @@ mod tests {
         let x1 = make_album("xyz", "x1", "1992-12-12");
 
         Collection {
+            base: PathBuf::from("./"),
             artists: vec![
                 Artist {
                     name: "a<bc".to_string(),
@@ -2421,7 +2494,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
-        let input = "GET /Content/something/cover.jpg HTTP/1.1\r\n\r\n";
+        let input = "GET /Content/src/cover.jpg HTTP/1.1\r\n\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
