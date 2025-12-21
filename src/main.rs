@@ -160,16 +160,16 @@ fn make_track(artist_name: &str, album_title: &str, track_number: u8, track_titl
 
 impl Collection {
     fn fake() -> Self {
-        let mut a1 = make_album("abc", "a1", "1996-02-12");
+        let mut a1 = make_album("a<bc", "a1", "1996-02-12");
         a1.tracks = vec![
-            make_track("abc", "a1", 1, "a11"),
-            make_track("abc", "a1", 2, "a12"),
-            make_track("abc", "a1", 3, "a13"),
-            make_track("abc", "a1", 4, "a14"),
+            make_track("a<bc", "a1", 1, "a11"),
+            make_track("a<bc", "a1", 2, "a12"),
+            make_track("a<bc", "a1", 3, "a13"),
+            make_track("a<bc", "a1", 4, "a14"),
         ];
         let mut g1 = make_album("ghi", "g1", "1996-02-12");
         g1.tracks = vec![
-            make_track("ghi", "g1", 1, "g11"),
+            make_track("ghi", "g1", 1, "g<11"),
             make_track("ghi", "g1", 2, "g12"),
             make_track("ghi", "g1", 3, "g13"),
         ];
@@ -196,12 +196,12 @@ impl Collection {
         Self {
             artists: vec![
                 Artist {
-                    name: "abc".to_string(),
+                    name: "a<bc".to_string(),
                     albums: vec![a1],
                 },
                 Artist {
                     name: "def".to_string(),
-                    albums: vec![make_album("def", "d1", "2005-07-02")],
+                    albums: vec![make_album("def", "d<1", "2005-07-02")],
                 },
                 Artist {
                     name: "ghi".to_string(),
@@ -609,7 +609,8 @@ fn generate_browse_albums_response(
             skipped += artist.albums.len();
             continue;
         }
-        let artist_name = &artist.name;
+        // let artist_name = &artist.name;
+        let artist_name = xml::escape::escape_str_attribute(&artist.name);
         for album in artist
             .albums
             .iter()
@@ -617,10 +618,11 @@ fn generate_browse_albums_response(
             .take(requested_count - number_returned)
         {
             number_returned += 1;
-            let album_title = &album.title;
+            let album_title = xml::escape::escape_str_attribute(&album.title);
             let date = album.date.to_string();
             let track_count = album.tracks.len();
             let cover = format!("{}/{}", addr, album.cover);
+            let cover = xml::escape::escape_str_attribute(&cover);
             write!(
                 result,
                 r#"<container id="0$albums$*a{some_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:date>{date}</dc:date><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
@@ -658,10 +660,11 @@ fn generate_browse_an_album_response(
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
-    let artist_name = &artist.name;
+    let artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = &album.title;
     let date = album.date.to_string();
     let cover = format!("{}/{}", addr, album.cover);
+    let cover = xml::escape::escape_str_attribute(&cover);
     let mut result = String::new();
     for (i, track) in album
         .tracks
@@ -672,9 +675,10 @@ fn generate_browse_an_album_response(
     {
         number_returned += 1;
         let id = starting_index + i + 1; // WTF
-        let track_title = &track.title;
+        let track_title = xml::escape::escape_str_attribute(&track.title);
         let track_number = track.number;
         let file = format!("{}/{}", addr, track.file);
+        let file = xml::escape::escape_str_attribute(&file);
         write!(
             result,
             r#"<item id="0$albums${album_id}$*i{id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
@@ -702,7 +706,7 @@ fn generate_browse_artists_response(
     {
         number_returned += 1;
         let id = starting_index + i + 1; // WTF
-        let name = &artist.name;
+        let name = xml::escape::escape_str_attribute(&artist.name);
         write!(
             result,
             r#"<container id="0$=Artist${id}" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>{name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
@@ -777,7 +781,7 @@ fn generate_browse_an_artist_albums_response(
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
-    let artist_name = &artist.name;
+    let artist_name = xml::escape::escape_str_attribute(&artist.name);
     let mut result = String::new();
     for (i, album) in artist
         .albums
@@ -788,10 +792,11 @@ fn generate_browse_an_artist_albums_response(
     {
         number_returned += 1;
         let id = starting_index + i + 1; // WTF
-        let title = &album.title;
+        let title = xml::escape::escape_str_attribute(&album.title);
         let date = album.date.to_string();
         let track_count = album.tracks.len();
         let cover = format!("{}/{}", addr, album.cover);
+        let cover = xml::escape::escape_str_attribute(&cover);
         write!(
             result,
             r#"<container id="0$=Artist${artist_id}$albums${id}" parentID="0$=Artist${artist_id}$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{title}</dc:title><dc:date>{date}</dc:date><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
@@ -820,10 +825,11 @@ fn generate_browse_an_artist_album_response(
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
-    let artist_name = &artist.name;
-    let album_title = &album.title;
+    let artist_name = xml::escape::escape_str_attribute(&artist.name);
+    let album_title = xml::escape::escape_str_attribute(&album.title);
     let date = album.date.to_string();
     let cover = format!("{}/{}", addr, album.cover);
+    let cover = xml::escape::escape_str_attribute(&cover);
     let mut result = String::new();
     for (i, track) in album
         .tracks
@@ -834,9 +840,10 @@ fn generate_browse_an_artist_album_response(
     {
         number_returned += 1;
         let id = starting_index + i + 1; // WTF
-        let track_title = &track.title;
+        let track_title = xml::escape::escape_str_attribute(&track.title);
         let track_number = track.number;
         let file = format!("{}/{}", addr, track.file);
+        let file = xml::escape::escape_str_attribute(&file);
         write!(
             result,
             r#"<item id="0$=Artist${artist_id}$albums${album_id}${id}" parentID="0$=Artist${artist_id}$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
@@ -864,7 +871,7 @@ fn generate_browse_all_artists_response(
     {
         number_returned += 1;
         let id = starting_index + i + 1; // WTF
-        let name = &artist.name;
+        let name = xml::escape::escape_str_attribute(&artist.name);
         write!(
             result,
             r#"<container id="0$=All Artists${id}" parentID="0$=All Artists" restricted="1" searchable="1"><dc:title>{name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
@@ -1666,6 +1673,7 @@ mod tests {
     }
 
     fn extract_browse_response(body: &str) -> (String, u16, u16, String) {
+        println!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let browse_response = body.get_child("BrowseResponse").unwrap();
@@ -1842,19 +1850,19 @@ mod tests {
     <container id="0$albums$*a0" parentID="0$albums" childCount="4" restricted="1" searchable="1">
         <dc:title>a1</dc:title>
         <dc:date>1996-02-12</dc:date>
-        <upnp:artist>abc</upnp:artist>
-        <dc:creator>abc</dc:creator>
-        <upnp:artist role="AlbumArtist">abc</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/abc/a1/cover.jpg</upnp:albumArtURI>
+        <upnp:artist>a&lt;bc</upnp:artist>
+        <dc:creator>a&lt;bc</dc:creator>
+        <upnp:artist role="AlbumArtist">a&lt;bc</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/a&lt;bc/a1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$albums$*a1" parentID="0$albums" childCount="0" restricted="1" searchable="1">
-        <dc:title>d1</dc:title>
+        <dc:title>d&lt;1</dc:title>
         <dc:date>2005-07-02</dc:date>
         <upnp:artist>def</upnp:artist>
         <dc:creator>def</dc:creator>
         <upnp:artist role="AlbumArtist">def</upnp:artist>
-        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/def/d1/cover.jpg</upnp:albumArtURI>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/def/d&lt;1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <container id="0$albums$*a2" parentID="0$albums" childCount="3" restricted="1" searchable="1">
@@ -1932,7 +1940,7 @@ mod tests {
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
     <item id="0$albums$*a3$*i1" parentID="0$albums$*a3" restricted="1">
-        <dc:title>g11</dc:title>
+        <dc:title>g&lt;11</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
         <upnp:artist>ghi</upnp:artist>
@@ -1940,7 +1948,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g11.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$albums$*a3$*i2" parentID="0$albums$*a3" restricted="1">
@@ -2014,7 +2022,7 @@ mod tests {
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
     <container id="0$=Artist$1" parentID="0$=Artist" restricted="1" searchable="1">
-        <dc:title>abc</dc:title>
+        <dc:title>a&lt;bc</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
     <container id="0$=Artist$2" parentID="0$=Artist" restricted="1" searchable="1">
@@ -2211,7 +2219,7 @@ mod tests {
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
     <item id="0$=Artist$3$albums$1$1" parentID="0$=Artist$3$albums$1" restricted="1">
-        <dc:title>g11</dc:title>
+        <dc:title>g&lt;11</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
         <upnp:artist>ghi</upnp:artist>
@@ -2219,7 +2227,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g11.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$=Artist$3$albums$1$2" parentID="0$=Artist$3$albums$1" restricted="1">
@@ -2293,7 +2301,7 @@ mod tests {
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
     <container id="0$=All Artists$1" parentID="0$=All Artists" restricted="1" searchable="1">
-        <dc:title>abc</dc:title>
+        <dc:title>a&lt;bc</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
     <container id="0$=All Artists$2" parentID="0$=All Artists" restricted="1" searchable="1">
