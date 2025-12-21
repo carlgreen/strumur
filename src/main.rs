@@ -205,10 +205,12 @@ fn populate_collection(location: &str) -> Collection {
 
                 match ext.to_lowercase().as_str() {
                     "flac" | "m4a" | "m4p" | "mp3" | "ogg" | "wav" | "wma" => {
+                        // TODO maybe this should store the local path, and encode it etc. on request?
+                        let url = encode_path_for_url(&path.path(), location);
                         let track = Track {
                             number: 0,
                             title: file_name,
-                            file: path.path().display().to_string(),
+                            file: url,
                         };
                         album.tracks.push(track);
                     }
@@ -1129,15 +1131,23 @@ fn content_handler(
     collection: &Collection,
     mut output_stream: impl std::io::Write,
 ) {
-    let content = if request_line.contains("cover.jpg") {
-        let request_path = urlencoding::decode(
-            request_line
-                .strip_prefix("GET /Content/")
-                .unwrap()
-                .strip_suffix(" HTTP/1.1")
-                .unwrap(),
-        )
-        .unwrap();
+    let request_path = urlencoding::decode(
+        request_line
+            .strip_prefix("GET /Content/")
+            .unwrap()
+            .strip_suffix(" HTTP/1.1")
+            .unwrap(),
+    )
+    .unwrap();
+    let content_type = if request_path.ends_with(".jpg") {
+        Some("image/jpeg")
+    } else if request_path.ends_with(".flac") {
+        Some("audio/flac")
+    } else {
+        None
+    };
+
+    if let Some(content_type) = content_type {
         let file = collection.base.join(request_path.as_ref());
         let content = match fs::read(&file) {
             Ok(content) => content,
@@ -1149,16 +1159,7 @@ fn content_handler(
                 panic!("could not read {}: {err}", file.display());
             }
         };
-        Some(("image/jpeg", content))
-    } else if request_line.contains(".flac") {
-        Some(("audio/flac", include_bytes!("riff.flac").to_vec()))
-    } else {
-        println!("unsupported /Content request for {request_line}");
 
-        None
-    };
-
-    if let Some((content_type, content)) = content {
         write_response(
             HTTP_RESPONSE_OK,
             Some(content_type),
@@ -1166,7 +1167,7 @@ fn content_handler(
             &mut output_stream,
         );
     } else {
-        let content = format!("unsupported /Content request for {request_line}");
+        let content = format!("unsupported /Content request for {request_path}");
         write_response(
             "501 NOT IMPLEMENTED",
             Some("text/plain; charset=utf-8"),
@@ -2592,7 +2593,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
-        let input = "GET /Content/something/06*20big*20noise.flac HTTP/1.1\r\n\r\n";
+        let input = "GET /Content/src/riff.flac HTTP/1.1\r\n\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
