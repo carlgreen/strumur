@@ -21,6 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
 use chrono::Utc;
+use log::{Level, debug, error, info, trace, warn};
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
@@ -143,6 +144,7 @@ struct Collection {
 }
 
 fn populate_collection(location: &str) -> Collection {
+    info!("populating collection from {location:?}");
     let mut collection = Collection {
         base: Path::new(location).to_path_buf(),
         artists: vec![],
@@ -152,7 +154,7 @@ fn populate_collection(location: &str) -> Collection {
     let artist_dirs = fs::read_dir(location).expect("no Music folder location in home directory");
     for path in artist_dirs.flatten() {
         if !path.file_type().unwrap().is_dir() {
-            println!("non-directory found, ignoring: {}", path.path().display());
+            debug!("non-directory found, ignoring: {}", path.path().display());
             continue;
         }
 
@@ -165,7 +167,7 @@ fn populate_collection(location: &str) -> Collection {
         let album_dirs = fs::read_dir(path.path()).unwrap();
         for path in album_dirs.flatten() {
             if !path.file_type().unwrap().is_dir() {
-                println!("non-directory found, ignoring: {}", path.path().display());
+                debug!("non-directory found, ignoring: {}", path.path().display());
                 continue;
             }
 
@@ -182,7 +184,7 @@ fn populate_collection(location: &str) -> Collection {
             let album_files = fs::read_dir(path.path()).unwrap();
             for path in album_files.flatten() {
                 if !path.file_type().unwrap().is_file() {
-                    println!("non-file found, ignoring: {}", path.path().display());
+                    debug!("non-file found, ignoring: {}", path.path().display());
                     continue;
                 }
 
@@ -198,7 +200,7 @@ fn populate_collection(location: &str) -> Collection {
                         .strip_prefix('.')
                         .unwrap(),
                     None => {
-                        println!("skipping no extesion {file_name}");
+                        debug!("skipping no extesion {file_name}");
                         continue;
                     }
                 };
@@ -215,16 +217,16 @@ fn populate_collection(location: &str) -> Collection {
                         album.tracks.push(track);
                     }
                     "m4v" | "mpeg" => {
-                        println!("skipping video file {file_name}");
+                        trace!("skipping video file {file_name}");
                     }
                     "m3u" => {
-                        println!("skipping playlist {file_name}");
+                        trace!("skipping playlist {file_name}");
                     }
                     "gif" | "jpg" | "jpeg" | "png" => {
                         images.push(path.path());
                     }
                     _ => {
-                        println!("skipping unknown extension {file_name}");
+                        trace!("skipping unknown extension {file_name}");
                     }
                 }
             }
@@ -243,7 +245,7 @@ fn populate_collection(location: &str) -> Collection {
                     let url = encode_path_for_url(&cover, location);
                     album.cover = url;
                 } else {
-                    println!("no suitable artwork found for {album_title} in {images:#?}");
+                    debug!("no suitable artwork found for {album_title} in {images:#?}");
                 }
             }
 
@@ -282,6 +284,12 @@ fn encode_path_for_url(path: &Path, location: &str) -> String {
 }
 
 fn main() -> Result<()> {
+    stderrlog::new()
+        .module(module_path!())
+        .verbosity(Level::Debug)
+        .init()
+        .unwrap();
+
     let mut rng = rand::rng();
 
     // TODO this file should probably be somewhere appropriate
@@ -309,7 +317,7 @@ fn main() -> Result<()> {
 
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
-        println!("listening on {}", listener.local_addr().unwrap());
+        info!("listening on {}", listener.local_addr().unwrap());
         for stream in listener.incoming() {
             let stream = stream.unwrap();
             let addr = format!("http://{}/Content", stream.local_addr().unwrap());
@@ -413,7 +421,7 @@ fn main() -> Result<()> {
                         &src,
                         &mut socket,
                     ) {
-                        println!("error handling search message: {err}");
+                        error!("error handling search message: {err}");
                     }
                 });
             }
@@ -433,19 +441,19 @@ fn parse_some_request_line(buf_reader: &mut BufReader<impl Read>, peer_addr: &st
     match buf_reader.read_line(&mut line) {
         Ok(size) => {
             if size == 0 {
-                println!("empty request from {peer_addr}");
+                warn!("empty request from {peer_addr}");
                 return String::new(); // TODO error
             }
             line.strip_suffix("\r\n").map_or_else(
                 || {
-                    println!("warning: expected CRLF terminated request line: {line:#?}");
+                    warn!("warning: expected CRLF terminated request line: {line:#?}");
                     line.clone()
                 },
                 ToString::to_string,
             )
         }
         Err(e) => {
-            println!("error reading request line: {e}");
+            error!("error reading request line: {e}");
             String::new() // TODO error
         }
     }
@@ -464,7 +472,7 @@ fn parse_some_headers(buf_reader: &mut BufReader<impl Read>) -> HashMap<String, 
                 }
                 line = line.strip_suffix("\r\n").map_or_else(
                     || {
-                        println!("warning: expected CRLF terminated header: {line:#?}");
+                        warn!("warning: expected CRLF terminated header: {line:#?}");
                         line.clone()
                     },
                     ToString::to_string,
@@ -475,7 +483,7 @@ fn parse_some_headers(buf_reader: &mut BufReader<impl Read>) -> HashMap<String, 
                 http_request_headers.insert(key, value);
             }
             Err(e) => {
-                println!("error reading header: {e}");
+                error!("error reading header: {e}");
                 break;
             }
         }
@@ -502,7 +510,7 @@ fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> O
     if content_length > 0 {
         let mut buf = vec![0; content_length];
         if let Err(e) = buf_reader.read_exact(&mut buf) {
-            println!("could not ready body: {e}");
+            error!("could not ready body: {e}");
         }
 
         Some(String::from_utf8(buf).expect("body is not UTF8"))
@@ -536,17 +544,17 @@ fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u
                     "BrowseFlag" => {
                         let browse_flag = child.as_element().unwrap().get_text().unwrap();
                         if browse_flag == "BrowseDirectChildren" {
-                            println!("direct children. simple.");
+                            info!("direct children. simple.");
                         } else {
-                            println!("browse flag: {browse_flag}. what's up");
+                            warn!("browse flag: {browse_flag}. what's up");
                         }
                     }
                     "Filter" => {
                         let filter = child.as_element().unwrap().get_text().unwrap();
                         if filter == "*" {
-                            println!("no filter. simple.");
+                            info!("no filter. simple.");
                         } else {
-                            println!("some filter: {filter}. what's up");
+                            warn!("some filter: {filter}. what's up");
                         }
                     }
                     "StartingIndex" => {
@@ -574,12 +582,12 @@ fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u
                     "SortCriteria" => {
                         let sort_criteria = child.as_element().unwrap().get_text();
                         if let Some(sort_criteria) = sort_criteria {
-                            println!("sort criteria: {sort_criteria}. what's up");
+                            warn!("sort criteria: {sort_criteria}. what's up");
                         } else {
-                            println!("no sort criteria. do i just make this up?");
+                            warn!("no sort criteria. do i just make this up?");
                         }
                     }
-                    anything => println!("what is {anything:?}"),
+                    anything => warn!("what is {anything:?}"),
                 }
             }
         }
@@ -994,7 +1002,7 @@ fn generate_browse_response(
                 generate_browse_all_artists_response(collection, starting_index, requested_count),
             ),
             _ => {
-                println!("control: unexpected object ID: {object_id:?}");
+                error!("control: unexpected object ID: {object_id:?}");
                 None
             }
         };
@@ -1023,18 +1031,18 @@ fn handle_device_connection(
     let mut buf_reader = BufReader::new(input_stream);
 
     let request_line = parse_some_request_line(&mut buf_reader, peer_addr);
-    println!("Request: {request_line}");
+    debug!("Request: {request_line}");
 
     let http_request_headers = parse_some_headers(&mut buf_reader);
-    println!("  headers: {http_request_headers:#?}");
+    debug!("  headers: {http_request_headers:#?}");
 
     let content_length = get_content_length(&request_line, &http_request_headers);
-    println!("content length: {content_length}");
+    debug!("content length: {content_length}");
 
     let body = parse_body(content_length, &mut buf_reader);
 
     let body = body.map(|body| {
-        println!("  body: {body}");
+        debug!("  body: {body}");
         body
     });
 
@@ -1055,7 +1063,7 @@ fn handle_device_connection(
         "POST /ContentDirectory/Control HTTP/1.1" => {
             http_request_headers.get("Soapaction").map_or_else(
                 || {
-                    println!("control: no soap action");
+                    warn!("control: no soap action");
                     (String::new(), "400 BAD REQUEST")
                 },
                 |soap_action| {
@@ -1082,7 +1090,7 @@ fn handle_device_connection(
                             },
                         )
                     } else {
-                        println!("control: unexpected soap action: {soap_action}");
+                        warn!("control: unexpected soap action: {soap_action}");
                         (String::new(), "400 BAD REQUEST")
                     }
                 },
@@ -1093,7 +1101,7 @@ fn handle_device_connection(
             return;
         }
         _ => {
-            println!("unknown request line: {request_line}");
+            warn!("unknown request line: {request_line}");
 
             (String::new(), "404 NOT FOUND")
         }
@@ -1122,7 +1130,7 @@ fn write_response(
         format!("{status_line}{content_type_header}\r\nContent-Length: {length}\r\n\r\n");
     let response = [response_headers.as_bytes(), content].concat();
     if let Err(err) = output_stream.write_all(&response[..]) {
-        println!("error writing response: {err}");
+        error!("error writing response: {err}");
     }
 }
 
@@ -1199,7 +1207,7 @@ fn advertise_discovery_messages(
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertisement: {err}");
+        error!("error sending advertisement: {err}");
     }
 
     let nt = format!("uuid:{device_uuid}");
@@ -1209,7 +1217,7 @@ fn advertise_discovery_messages(
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertisement: {err}");
+        error!("error sending advertisement: {err}");
     }
 
     let device_type = "MediaServer";
@@ -1221,7 +1229,7 @@ fn advertise_discovery_messages(
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertisement: {err}");
+        error!("error sending advertisement: {err}");
     }
 
     // - Two discovery messages for each embedded device - I don't have any embedded devices
@@ -1237,7 +1245,7 @@ fn advertise_discovery_messages(
         max_age.as_secs()
     );
     if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-        println!("error sending advertisement: {err}");
+        error!("error sending advertisement: {err}");
     }
 
     // TODO ConnectionManager service
@@ -1250,7 +1258,7 @@ fn advertise_discovery_messages(
     //     max_age.as_secs()
     // );
     // if let Err(err) = socket.send_to(advertisement.as_bytes(), &SockAddr::from(addr)) {
-    //     println!("error sending advertisement: {err}");
+    //     error!("error sending advertisement: {err}");
     // }
 
     // TODO above messages should be resent periodically
@@ -1275,9 +1283,9 @@ fn is_multicast(host: &str) -> bool {
     if host == SSDP_IPV4_MULTICAST_ADDRESS {
         true
     } else {
-        println!("unicast search");
+        trace!("unicast search");
         let unicast = host.parse::<SocketAddr>().unwrap();
-        println!("  - {}:{}", unicast.ip(), unicast.port());
+        trace!("  - {}:{}", unicast.ip(), unicast.port());
         false
     }
 }
@@ -1330,9 +1338,9 @@ fn generate_advertisement(
 }
 
 fn send_advertisement(usn: &str, advertisement: &str, socket: &mut dyn SocketToMe, src: &SockAddr) {
-    println!("send {usn}");
+    debug!("send {usn}");
     if let Err(err) = socket.send_to(advertisement.as_bytes(), src) {
-        println!("error sending advertisement: {err}");
+        error!("error sending advertisement: {err}");
     }
 }
 
@@ -1424,7 +1432,7 @@ fn handle_search_message(
         parse_request_line(&ssdp_message.request_line).unwrap();
     match method.as_str() {
         HTTP_METHOD_NOTIFY => {
-            // println!(
+            // info!(
             //     "notify from {:?}: {ssdp_message:?}",
             //     src.as_socket_ipv4().unwrap().ip()
             // );
@@ -1436,7 +1444,7 @@ fn handle_search_message(
             let cp_ip = src
                 .as_socket_ipv4()
                 .ok_or_else(|| HandleSearchMessageError::NoIPv4(Box::new(src.clone())))?;
-            println!("search from {:?}: {ssdp_message:?}", cp_ip.ip());
+            info!("search from {:?}: {ssdp_message:?}", cp_ip.ip());
 
             // expect like:
             // M-SEARCH * HTTP/1.1
@@ -1484,9 +1492,9 @@ fn handle_search_message(
                 || st == "urn:schemas-upnp-org:service:ContentDirectory:1"
             // || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
             {
-                println!("ok search target: {st}");
+                info!("ok search target: {st}");
             } else if st.starts_with(format!("uuid:{device_uuid}").as_str()) {
-                println!("unexpected search target format: {st}");
+                warn!("unexpected search target format: {st}");
             } else if st.starts_with("uuid:") {
                 return Err(HandleSearchMessageError::SearchTargetUuidMismatch(st));
             } else {
@@ -1544,10 +1552,10 @@ fn handle_search_message(
             //         "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
             //         max_age.as_secs()
             //     );
-            //     println!("send {usn}");
+            //     trace!("send {usn}");
             //     if let Err(err) = socket.send_to(advertisement.as_bytes(), &src)
             //     {
-            //         println!("error sending advertisement: {err}");
+            //         error!("error sending advertisement: {err}");
             //     }
             // }
 
@@ -1859,7 +1867,7 @@ mod tests {
     }
 
     fn extract_browse_response(body: &str) -> (String, u16, u16, String) {
-        println!("about to parse {body}");
+        debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let browse_response = body.get_child("BrowseResponse").unwrap();
