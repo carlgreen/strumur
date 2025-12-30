@@ -454,6 +454,7 @@ fn handle_search_error(err: &HandleSearchMessageError) {
         | HandleSearchMessageError::UnhandledRequestLine(_)
         | HandleSearchMessageError::NoIPv4(_)
         | HandleSearchMessageError::MissingHostHeader
+        | HandleSearchMessageError::MissingUserAgentHeader
         | HandleSearchMessageError::MissingMulticastMxHeader
         | HandleSearchMessageError::MissingStHeader
         | HandleSearchMessageError::SearchTargetUuidMismatch(_)
@@ -1299,6 +1300,37 @@ fn advertise_discovery_messages(
     // TODO above messages should be resent periodically
 }
 
+fn extract_display_name(
+    ssdp_message: &SSDPMessage,
+) -> std::result::Result<String, HandleSearchMessageError> {
+    trace!(
+        "extracting display name from SSDP message: {:#?}",
+        ssdp_message.headers
+    );
+
+    // if a friendly name is provided why not use that?
+    if let Some(friendly_name_key) = ssdp_message
+        .headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("CPFN.UPNP.ORG"))
+        && let Some(friendly_name) = ssdp_message.headers.get(friendly_name_key)
+    {
+        return Ok(friendly_name.clone());
+    }
+
+    // is USER-AGENT mandatory? if not, then what?
+    let user_agent_key = ssdp_message
+        .headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("USER-AGENT"))
+        .ok_or(HandleSearchMessageError::MissingUserAgentHeader)?;
+    ssdp_message
+        .headers
+        .get(user_agent_key)
+        .ok_or(HandleSearchMessageError::MissingUserAgentHeader)
+        .cloned()
+}
+
 fn extract_host(
     ssdp_message: &SSDPMessage,
 ) -> std::result::Result<String, HandleSearchMessageError> {
@@ -1387,6 +1419,7 @@ enum HandleSearchMessageError {
     UnhandledRequestLine(String),
     NoIPv4(Box<SockAddr>),
     MissingHostHeader,
+    MissingUserAgentHeader,
     MissingMulticastMxHeader,
     MissingStHeader,
     SearchTargetUuidMismatch(String),
@@ -1409,6 +1442,9 @@ impl std::fmt::Display for HandleSearchMessageError {
             }
             Self::MissingHostHeader => {
                 write!(f, "missing HOST header, ignoring")
+            }
+            Self::MissingUserAgentHeader => {
+                write!(f, "missing USER-AGENT header, ignoring")
             }
             Self::MissingMulticastMxHeader => {
                 write!(f, "multicast search missing MX header, ignoring")
@@ -1472,11 +1508,6 @@ fn handle_search_message(
             HTTP_METHOD_NOTIFY.to_string(),
         )),
         HTTP_METHOD_SEARCH => {
-            let cp_ip = src
-                .as_socket_ipv4()
-                .ok_or_else(|| HandleSearchMessageError::NoIPv4(Box::new(src.clone())))?;
-            info!("search from {:?}: {ssdp_message:?}", cp_ip.ip());
-
             // expect like:
             // M-SEARCH * HTTP/1.1
             // HOST: 239.255.255.250:1900
@@ -1486,6 +1517,22 @@ fn handle_search_message(
             // USER-AGENT: OS/version UPnP/2.0 product/version
             // CPFN.UPNP.ORG: friendly name of the control point
             // CPUUID.UPNP.ORG: uuid of the control point
+
+            let st = extract_st(&ssdp_message)?;
+
+            let cp_ip = src
+                .as_socket_ipv4()
+                .ok_or_else(|| HandleSearchMessageError::NoIPv4(Box::new(src.clone())))?
+                .ip()
+                .to_string();
+            let display_name = match extract_display_name(&ssdp_message) {
+                Ok(display_name) => {
+                    format!("{display_name} ({cp_ip})")
+                }
+                Err(HandleSearchMessageError::MissingUserAgentHeader) => cp_ip,
+                Err(err) => return Err(err),
+            };
+            info!("search from {display_name}: {st}");
 
             // either 239.255.255.250:1900 for multicast or unicast to this ip address and port
             let host = extract_host(&ssdp_message)?;
@@ -1513,8 +1560,7 @@ fn handle_search_message(
             // header field of the M-SEARCH request is “ssdp:all”, “upnp:rootdevice”, “uuid:” followed by a
             // UUID that exactly matches the one advertised by the device, or if the M-SEARCH request
             // matches a device type or service type supported by the device.
-            let st = extract_st(&ssdp_message)?;
-
+            //
             // TODO ConnectionManager service
             if st == "ssdp:all"
                 || st == "upnp:rootdevice"
