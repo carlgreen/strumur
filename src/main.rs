@@ -423,7 +423,7 @@ fn main() -> Result<()> {
                         &src,
                         &mut socket,
                     ) {
-                        error!("error handling search message: {err}");
+                        handle_search_error(&err);
                     }
                 });
             }
@@ -436,6 +436,29 @@ fn main() -> Result<()> {
     // When a device is removed from the network, it should, if possible, multicast a number of
     // discovery messages revoking its earlier announcements, effectively declaring that its root
     // devices, embedded devices and services will no longer be available.
+}
+
+fn handle_search_error(err: &HandleSearchMessageError) {
+    match err {
+        HandleSearchMessageError::InvalidSSDPMessage(_)
+        | HandleSearchMessageError::UnhandledRequestLine(_)
+        | HandleSearchMessageError::NoIPv4(_)
+        | HandleSearchMessageError::MissingHostHeader
+        | HandleSearchMessageError::MissingMulticastMxHeader
+        | HandleSearchMessageError::MissingStHeader
+        | HandleSearchMessageError::SearchTargetUuidMismatch(_)
+        | HandleSearchMessageError::MethodUnknown(_) => {
+            error!("error handling search message: {err}");
+        }
+        HandleSearchMessageError::SearchTargetUnknown(_) => {
+            // do you care about whatever other kind of UPNP thing could be out there?
+            trace!("{err}");
+        }
+        HandleSearchMessageError::MethodNotSupported(_) => {
+            // this will be a NOTIFY. i believe in myself, i don't need to know about the competition.
+            trace!("{err}");
+        }
+    }
 }
 
 fn parse_some_request_line(buf_reader: &mut BufReader<impl Read>, peer_addr: &str) -> String {
@@ -1433,15 +1456,9 @@ fn handle_search_message(
     let (method, _request_target, _protocol) =
         parse_request_line(&ssdp_message.request_line).unwrap();
     match method.as_str() {
-        HTTP_METHOD_NOTIFY => {
-            // info!(
-            //     "notify from {:?}: {ssdp_message:?}",
-            //     src.as_socket_ipv4().unwrap().ip()
-            // );
-            Err(HandleSearchMessageError::MethodNotSupported(
-                HTTP_METHOD_NOTIFY.to_string(),
-            ))
-        }
+        HTTP_METHOD_NOTIFY => Err(HandleSearchMessageError::MethodNotSupported(
+            HTTP_METHOD_NOTIFY.to_string(),
+        )),
         HTTP_METHOD_SEARCH => {
             let cp_ip = src
                 .as_socket_ipv4()
