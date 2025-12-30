@@ -25,6 +25,7 @@ use log::{Level, debug, error, info, trace, warn};
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use stderrlog::Timestamp;
 use uuid::Uuid;
 use xmltree::Element;
 
@@ -287,6 +288,7 @@ fn main() -> Result<()> {
     stderrlog::new()
         .module(module_path!())
         .verbosity(Level::Debug)
+        .timestamp(Timestamp::Second)
         .init()
         .unwrap();
 
