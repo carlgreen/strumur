@@ -435,7 +435,10 @@ fn main() -> Result<()> {
                 });
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => {} // keep waiting
-            Err(err) => return Err(err),
+            Err(err) => {
+                error!("error receiving from socket: {err}");
+                return Err(err);
+            }
         }
     }
 
