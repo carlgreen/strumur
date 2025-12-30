@@ -319,10 +319,16 @@ fn main() -> Result<()> {
 
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
-        info!("listening on {}", listener.local_addr().unwrap());
+        info!(
+            "listening on {}",
+            listener.local_addr().expect("could not get local address")
+        );
         for stream in listener.incoming() {
-            let stream = stream.unwrap();
-            let addr = format!("http://{}/Content", stream.local_addr().unwrap());
+            let stream = stream.expect("could not get TCP stream");
+            let addr = format!(
+                "http://{}/Content",
+                stream.local_addr().expect("could not get stream address")
+            );
             let peer_addr = stream
                 .peer_addr()
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
@@ -410,7 +416,8 @@ fn main() -> Result<()> {
 
                 let sys_info = sys_info.clone();
                 // let os_version = os_version.clone();
-                let mut socket = ReallySocketToMe::new(socket.try_clone().unwrap());
+                let mut socket =
+                    ReallySocketToMe::new(socket.try_clone().expect("could not clone socket"));
                 thread::spawn(move || {
                     let mut rng = rand::rng();
 
@@ -1309,7 +1316,9 @@ fn is_multicast(host: &str) -> bool {
         true
     } else {
         trace!("unicast search");
-        let unicast = host.parse::<SocketAddr>().unwrap();
+        let unicast = host
+            .parse::<SocketAddr>()
+            .unwrap_or_else(|_| panic!("could not parse {host} as a SocketAddr"));
         trace!("  - {}:{}", unicast.ip(), unicast.port());
         false
     }
