@@ -294,25 +294,9 @@ fn main() -> Result<()> {
 
     let mut rng = rand::rng();
 
-    // TODO this file should probably be somewhere appropriate
-    let device_uuid = match read_to_string(DEVICEID_FILE) {
-        Ok(contents) => match Uuid::parse_str(&contents) {
-            Ok(device_uuid) => device_uuid,
-            Err(e) => {
-                panic!("invalid device ID {contents}: {e}");
-            }
-        },
-        Err(e) => {
-            if e.kind() == ErrorKind::NotFound {
-                // let device_uuid = Uuid::now_v6();
-                let device_uuid = Uuid::new_v4();
-                let mut file = File::create(DEVICEID_FILE)?;
-                file.write_all(device_uuid.to_string().as_bytes())?;
-                device_uuid
-            } else {
-                panic!("could not read device id: {e}");
-            }
-        }
+    let device_uuid = match get_device_uuid() {
+        Ok(device_uuid) => device_uuid,
+        Err(err) => panic!("{err}"),
     };
 
     let collection = populate_collection("../../Music/");
@@ -446,6 +430,53 @@ fn main() -> Result<()> {
     // When a device is removed from the network, it should, if possible, multicast a number of
     // discovery messages revoking its earlier announcements, effectively declaring that its root
     // devices, embedded devices and services will no longer be available.
+}
+
+#[derive(Debug)]
+enum DeviceUuidError {
+    InvalidDeviceId(String, uuid::Error),
+    IoError(std::io::Error),
+}
+
+impl std::fmt::Display for DeviceUuidError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::InvalidDeviceId(contents, err) => {
+                write!(f, "invalid device ID {contents}: {err}")
+            }
+            Self::IoError(err) => {
+                panic!("could not read device id: {err}");
+            }
+        }
+    }
+}
+
+impl std::error::Error for DeviceUuidError {}
+
+// TODO this file should probably be somewhere appropriate
+fn get_device_uuid() -> std::result::Result<Uuid, DeviceUuidError> {
+    match read_to_string(DEVICEID_FILE) {
+        Ok(contents) => match Uuid::parse_str(&contents) {
+            Ok(device_uuid) => {
+                info!("starting with device UUID {device_uuid}");
+                Ok(device_uuid)
+            }
+            Err(e) => Err(DeviceUuidError::InvalidDeviceId(contents, e)),
+        },
+        Err(e) => {
+            if e.kind() == ErrorKind::NotFound {
+                // let device_uuid = Uuid::now_v6();
+                let device_uuid = Uuid::new_v4();
+                let mut file = File::create(DEVICEID_FILE).map_err(DeviceUuidError::IoError)?;
+                file.write_all(device_uuid.to_string().as_bytes())
+                    .map_err(DeviceUuidError::IoError)?;
+                info!("generated new device UUID {device_uuid}");
+                Ok(device_uuid)
+            } else {
+                Err(DeviceUuidError::IoError(e))
+            }
+        }
+    }
 }
 
 fn handle_search_error(err: &HandleSearchMessageError) {
