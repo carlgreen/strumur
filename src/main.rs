@@ -2038,7 +2038,7 @@ mod tests {
         requested_count: u16,
     ) -> String {
         let soap_action_header =
-            format!(r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#);
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
         let body = format!(
             r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
@@ -2056,7 +2056,7 @@ mod tests {
         );
 
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header.as_str()
+            + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
