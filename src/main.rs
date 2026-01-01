@@ -176,6 +176,7 @@ struct Track {
 
 #[derive(Clone, Debug)]
 struct Collection {
+    system_update_id: u16, // TODO maintain this value
     base: PathBuf,
     artists: Vec<Artist>,
 }
@@ -183,6 +184,7 @@ struct Collection {
 fn populate_collection(location: &str) -> Collection {
     info!("populating collection from {location:?}");
     let mut collection = Collection {
+        system_update_id: 0,
         base: Path::new(location).to_path_buf(),
         artists: vec![],
     };
@@ -1047,6 +1049,21 @@ fn format_response(result: &str, number_returned: usize, total_matches: usize) -
     )
 }
 
+fn generate_get_system_update_id_response(collection: &Collection) -> (String, &'static str) {
+    let system_update_id = collection.system_update_id;
+    let body = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:GetSystemUpdateIDResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
+            <Id>{system_update_id}</Id>
+        </u:GetSystemUpdateIDResponse>
+    </s:Body>
+</s:Envelope>"#
+    );
+    (body, HTTP_RESPONSE_OK)
+}
+
 fn generate_browse_response(
     collection: &Collection,
     object_id: &[String],
@@ -1171,6 +1188,12 @@ fn handle_device_connection(
                 },
                 |soap_action| {
                     if *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SYSTEM_UPDATE_ID_ACTION}\""
+                        )
+                    {
+                        generate_get_system_update_id_response(collection)
+                    } else  if *soap_action
                         == format!("\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_BROWSE_ACTION}\"")
                     {
                         let (object_id, starting_index, requested_count) = body.map_or_else(
@@ -1195,9 +1218,6 @@ fn handle_device_connection(
                             },
                         )
                     } else if *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SYSTEM_UPDATE_ID_ACTION}\""
-                        ) || *soap_action
                         == format!(
                             "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SEARCH_CAPABILITIES_ACTION}\""
                         ) || *soap_action
@@ -1908,6 +1928,7 @@ mod tests {
         let x1 = make_album("xyz", "x1", "1992-12-12");
 
         Collection {
+            system_update_id: 7, // fun number for testing
             base: PathBuf::from("./"),
             artists: vec![
                 Artist {
@@ -2030,6 +2051,83 @@ mod tests {
         // check a couple of bits of the body rather than hard coding the whole thing
         assert!(body.contains("<scpd xmlns=\"urn:schemas-upnp-org:service-1-0\">"));
         assert!(body.contains("<name>Browse</name>"));
+    }
+
+    fn generate_get_system_update_id_request() -> String {
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#GetSystemUpdateID""#;
+        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:GetSystemUpdateID xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
+    </s:Body>
+</s:Envelope>"#;
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + body
+    }
+
+    fn extract_get_system_update_id_response(body: &str) -> u16 {
+        println!("about to parse {body}");
+        let envelope = Element::parse(body.as_bytes()).unwrap();
+        let body = envelope.get_child("Body").unwrap();
+        let get_system_update_id_response = body.get_child("GetSystemUpdateIDResponse").unwrap();
+
+        let id: u16 = get_system_update_id_response
+            .get_child("Id")
+            .unwrap()
+            .get_text()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        id
+    }
+
+    #[test]
+    fn test_handle_get_system_update_id() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let peer_addr = "1.2.3.4";
+        let collection = generate_test_collection();
+        let input = generate_get_system_update_id_request();
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            peer_addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let id = extract_get_system_update_id_response(&body);
+
+        assert_eq!(id, 7);
     }
 
     fn generate_browse_request(
