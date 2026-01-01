@@ -1154,7 +1154,7 @@ fn handle_device_connection(
     debug!("Request: {request_line}");
 
     let http_request_headers = parse_some_headers(&mut buf_reader);
-    debug!("  headers: {http_request_headers:#?}");
+    debug!("Headers: {http_request_headers:?}");
 
     let content_length = get_content_length(&request_line, &http_request_headers);
     debug!("content length: {content_length}");
@@ -1162,7 +1162,7 @@ fn handle_device_connection(
     let body = parse_body(content_length, &mut buf_reader);
 
     let body = body.map(|body| {
-        debug!("  body: {body}");
+        debug!("body: {body}");
         body
     });
 
