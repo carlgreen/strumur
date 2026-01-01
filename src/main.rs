@@ -87,7 +87,33 @@ const MEDIA_SERVER_DEVICE_TYPE: &str = "urn:schemas-upnp-org:device:MediaServer:
 
 const CONTENT_DIRECTORY_SERVICE_TYPE: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
 
+const CDS_GET_SYSTEM_UPDATE_ID_ACTION: &str = "GetSystemUpdateID";
+
+const CDS_GET_SEARCH_CAPABILITIES_ACTION: &str = "GetSearchCapabilities";
+
+const CDS_GET_SORT_CAPABILITIES_ACTION: &str = "GetSortCapabilities";
+
 const CDS_BROWSE_ACTION: &str = "Browse";
+
+const CDS_SEARCH_ACTION: &str = "Search";
+
+const CDS_CREATE_OBJECT_ACTION: &str = "CreateObject";
+
+const CDS_DESTROY_OBJECT_ACTION: &str = "DestroyObject";
+
+const CDS_UPDATE_OBJECT_ACTION: &str = "UpdateObject";
+
+const CDS_IMPORT_RESOURCE_ACTION: &str = "ImportResource";
+
+const CDS_EXPORT_RESOURCE_ACTION: &str = "ExportResource";
+
+const CDS_STOP_TRANSFER_RESOURCE_ACTION: &str = "StopTransferResource";
+
+const CDS_GET_TRANSFER_PROGRESS_ACTION: &str = "GetTransferProfress";
+
+const CDS_DELETE_RESOURCE_ACTION: &str = "DeleteResource";
+
+const CDS_CREATE_REFERENCE_ACTION: &str = "CreateReference";
 
 trait SocketToMe {
     fn send_to(&mut self, buf: &[u8], addr: &socket2::SockAddr) -> std::io::Result<usize>;
@@ -1168,6 +1194,55 @@ fn handle_device_connection(
                                 )
                             },
                         )
+                    } else if *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SYSTEM_UPDATE_ID_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SEARCH_CAPABILITIES_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SORT_CAPABILITIES_ACTION}\""
+                        )
+                    {
+                        // TODO
+                        warn!("control: unimplemented required soap action: {soap_action}");
+                        (String::new(), "400 BAD REQUEST")
+                    } else if *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_SEARCH_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_CREATE_OBJECT_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_DESTROY_OBJECT_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_UPDATE_OBJECT_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_IMPORT_RESOURCE_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_EXPORT_RESOURCE_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_STOP_TRANSFER_RESOURCE_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_TRANSFER_PROGRESS_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_DELETE_RESOURCE_ACTION}\""
+                        ) || *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_CREATE_REFERENCE_ACTION}\""
+                        )
+                    {
+                        // TODO
+                        warn!("control: unimplemented optional soap action: {soap_action}");
+                        (String::new(), "400 BAD REQUEST")
                     } else {
                         warn!("control: unexpected soap action: {soap_action}");
                         (String::new(), "400 BAD REQUEST")
