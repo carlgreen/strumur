@@ -87,6 +87,8 @@ const MEDIA_SERVER_DEVICE_TYPE: &str = "urn:schemas-upnp-org:device:MediaServer:
 
 const CONTENT_DIRECTORY_SERVICE_TYPE: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
 
+const CDS_BROWSE_ACTION: &str = "Browse";
+
 trait SocketToMe {
     fn send_to(&mut self, buf: &[u8], addr: &socket2::SockAddr) -> std::io::Result<usize>;
 }
@@ -1142,7 +1144,9 @@ fn handle_device_connection(
                     (String::new(), "400 BAD REQUEST")
                 },
                 |soap_action| {
-                    if *soap_action == format!("\"{CONTENT_DIRECTORY_SERVICE_TYPE}#Browse\"") {
+                    if *soap_action
+                        == format!("\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_BROWSE_ACTION}\"")
+                    {
                         let (object_id, starting_index, requested_count) = body.map_or_else(
                             || {
                                 panic!("no body");
