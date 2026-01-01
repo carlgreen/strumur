@@ -79,6 +79,14 @@ const HTTP_HEADER_USN: &str = "USN";
 
 const NTS_ALIVE: &str = "ssdp:alive";
 
+const ALL_SEARCH_TARGET: &str = "ssdp:all";
+
+const ROOT_DEVICE_TYPE: &str = "upnp:rootdevice";
+
+const MEDIA_SERVER_DEVICE_TYPE: &str = "urn:schemas-upnp-org:device:MediaServer:1";
+
+const CONTENT_DIRECTORY_SERVICE_TYPE: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
+
 trait SocketToMe {
     fn send_to(&mut self, buf: &[u8], addr: &socket2::SockAddr) -> std::io::Result<usize>;
 }
@@ -1078,7 +1086,7 @@ fn generate_browse_response(
             r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
-        <u:BrowseResponse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">{browse_response}
+        <u:BrowseResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{browse_response}
         </u:BrowseResponse>
     </s:Body>
 </s:Envelope>"#
@@ -1134,7 +1142,7 @@ fn handle_device_connection(
                     (String::new(), "400 BAD REQUEST")
                 },
                 |soap_action| {
-                    if soap_action == "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"" {
+                    if *soap_action == format!("\"{CONTENT_DIRECTORY_SERVICE_TYPE}#Browse\"") {
                         let (object_id, starting_index, requested_count) = body.map_or_else(
                             || {
                                 panic!("no body");
@@ -1262,13 +1270,16 @@ fn advertise_discovery_messages(
     let device_uuid = sys_info.device_uuid;
     let boot_id = sys_info.boot_id;
     let os_version = sys_info.os_version.clone();
+
+    let uuid_urn = &format!("uuid:{device_uuid}");
+
     // To advertise its capabilities, a device multicasts a number of discovery messages. Specifically,
     // a root device shall multicast:
 
     // Three discovery messages for the root device.
 
-    let nt = "upnp:rootdevice";
-    let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
+    let nt = ROOT_DEVICE_TYPE;
+    let usn = format!("{uuid_urn}::{ROOT_DEVICE_TYPE}");
     let advertisement = format!(
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
@@ -1277,8 +1288,8 @@ fn advertise_discovery_messages(
         error!("error sending advertisement: {err}");
     }
 
-    let nt = format!("uuid:{device_uuid}");
-    let usn = format!("uuid:{device_uuid}");
+    let nt = uuid_urn;
+    let usn = uuid_urn;
     let advertisement = format!(
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
@@ -1290,7 +1301,7 @@ fn advertise_discovery_messages(
     let device_type = "MediaServer";
     let ver = 1;
     let nt = format!("urn:schemas-upnp-org:device:{device_type}:{ver}");
-    let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:device:{device_type}:{ver}");
+    let usn = format!("{uuid_urn}::urn:schemas-upnp-org:device:{device_type}:{ver}");
     let advertisement = format!(
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
@@ -1306,7 +1317,7 @@ fn advertise_discovery_messages(
     let service_type = "ContentDirectory";
     let ver = 1;
     let nt = format!("urn:schemas-upnp-org:service:{service_type}:{ver}");
-    let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:service:{service_type}:{ver}");
+    let usn = format!("{uuid_urn}::urn:schemas-upnp-org:service:{service_type}:{ver}");
     let advertisement = format!(
         "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
         max_age.as_secs()
@@ -1319,7 +1330,7 @@ fn advertise_discovery_messages(
     // let service_type = "ConnectionManager";
     // let ver = 1;
     // let nt = format!("urn:schemas-upnp-org:service:{service_type}:{ver}");
-    // let usn = format!("uuid:{device_uuid}::urn:schemas-upnp-org:service:{service_type}:{ver}");
+    // let usn = format!("{uuid_urn}::urn:schemas-upnp-org:service:{service_type}:{ver}");
     // let advertisement = format!(
     //     "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_ALIVE}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
     //     max_age.as_secs()
@@ -1549,6 +1560,8 @@ fn handle_search_message(
             // CPFN.UPNP.ORG: friendly name of the control point
             // CPUUID.UPNP.ORG: uuid of the control point
 
+            let uuid_urn = format!("uuid:{device_uuid}");
+
             let st = extract_st(&ssdp_message)?;
 
             let cp_ip = src
@@ -1593,15 +1606,15 @@ fn handle_search_message(
             // matches a device type or service type supported by the device.
             //
             // TODO ConnectionManager service
-            if st == "ssdp:all"
-                || st == "upnp:rootdevice"
-                || st == format!("uuid:{device_uuid}").as_str()
-                || st == "urn:schemas-upnp-org:device:MediaServer:1"
-                || st == "urn:schemas-upnp-org:service:ContentDirectory:1"
+            if st == ALL_SEARCH_TARGET
+                || st == ROOT_DEVICE_TYPE
+                || st == uuid_urn
+                || st == MEDIA_SERVER_DEVICE_TYPE
+                || st == CONTENT_DIRECTORY_SERVICE_TYPE
             // || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
             {
                 info!("ok search target: {st}");
-            } else if st.starts_with(format!("uuid:{device_uuid}").as_str()) {
+            } else if st.starts_with(&uuid_urn) {
                 warn!("unexpected search target format: {st}");
             } else if st.starts_with("uuid:") {
                 return Err(HandleSearchMessageError::SearchTargetUuidMismatch(st));
@@ -1618,44 +1631,44 @@ fn handle_search_message(
 
             let response_date = format_rfc1123(Utc::now());
 
-            if st == "ssdp:all" || st == "upnp:rootdevice" {
-                let st = "upnp:rootdevice";
-                let usn = format!("uuid:{device_uuid}::upnp:rootdevice");
+            if st == ALL_SEARCH_TARGET || st == ROOT_DEVICE_TYPE {
+                let st = ROOT_DEVICE_TYPE;
+                let usn = format!("{uuid_urn}::{ROOT_DEVICE_TYPE}");
                 let advertisement =
                     generate_advertisement(&response_date, sys_info, st, &usn, location, max_age);
                 send_advertisement(&usn, &advertisement, socket, src);
             }
 
-            if st == "ssdp:all" || st == format!("uuid:{device_uuid}").as_str() {
-                let st = format!("uuid:{device_uuid}");
-                let usn = format!("uuid:{device_uuid}");
+            if st == ALL_SEARCH_TARGET || st == uuid_urn {
+                let st = &uuid_urn;
+                let usn = &uuid_urn;
                 let advertisement =
-                    generate_advertisement(&response_date, sys_info, &st, &usn, location, max_age);
-                send_advertisement(&usn, &advertisement, socket, src);
+                    generate_advertisement(&response_date, sys_info, st, usn, location, max_age);
+                send_advertisement(usn, &advertisement, socket, src);
             }
 
-            if st == "ssdp:all" || st == "urn:schemas-upnp-org:device:MediaServer:1" {
-                let st = "urn:schemas-upnp-org:device:MediaServer:1";
-                let usn = format!("uuid:{device_uuid}::{st}");
+            if st == ALL_SEARCH_TARGET || st == MEDIA_SERVER_DEVICE_TYPE {
+                let st = MEDIA_SERVER_DEVICE_TYPE;
+                let usn = format!("{uuid_urn}::{st}");
                 let advertisement =
                     generate_advertisement(&response_date, sys_info, st, &usn, location, max_age);
                 send_advertisement(&usn, &advertisement, socket, src);
             }
 
-            if st == "ssdp:all" || st == "urn:schemas-upnp-org:service:ContentDirectory:1" {
-                let st = "urn:schemas-upnp-org:service:ContentDirectory:1";
-                let usn = format!("uuid:{device_uuid}::{st}");
+            if st == ALL_SEARCH_TARGET || st == CONTENT_DIRECTORY_SERVICE_TYPE {
+                let st = CONTENT_DIRECTORY_SERVICE_TYPE;
+                let usn = format!("{uuid_urn}::{st}");
                 let advertisement =
                     generate_advertisement(&response_date, sys_info, st, &usn, location, max_age);
                 send_advertisement(&usn, &advertisement, socket, src);
             }
 
             // TODO ConnectionManager service
-            // if st == "ssdp:all"
+            // if st == ALL_SEARCH_TARGET
             //     || st == "urn:schemas-upnp-org:service:ConnectionManager:1"
             // {
             //     let st = "urn:schemas-upnp-org:service:ConnectionManager:1";
-            //     let usn = format!("uuid:{device_uuid}::{st}");
+            //     let usn = format!("{uuid_urn}::{st}");
             //     let advertisement = format!(
             //         "{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}\r\n{HTTP_HEADER_DATE}: {response_date}\r\n{HTTP_HEADER_EXT}:\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_SERVER}: {os_version} {UPNP_VERSION} {NAME}/{VERSION}\r\n{HTTP_HEADER_ST}: {st}\r\n{HTTP_HEADER_USN}: {usn}\r\n{HTTP_HEADER_LOCATION}: {location}\r\n{HTTP_HEADER_CACHE_CONTROL}: max-age={}\r\n\r\n",
             //         max_age.as_secs()
@@ -1946,7 +1959,7 @@ mod tests {
         requested_count: u16,
     ) -> String {
         let soap_action_header =
-            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
+            format!(r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#);
         let body = format!(
             r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
@@ -1964,7 +1977,7 @@ mod tests {
         );
 
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
-            + soap_action_header
+            + soap_action_header.as_str()
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
