@@ -1165,12 +1165,34 @@ fn handle_device_connection(
     let request_line = match parse_some_request_line(&mut buf_reader) {
         Ok(request_line) => request_line,
         Err(e) => {
-            debug!("could not parse request line: {e}");
-            // TODO should be proper SOAP response
+            let (error_code, error_description) = match e {
+                ParseRequestError::EmptyRequest => (401_u16, "Missing Request"),
+                ParseRequestError::IoError(err) => {
+                    warn!("could not parse request line: {err}");
+                    (604_u16, "IO Error")
+                }
+            };
+            let content = format!(
+                r#"<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>{error_code}</errorCode>
+                    <errorDescription>{error_description}</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#
+            );
             write_response(
-                "400 BAD REQUEST",
-                Some("text/plain; charset=utf-8"),
-                e.to_string().as_bytes(),
+                "500 Internal Server Error",
+                Some("text/xml; charset=utf-8"),
+                content.as_bytes(),
                 &mut output_stream,
             );
             return;
@@ -2955,6 +2977,61 @@ mod tests {
         // for now, can just check against the only song being returned
         let want = include_bytes!("riff.flac");
         assert_eq!(body.as_slice(), want);
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_bad_request_line() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = "";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "HTTP/1.1 500 Internal Server Error".to_string()
+        );
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        compare_xml(
+            &body,
+            r#"<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Missing Request</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
+        );
     }
 
     #[test]
