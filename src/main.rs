@@ -1307,12 +1307,47 @@ fn handle_device_connection(
                             "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_CREATE_REFERENCE_ACTION}\""
                         )
                     {
-                        // TODO
-                        warn!("control: unimplemented optional soap action: {soap_action}");
-                        (String::new(), "400 BAD REQUEST")
+                        let error_code = 602_u16;
+                        let error_description = "Optional Action Not Implemented";
+            let content = format!(
+                r#"<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>{error_code}</errorCode>
+                    <errorDescription>{error_description}</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#
+            );
+                        (content, "500 Internal Server Error")
                     } else {
-                        warn!("control: unexpected soap action: {soap_action}");
-                        (String::new(), "400 BAD REQUEST")
+                        let error_code = 401_u16;
+                        let error_description = "Invalid Action";
+            let content = format!(
+                r#"<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>{error_code}</errorCode>
+                    <errorDescription>{error_description}</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#
+            );
+                        (content, "500 Internal Server Error")
                     }
                 },
             )
