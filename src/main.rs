@@ -354,17 +354,11 @@ fn main() -> Result<()> {
             let peer_addr = stream
                 .peer_addr()
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
+            trace!("incoming request from {peer_addr}");
             let collection = collection.clone(); // TODO i don't want to clone this.
 
             thread::spawn(move || {
-                handle_device_connection(
-                    device_uuid,
-                    &addr,
-                    &peer_addr,
-                    &collection,
-                    &stream,
-                    &stream,
-                );
+                handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
             });
         }
     });
@@ -541,26 +535,45 @@ fn handle_search_error(err: &HandleSearchMessageError) {
     }
 }
 
-fn parse_some_request_line(buf_reader: &mut BufReader<impl Read>, peer_addr: &str) -> String {
+#[derive(Debug)]
+enum ParseRequestError {
+    EmptyRequest,
+    IoError(std::io::Error),
+}
+
+impl std::fmt::Display for ParseRequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::EmptyRequest => {
+                write!(f, "empty request")
+            }
+            Self::IoError(err) => {
+                write!(f, "error reading request line: {err}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseRequestError {}
+
+fn parse_some_request_line(
+    buf_reader: &mut BufReader<impl Read>,
+) -> std::result::Result<String, ParseRequestError> {
     let mut line: String = String::with_capacity(100);
     match buf_reader.read_line(&mut line) {
         Ok(size) => {
             if size == 0 {
-                warn!("empty request from {peer_addr}");
-                return String::new(); // TODO error
+                return Err(ParseRequestError::EmptyRequest);
             }
-            line.strip_suffix("\r\n").map_or_else(
+            Ok(line.strip_suffix("\r\n").map_or_else(
                 || {
                     warn!("warning: expected CRLF terminated request line: {line:#?}");
                     line.clone()
                 },
                 ToString::to_string,
-            )
+            ))
         }
-        Err(e) => {
-            error!("error reading request line: {e}");
-            String::new() // TODO error
-        }
+        Err(e) => Err(ParseRequestError::IoError(e)),
     }
 }
 
@@ -1143,14 +1156,26 @@ fn generate_browse_response(
 fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
-    peer_addr: &str,
     collection: &Collection,
     input_stream: impl std::io::Read,
     mut output_stream: impl std::io::Write,
 ) {
     let mut buf_reader = BufReader::new(input_stream);
 
-    let request_line = parse_some_request_line(&mut buf_reader, peer_addr);
+    let request_line = match parse_some_request_line(&mut buf_reader) {
+        Ok(request_line) => request_line,
+        Err(e) => {
+            debug!("could not parse request line: {e}");
+            // TODO should be proper SOAP response
+            write_response(
+                "400 BAD REQUEST",
+                Some("text/plain; charset=utf-8"),
+                e.to_string().as_bytes(),
+                &mut output_stream,
+            );
+            return;
+        }
+    };
     debug!("Request: {request_line}");
 
     let http_request_headers = parse_some_headers(&mut buf_reader);
@@ -1979,7 +2004,6 @@ mod tests {
     fn test_handle_get_device() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = "GET /Device.xml HTTP/1.1\r\n";
         let output = Vec::new();
@@ -1988,7 +2012,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2018,7 +2041,6 @@ mod tests {
     fn test_handle_get_content_directory() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
         let output = Vec::new();
@@ -2027,7 +2049,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2095,7 +2116,6 @@ mod tests {
     fn test_handle_get_system_update_id() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_get_system_update_id_request();
         let output = Vec::new();
@@ -2104,7 +2124,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2217,7 +2236,6 @@ mod tests {
     fn test_handle_browse_content_root() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0", 0, 500);
         let output = Vec::new();
@@ -2226,7 +2244,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2303,7 +2320,6 @@ mod tests {
     fn test_handle_browse_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$albums", 0, 5);
         let output = Vec::new();
@@ -2312,7 +2328,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2395,7 +2410,6 @@ mod tests {
     fn test_handle_browse_an_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$albums$*a3", 0, 500);
         let output = Vec::new();
@@ -2404,7 +2418,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2478,7 +2491,6 @@ mod tests {
     fn test_handle_browse_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist", 0, 5);
         let output = Vec::new();
@@ -2487,7 +2499,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2544,7 +2555,6 @@ mod tests {
     fn test_handle_browse_an_artist_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3", 0, 500);
         let output = Vec::new();
@@ -2553,7 +2563,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2602,7 +2611,6 @@ mod tests {
     fn test_handle_browse_an_artist_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3$albums", 0, 500);
         let output = Vec::new();
@@ -2611,7 +2619,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2675,7 +2682,6 @@ mod tests {
     fn test_handle_browse_an_artist_album_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3$albums$1", 0, 500);
         let output = Vec::new();
@@ -2684,7 +2690,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2757,7 +2762,6 @@ mod tests {
     fn test_handle_browse_all_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists", 0, 5);
         let output = Vec::new();
@@ -2766,7 +2770,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2823,7 +2826,6 @@ mod tests {
     fn test_request_cover() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = "GET /Content/src/cover.jpg HTTP/1.1\r\n\r\n";
         let output = Vec::new();
@@ -2832,7 +2834,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
@@ -2897,7 +2898,6 @@ mod tests {
     fn test_request_song() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
-        let peer_addr = "1.2.3.4";
         let collection = generate_test_collection();
         let input = "GET /Content/src/riff.flac HTTP/1.1\r\n\r\n";
         let output = Vec::new();
@@ -2906,7 +2906,6 @@ mod tests {
         handle_device_connection(
             test_device_uuid,
             addr,
-            peer_addr,
             &collection,
             input.as_bytes(),
             &mut cursor,
