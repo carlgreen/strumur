@@ -1172,25 +1172,9 @@ fn handle_device_connection(
                     (604_u16, "IO Error")
                 }
             };
-            let content = format!(
-                r#"<?xml version="1.0"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <s:Fault>
-            <faultcode>s:Client</faultcode>
-            <faultstring>UPnPError</faultstring>
-            <detail>
-                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
-                    <errorCode>{error_code}</errorCode>
-                    <errorDescription>{error_description}</errorDescription>
-                </UPnPError>
-            </detail>
-        </s:Fault>
-    </s:Body>
-</s:Envelope>"#
-            );
+            let (content, result) = soap_upnp_error(error_code, error_description);
             write_response(
-                "500 Internal Server Error",
+                result,
                 Some("text/xml; charset=utf-8"),
                 content.as_bytes(),
                 &mut output_stream,
@@ -1307,47 +1291,9 @@ fn handle_device_connection(
                             "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_CREATE_REFERENCE_ACTION}\""
                         )
                     {
-                        let error_code = 602_u16;
-                        let error_description = "Optional Action Not Implemented";
-            let content = format!(
-                r#"<?xml version="1.0"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <s:Fault>
-            <faultcode>s:Client</faultcode>
-            <faultstring>UPnPError</faultstring>
-            <detail>
-                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
-                    <errorCode>{error_code}</errorCode>
-                    <errorDescription>{error_description}</errorDescription>
-                </UPnPError>
-            </detail>
-        </s:Fault>
-    </s:Body>
-</s:Envelope>"#
-            );
-                        (content, "500 Internal Server Error")
+                        soap_upnp_error(602, "Optional Action Not Implemented")
                     } else {
-                        let error_code = 401_u16;
-                        let error_description = "Invalid Action";
-            let content = format!(
-                r#"<?xml version="1.0"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
-        <s:Fault>
-            <faultcode>s:Client</faultcode>
-            <faultstring>UPnPError</faultstring>
-            <detail>
-                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
-                    <errorCode>{error_code}</errorCode>
-                    <errorDescription>{error_description}</errorDescription>
-                </UPnPError>
-            </detail>
-        </s:Fault>
-    </s:Body>
-</s:Envelope>"#
-            );
-                        (content, "500 Internal Server Error")
+                        soap_upnp_error(401, "Invalid Action")
                     }
                 },
             )
@@ -1369,6 +1315,29 @@ fn handle_device_connection(
         content.as_bytes(),
         &mut output_stream,
     );
+}
+
+fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &str) {
+    // it seems based on the example in the docs that its always 500?
+    let http_error_string = "500 Internal Server Error";
+    let content = format!(
+        r#"<?xml version="1.0"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>{error_code}</errorCode>
+                    <errorDescription>{error_description}</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#
+    );
+    (content, http_error_string)
 }
 
 fn write_response(
