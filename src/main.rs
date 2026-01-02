@@ -1218,7 +1218,7 @@ fn handle_device_connection(
                         )
                     {
                         generate_get_system_update_id_response(collection)
-                    } else  if *soap_action
+                    } else if *soap_action
                         == format!("\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_BROWSE_ACTION}\"")
                     {
                         let (object_id, starting_index, requested_count) = body.map_or_else(
