@@ -1064,48 +1064,45 @@ fn format_response(result: &str, number_returned: usize, total_matches: usize) -
 fn generate_get_system_update_id_response(collection: &Collection) -> (String, &'static str) {
     let system_update_id = collection.system_update_id;
     let body = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
+        r#"
         <u:GetSystemUpdateIDResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
             <Id>{system_update_id}</Id>
-        </u:GetSystemUpdateIDResponse>
-    </s:Body>
-</s:Envelope>"#
+        </u:GetSystemUpdateIDResponse>"#
     );
-    (body, HTTP_RESPONSE_OK)
+    (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
 }
 
 fn generate_get_search_capabilities_response() -> (String, &'static str) {
     // CSV, could be something like upnp:class,dc:title,dc:creator,upnp:artist,upnp:album,upnp:genre,dc:date,res,@refID,upnp:artist[@role="AlbumArtist"],upnp:artist[@role="Composer"]
     let search_caps = ""; // TODO nothing, for now.
     let body = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
+        r#"
         <u:GetSearchCapabilitiesResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
             <SearchCaps>{search_caps}</SearchCaps>
-        </u:GetSearchCapabilitiesResponse>
-    </s:Body>
-</s:Envelope>"#
+        </u:GetSearchCapabilitiesResponse>"#
     );
-    (body, HTTP_RESPONSE_OK)
+    (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
 }
 
 fn generate_get_sort_capabilities_response() -> (String, &'static str) {
     // probably a CSV like search capabilities
     let sort_caps = ""; // TODO nothing, for now.
     let body = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
+        r#"
         <u:GetSortCapabilitiesResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
             <SortCaps>{sort_caps}</SortCaps>
-        </u:GetSortCapabilitiesResponse>
-    </s:Body>
-</s:Envelope>"#
+        </u:GetSortCapabilitiesResponse>"#
     );
-    (body, HTTP_RESPONSE_OK)
+    (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
+}
+
+fn wrap_with_envelope_body(body: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>{body}</s:Body>
+</s:Envelope>"#
+    )
 }
 
 fn generate_browse_response(
@@ -1170,18 +1167,17 @@ fn generate_browse_response(
                 None
             }
         };
-    browse_response.map_or_else(|| (String::new(), "400 BAD REQUEST"), |browse_response| {
-        let body = format!(
-            r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
+    browse_response.map_or_else(
+        || (String::new(), "400 BAD REQUEST"),
+        |browse_response| {
+            let body = format!(
+                r#"
         <u:BrowseResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{browse_response}
-        </u:BrowseResponse>
-    </s:Body>
-</s:Envelope>"#
-        );
-        (body, HTTP_RESPONSE_OK)
-    })
+        </u:BrowseResponse>"#
+            );
+            (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
+        },
+    )
 }
 
 fn handle_device_connection(
@@ -1346,9 +1342,7 @@ fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &str) {
     // it seems based on the example in the docs that its always 500?
     let http_error_string = "500 Internal Server Error";
     let content = format!(
-        r#"<?xml version="1.0"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-    <s:Body>
+        r#"
         <s:Fault>
             <faultcode>s:Client</faultcode>
             <faultstring>UPnPError</faultstring>
@@ -1358,11 +1352,9 @@ fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &str) {
                     <errorDescription>{error_description}</errorDescription>
                 </UPnPError>
             </detail>
-        </s:Fault>
-    </s:Body>
-</s:Envelope>"#
+        </s:Fault>"#
     );
-    (content, http_error_string)
+    (wrap_with_envelope_body(&content), http_error_string)
 }
 
 fn write_response(
