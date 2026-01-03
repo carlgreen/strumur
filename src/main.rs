@@ -1077,6 +1077,38 @@ fn generate_get_system_update_id_response(collection: &Collection) -> (String, &
     (body, HTTP_RESPONSE_OK)
 }
 
+fn generate_get_search_capabilities_response() -> (String, &'static str) {
+    // CSV, could be something like upnp:class,dc:title,dc:creator,upnp:artist,upnp:album,upnp:genre,dc:date,res,@refID,upnp:artist[@role="AlbumArtist"],upnp:artist[@role="Composer"]
+    let search_caps = ""; // TODO nothing, for now.
+    let body = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:GetSearchCapabilitiesResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
+            <SearchCaps>{search_caps}</SearchCaps>
+        </u:GetSearchCapabilitiesResponse>
+    </s:Body>
+</s:Envelope>"#
+    );
+    (body, HTTP_RESPONSE_OK)
+}
+
+fn generate_get_sort_capabilities_response() -> (String, &'static str) {
+    // probably a CSV like search capabilities
+    let sort_caps = ""; // TODO nothing, for now.
+    let body = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <u:GetSortCapabilitiesResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
+            <SortCaps>{sort_caps}</SortCaps>
+        </u:GetSortCapabilitiesResponse>
+    </s:Body>
+</s:Envelope>"#
+    );
+    (body, HTTP_RESPONSE_OK)
+}
+
 fn generate_browse_response(
     collection: &Collection,
     object_id: &[String],
@@ -1224,6 +1256,18 @@ fn handle_device_connection(
                         )
                     {
                         generate_get_system_update_id_response(collection)
+                    } else if *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SEARCH_CAPABILITIES_ACTION}\""
+                        )
+                    {
+                        generate_get_search_capabilities_response()
+                    } else if *soap_action
+                        == format!(
+                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SORT_CAPABILITIES_ACTION}\""
+                        )
+                    {
+                        generate_get_sort_capabilities_response()
                     } else if *soap_action
                         == format!("\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_BROWSE_ACTION}\"")
                     {
@@ -2173,6 +2217,150 @@ mod tests {
         let id = extract_get_system_update_id_response(&body);
 
         assert_eq!(id, 7);
+    }
+
+    fn generate_get_search_capabilities_request() -> String {
+        let soap_action_header = r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#GetSearchCapabilities""#;
+        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:GetSearchCapabilities xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
+    </s:Body>
+</s:Envelope>"#;
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + body
+    }
+
+    fn extract_get_search_capabilities_response(body: &str) -> Option<String> {
+        println!("about to parse {body}");
+        let envelope = Element::parse(body.as_bytes()).unwrap();
+        let body = envelope.get_child("Body").unwrap();
+        let get_search_capabilities_response =
+            body.get_child("GetSearchCapabilitiesResponse").unwrap();
+
+        let search_caps = get_search_capabilities_response
+            .get_child("SearchCaps")
+            .unwrap()
+            .get_text();
+
+        search_caps.map(|sort_caps| sort_caps.into())
+    }
+
+    #[test]
+    fn test_handle_get_search_capabilities() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_get_search_capabilities_request();
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let id = extract_get_search_capabilities_response(&body);
+
+        assert_eq!(id, None);
+    }
+
+    fn generate_get_sort_capabilities_request() -> String {
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#GetSortCapabilities""#;
+        let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:GetSortCapabilities xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
+    </s:Body>
+</s:Envelope>"#;
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + body
+    }
+
+    fn extract_get_sort_capabilities_response(body: &str) -> Option<String> {
+        println!("about to parse {body}");
+        let envelope = Element::parse(body.as_bytes()).unwrap();
+        let body = envelope.get_child("Body").unwrap();
+        let get_sort_capabilities_response = body.get_child("GetSortCapabilitiesResponse").unwrap();
+
+        let sort_caps = get_sort_capabilities_response
+            .get_child("SortCaps")
+            .unwrap()
+            .get_text();
+
+        sort_caps.map(|sort_caps| sort_caps.into())
+    }
+
+    #[test]
+    fn test_handle_get_sort_capabilities() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_get_sort_capabilities_request();
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let id = extract_get_sort_capabilities_response(&body);
+
+        assert_eq!(id, None);
     }
 
     fn generate_browse_request(
