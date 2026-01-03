@@ -1249,94 +1249,77 @@ fn handle_device_connection(
                     (String::new(), "400 BAD REQUEST")
                 },
                 |soap_action| {
-                    if *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SYSTEM_UPDATE_ID_ACTION}\""
-                        )
+                    let soap_action = if soap_action.starts_with('"') && soap_action.ends_with('"')
                     {
-                        generate_get_system_update_id_response(collection)
-                    } else if *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SEARCH_CAPABILITIES_ACTION}\""
-                        )
-                    {
-                        generate_get_search_capabilities_response()
-                    } else if *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SORT_CAPABILITIES_ACTION}\""
-                        )
-                    {
-                        generate_get_sort_capabilities_response()
-                    } else if *soap_action
-                        == format!("\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_BROWSE_ACTION}\"")
-                    {
-                        let (object_id, starting_index, requested_count) = body.map_or_else(
-                            || {
-                                panic!("no body");
-                            },
-                            |body| parse_soap_request(&body),
-                        );
-
-                        object_id.map_or_else(
-                            || {
-                                panic!("no object id");
-                            },
-                            |object_id| {
-                                generate_browse_response(
-                                    collection,
-                                    &object_id,
-                                    starting_index,
-                                    requested_count,
-                                    addr,
-                                )
-                            },
-                        )
-                    } else if *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SEARCH_CAPABILITIES_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_SORT_CAPABILITIES_ACTION}\""
-                        )
-                    {
-                        // TODO
-                        warn!("control: unimplemented required soap action: {soap_action}");
-                        (String::new(), "400 BAD REQUEST")
-                    } else if *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_SEARCH_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_CREATE_OBJECT_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_DESTROY_OBJECT_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_UPDATE_OBJECT_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_IMPORT_RESOURCE_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_EXPORT_RESOURCE_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_STOP_TRANSFER_RESOURCE_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_GET_TRANSFER_PROGRESS_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_DELETE_RESOURCE_ACTION}\""
-                        ) || *soap_action
-                        == format!(
-                            "\"{CONTENT_DIRECTORY_SERVICE_TYPE}#{CDS_CREATE_REFERENCE_ACTION}\""
-                        )
-                    {
-                        soap_upnp_error(602, "Optional Action Not Implemented")
+                        soap_action.trim_matches('"')
                     } else {
-                        soap_upnp_error(401, "Invalid Action")
+                        warn!("expected soap action to be enclosed in '\"': {soap_action}");
+                        // not just an invalid action, something worse?
+                        return soap_upnp_error(401, "Invalid Action");
+                    };
+                    let Some((service, action)) = soap_action.split_once('#') else {
+                        warn!("received soap action without '#': {soap_action}");
+                        // not just an invalid action, something worse?
+                        return soap_upnp_error(401, "Invalid Action");
+                    };
+
+                    match service {
+                        CONTENT_DIRECTORY_SERVICE_TYPE => match action {
+                            CDS_GET_SYSTEM_UPDATE_ID_ACTION => {
+                                generate_get_system_update_id_response(collection)
+                            }
+                            CDS_GET_SEARCH_CAPABILITIES_ACTION => {
+                                generate_get_search_capabilities_response()
+                            }
+                            CDS_GET_SORT_CAPABILITIES_ACTION => {
+                                generate_get_sort_capabilities_response()
+                            }
+                            CDS_BROWSE_ACTION => {
+                                let (object_id, starting_index, requested_count) = body
+                                    .map_or_else(
+                                        || {
+                                            panic!("no body");
+                                        },
+                                        |body| parse_soap_request(&body),
+                                    );
+
+                                object_id.map_or_else(
+                                    || {
+                                        panic!("no object id");
+                                    },
+                                    |object_id| {
+                                        generate_browse_response(
+                                            collection,
+                                            &object_id,
+                                            starting_index,
+                                            requested_count,
+                                            addr,
+                                        )
+                                    },
+                                )
+                            }
+                            CDS_SEARCH_ACTION
+                            | CDS_CREATE_OBJECT_ACTION
+                            | CDS_DESTROY_OBJECT_ACTION
+                            | CDS_UPDATE_OBJECT_ACTION
+                            | CDS_IMPORT_RESOURCE_ACTION
+                            | CDS_EXPORT_RESOURCE_ACTION
+                            | CDS_STOP_TRANSFER_RESOURCE_ACTION
+                            | CDS_GET_TRANSFER_PROGRESS_ACTION
+                            | CDS_DELETE_RESOURCE_ACTION
+                            | CDS_CREATE_REFERENCE_ACTION => {
+                                soap_upnp_error(602, "Optional Action Not Implemented")
+                            }
+                            _ => {
+                                info!("we got {service}, we got {action}");
+                                soap_upnp_error(401, "Invalid Action")
+                            }
+                        },
+                        // TODO here, handle ConnectionManager, etc.
+                        _ => {
+                            info!("we got {service}, we got {action}");
+                            soap_upnp_error(401, "Invalid Service")
+                        }
                     }
                 },
             )
