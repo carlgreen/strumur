@@ -1263,15 +1263,12 @@ fn handle_device_connection(
                         return soap_upnp_error(401, "Invalid Action");
                     };
 
-                    match service {
-                        CONTENT_DIRECTORY_SERVICE_TYPE => {
-                            handle_content_directory_actions(action, addr, collection, body)
-                        }
+                    if service == CONTENT_DIRECTORY_SERVICE_TYPE {
+                        handle_content_directory_actions(action, addr, collection, body)
+                    } else {
                         // TODO here, handle ConnectionManager, etc.
-                        _ => {
-                            info!("we got {service}, we got {action}");
-                            soap_upnp_error(401, "Invalid Service")
-                        }
+                        info!("we got {service}, we got {action}");
+                        soap_upnp_error(401, "Invalid Service")
                     }
                 },
             )
