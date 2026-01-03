@@ -1308,7 +1308,7 @@ fn handle_device_connection(
                             | CDS_GET_TRANSFER_PROGRESS_ACTION
                             | CDS_DELETE_RESOURCE_ACTION
                             | CDS_CREATE_REFERENCE_ACTION => {
-                                soap_upnp_error(602, "Optional Action Not Implemented")
+                                soap_upnp_error(602, "Action Not Implemented")
                             }
                             _ => {
                                 info!("we got {service}, we got {action}");
