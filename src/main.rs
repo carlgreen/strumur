@@ -1264,57 +1264,9 @@ fn handle_device_connection(
                     };
 
                     match service {
-                        CONTENT_DIRECTORY_SERVICE_TYPE => match action {
-                            CDS_GET_SYSTEM_UPDATE_ID_ACTION => {
-                                generate_get_system_update_id_response(collection)
-                            }
-                            CDS_GET_SEARCH_CAPABILITIES_ACTION => {
-                                generate_get_search_capabilities_response()
-                            }
-                            CDS_GET_SORT_CAPABILITIES_ACTION => {
-                                generate_get_sort_capabilities_response()
-                            }
-                            CDS_BROWSE_ACTION => {
-                                let (object_id, starting_index, requested_count) = body
-                                    .map_or_else(
-                                        || {
-                                            panic!("no body");
-                                        },
-                                        |body| parse_soap_request(&body),
-                                    );
-
-                                object_id.map_or_else(
-                                    || {
-                                        panic!("no object id");
-                                    },
-                                    |object_id| {
-                                        generate_browse_response(
-                                            collection,
-                                            &object_id,
-                                            starting_index,
-                                            requested_count,
-                                            addr,
-                                        )
-                                    },
-                                )
-                            }
-                            CDS_SEARCH_ACTION
-                            | CDS_CREATE_OBJECT_ACTION
-                            | CDS_DESTROY_OBJECT_ACTION
-                            | CDS_UPDATE_OBJECT_ACTION
-                            | CDS_IMPORT_RESOURCE_ACTION
-                            | CDS_EXPORT_RESOURCE_ACTION
-                            | CDS_STOP_TRANSFER_RESOURCE_ACTION
-                            | CDS_GET_TRANSFER_PROGRESS_ACTION
-                            | CDS_DELETE_RESOURCE_ACTION
-                            | CDS_CREATE_REFERENCE_ACTION => {
-                                soap_upnp_error(602, "Action Not Implemented")
-                            }
-                            _ => {
-                                info!("we got {service}, we got {action}");
-                                soap_upnp_error(401, "Invalid Action")
-                            }
-                        },
+                        CONTENT_DIRECTORY_SERVICE_TYPE => {
+                            handle_content_directory_actions(action, addr, collection, body)
+                        }
                         // TODO here, handle ConnectionManager, etc.
                         _ => {
                             info!("we got {service}, we got {action}");
@@ -1341,6 +1293,56 @@ fn handle_device_connection(
         content.as_bytes(),
         &mut output_stream,
     );
+}
+
+fn handle_content_directory_actions<'a>(
+    action: &str,
+    addr: &str,
+    collection: &Collection,
+    body: Option<String>,
+) -> (String, &'a str) {
+    match action {
+        CDS_GET_SYSTEM_UPDATE_ID_ACTION => generate_get_system_update_id_response(collection),
+        CDS_GET_SEARCH_CAPABILITIES_ACTION => generate_get_search_capabilities_response(),
+        CDS_GET_SORT_CAPABILITIES_ACTION => generate_get_sort_capabilities_response(),
+        CDS_BROWSE_ACTION => {
+            let (object_id, starting_index, requested_count) = body.map_or_else(
+                || {
+                    panic!("no body");
+                },
+                |body| parse_soap_request(&body),
+            );
+
+            object_id.map_or_else(
+                || {
+                    panic!("no object id");
+                },
+                |object_id| {
+                    generate_browse_response(
+                        collection,
+                        &object_id,
+                        starting_index,
+                        requested_count,
+                        addr,
+                    )
+                },
+            )
+        }
+        CDS_SEARCH_ACTION
+        | CDS_CREATE_OBJECT_ACTION
+        | CDS_DESTROY_OBJECT_ACTION
+        | CDS_UPDATE_OBJECT_ACTION
+        | CDS_IMPORT_RESOURCE_ACTION
+        | CDS_EXPORT_RESOURCE_ACTION
+        | CDS_STOP_TRANSFER_RESOURCE_ACTION
+        | CDS_GET_TRANSFER_PROGRESS_ACTION
+        | CDS_DELETE_RESOURCE_ACTION
+        | CDS_CREATE_REFERENCE_ACTION => soap_upnp_error(602, "Action Not Implemented"),
+        _ => {
+            info!("we got {CONTENT_DIRECTORY_SERVICE_TYPE}, we got {action}");
+            soap_upnp_error(401, "Invalid Action")
+        }
+    }
 }
 
 fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &str) {
