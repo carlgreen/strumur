@@ -775,7 +775,6 @@ fn generate_browse_albums_response(
             skipped += artist.albums.len();
             continue;
         }
-        // let artist_name = &artist.name;
         let artist_name = xml::escape::escape_str_attribute(&artist.name);
         for album in artist
             .albums
