@@ -159,12 +159,28 @@ struct Artist {
     albums: Vec<Album>,
 }
 
+impl Artist {
+    fn get_albums(&self) -> impl ExactSizeIterator<Item = &Album> {
+        self.albums.iter()
+    }
+
+    fn get_tracks(&self) -> impl Iterator<Item = &Track> {
+        self.albums.iter().flat_map(Album::get_tracks)
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Album {
     title: String,
     date: NaiveDate,
     tracks: Vec<Track>,
     cover: String,
+}
+
+impl Album {
+    fn get_tracks(&self) -> impl ExactSizeIterator<Item = &Track> {
+        self.tracks.iter()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +195,26 @@ struct Collection {
     system_update_id: u16, // TODO maintain this value
     base: PathBuf,
     artists: Vec<Artist>,
+}
+
+impl Collection {
+    const fn get_system_update_id(&self) -> u16 {
+        self.system_update_id
+    }
+
+    fn get_artists(&self) -> impl ExactSizeIterator<Item = &Artist> {
+        self.artists.iter()
+    }
+
+    fn get_albums(&self) -> impl Iterator<Item = &Album> {
+        self.artists.iter().flat_map(Artist::get_albums)
+    }
+
+    fn get_tracks(&self) -> impl Iterator<Item = &Track> {
+        self.artists
+            .iter()
+            .flat_map(|artist| artist.get_albums().flat_map(Album::get_tracks))
+    }
 }
 
 fn populate_collection(location: &str) -> Collection {
@@ -715,25 +751,11 @@ fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u
 }
 
 fn generate_browse_root_response(collection: &Collection) -> String {
-    let album_count = collection
-        .artists
-        .iter()
-        .map(|artist| artist.albums.len())
-        .sum::<usize>();
+    let album_count = collection.get_albums().count();
     let albums = format!(
         r#"<container id="0$albums" parentID="0" restricted="1" searchable="1"><dc:title>{album_count} albums</dc:title><upnp:class>object.container</upnp:class></container>"#
     );
-    let items_count = collection
-        .artists
-        .iter()
-        .map(|artist| {
-            artist
-                .albums
-                .iter()
-                .map(|album| album.tracks.len())
-                .sum::<usize>()
-        })
-        .sum::<usize>();
+    let items_count = collection.get_tracks().count();
     let items = format!(
         r#"<container id="0$items" parentID="0" restricted="1" searchable="1"><dc:title>{items_count} items</dc:title><upnp:class>object.container</upnp:class></container>"#
     );
@@ -758,34 +780,29 @@ fn generate_browse_albums_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> String {
-    let total_matches = collection
-        .artists
-        .iter()
-        .map(|artist| artist.albums.len())
-        .sum::<usize>();
+    let total_matches = collection.get_albums().count();
     let starting_index = starting_index.unwrap().into();
     let requested_count: usize = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
     let mut some_id = 0;
     let mut skipped = 0;
-    'artists: for artist in &collection.artists {
+    'artists: for artist in collection.get_artists() {
         // move on quickly if we're not up to the starting index
-        if skipped + artist.albums.len() <= starting_index {
-            skipped += artist.albums.len();
+        let albums = artist.get_albums();
+        if skipped + albums.len() <= starting_index {
+            skipped += albums.len();
             continue;
         }
         let artist_name = xml::escape::escape_str_attribute(&artist.name);
-        for album in artist
-            .albums
-            .iter()
+        for album in albums
             .skip(starting_index - skipped)
             .take(requested_count - number_returned)
         {
             number_returned += 1;
             let album_title = xml::escape::escape_str_attribute(&album.title);
             let date = album.date.to_string();
-            let track_count = album.tracks.len();
+            let track_count = album.get_tracks().len();
             let cover = format!("{}/{}", addr, album.cover);
             let cover = xml::escape::escape_str_attribute(&cover);
             write!(
@@ -811,8 +828,8 @@ fn generate_browse_an_album_response(
     // dont' worry about this
     let mut some_id = 0;
     let mut found = None;
-    'artists: for artist in &collection.artists {
-        for album in &artist.albums {
+    'artists: for artist in collection.get_artists() {
+        for album in artist.get_albums() {
             if format!("*a{}", some_id + 1) == album_id {
                 found = Some((artist, album));
                 break 'artists;
@@ -821,7 +838,8 @@ fn generate_browse_an_album_response(
         }
     }
     let (artist, album) = found.unwrap_or_else(|| panic!("album {album_id} not found"));
-    let total_matches = album.tracks.len();
+    let tracks = album.get_tracks();
+    let total_matches = tracks.len();
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
@@ -831,9 +849,7 @@ fn generate_browse_an_album_response(
     let cover = format!("{}/{}", addr, album.cover);
     let cover = xml::escape::escape_str_attribute(&cover);
     let mut result = String::new();
-    for (i, track) in album
-        .tracks
-        .iter()
+    for (i, track) in tracks
         .skip(starting_index)
         .take(requested_count)
         .enumerate()
@@ -857,14 +873,13 @@ fn generate_browse_artists_response(
     starting_index: Option<u16>,
     requested_count: Option<u16>,
 ) -> String {
-    let total_matches = collection.artists.len();
+    let artists = collection.get_artists();
+    let total_matches = artists.len();
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    for (i, artist) in collection
-        .artists
-        .iter()
+    for (i, artist) in artists
         .skip(starting_index)
         .take(requested_count)
         .enumerate()
@@ -892,8 +907,10 @@ fn generate_browse_an_artist_response(
     let requested_count = requested_count.unwrap().into();
     let total_matches = things.len();
     let artist = collection
-        .artists
-        .get(artist_id.parse::<usize>().unwrap() - 1)
+        .get_artists()
+        .skip(artist_id.parse::<usize>().unwrap() - 1)
+        .take(1)
+        .next()
         .unwrap();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -903,17 +920,13 @@ fn generate_browse_an_artist_response(
         let (sub_id, title) = match *thing {
             "albums" => {
                 let sub_id = (*thing).to_string();
-                let albums = artist.albums.len();
+                let albums = artist.get_albums().len();
                 let title = format!("{albums} albums");
                 (sub_id, title)
             }
             "items" => {
                 let sub_id = (*thing).to_string();
-                let items = artist
-                    .albums
-                    .iter()
-                    .map(|album| album.tracks.len())
-                    .sum::<usize>();
+                let items = artist.get_tracks().count();
                 let title = format!("{items} items");
                 (sub_id, title)
             }
@@ -939,18 +952,19 @@ fn generate_browse_an_artist_albums_response(
     addr: &str,
 ) -> String {
     let artist = collection
-        .artists
-        .get(artist_id.parse::<usize>().unwrap() - 1)
+        .get_artists()
+        .skip(artist_id.parse::<usize>().unwrap() - 1)
+        .take(1)
+        .next()
         .unwrap();
-    let total_matches = artist.albums.len();
+    let albums = artist.get_albums();
+    let total_matches = albums.len();
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
     let mut result = String::new();
-    for (i, album) in artist
-        .albums
-        .iter()
+    for (i, album) in albums
         .skip(starting_index)
         .take(requested_count)
         .enumerate()
@@ -959,7 +973,7 @@ fn generate_browse_an_artist_albums_response(
         let id = starting_index + i + 1; // WTF
         let title = xml::escape::escape_str_attribute(&album.title);
         let date = album.date.to_string();
-        let track_count = album.tracks.len();
+        let track_count = album.get_tracks().len();
         let cover = format!("{}/{}", addr, album.cover);
         let cover = xml::escape::escape_str_attribute(&cover);
         write!(
@@ -979,14 +993,19 @@ fn generate_browse_an_artist_album_response(
     addr: &str,
 ) -> String {
     let artist = collection
-        .artists
-        .get(artist_id.parse::<usize>().unwrap() - 1)
+        .get_artists()
+        .skip(artist_id.parse::<usize>().unwrap() - 1)
+        .take(1)
+        .next()
         .unwrap();
     let album = artist
-        .albums
-        .get(album_id.parse::<usize>().unwrap() - 1)
+        .get_albums()
+        .skip(album_id.parse::<usize>().unwrap() - 1)
+        .take(1)
+        .next()
         .unwrap();
-    let total_matches = album.tracks.len();
+    let tracks = album.get_tracks();
+    let total_matches = tracks.len();
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
@@ -996,9 +1015,7 @@ fn generate_browse_an_artist_album_response(
     let cover = format!("{}/{}", addr, album.cover);
     let cover = xml::escape::escape_str_attribute(&cover);
     let mut result = String::new();
-    for (i, track) in album
-        .tracks
-        .iter()
+    for (i, track) in tracks
         .skip(starting_index)
         .take(requested_count)
         .enumerate()
@@ -1022,14 +1039,13 @@ fn generate_browse_all_artists_response(
     starting_index: Option<u16>,
     requested_count: Option<u16>,
 ) -> String {
-    let total_matches = collection.artists.len();
+    let artists = collection.get_artists();
+    let total_matches = artists.len();
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    for (i, artist) in collection
-        .artists
-        .iter()
+    for (i, artist) in artists
         .skip(starting_index)
         .take(requested_count)
         .enumerate()
@@ -1061,7 +1077,7 @@ fn format_response(result: &str, number_returned: usize, total_matches: usize) -
 }
 
 fn generate_get_system_update_id_response(collection: &Collection) -> (String, &'static str) {
-    let system_update_id = collection.system_update_id;
+    let system_update_id = collection.get_system_update_id();
     let body = format!(
         r#"
         <u:GetSystemUpdateIDResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
