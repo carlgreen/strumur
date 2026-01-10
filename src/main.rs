@@ -17,6 +17,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
+use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
@@ -225,6 +226,8 @@ fn populate_collection(location: &str) -> Collection {
         artists: vec![],
     };
 
+    let start = Instant::now();
+
     // naively assume folder structure is great!
     let artist_dirs = fs::read_dir(location).expect("no Music folder location in home directory");
     for path in artist_dirs.flatten() {
@@ -329,6 +332,8 @@ fn populate_collection(location: &str) -> Collection {
 
         collection.artists.push(artist);
     }
+
+    info!("Populated collection in {:.2?}", start.elapsed());
 
     collection
 }
