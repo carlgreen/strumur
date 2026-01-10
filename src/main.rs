@@ -1,6 +1,7 @@
 extern crate socket2;
 
 use std::collections::HashMap;
+use std::env;
 use std::fmt::Write;
 use std::fs;
 use std::fs::File;
@@ -365,6 +366,12 @@ fn encode_path_for_url(path: &Path, location: &str) -> String {
 }
 
 fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+
+    let location = args
+        .get(1)
+        .expect("required argument missing: collection location");
+
     stderrlog::new()
         .module(module_path!())
         .verbosity(Level::Debug)
@@ -379,7 +386,7 @@ fn main() -> Result<()> {
         Err(err) => panic!("{err}"),
     };
 
-    let collection = populate_collection("../../Music/");
+    let collection = populate_collection(location);
 
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
