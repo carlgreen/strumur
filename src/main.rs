@@ -872,7 +872,8 @@ fn generate_browse_an_album_response(
             if is_flac(&mut br) {
                 br.rewind()
                     .expect("could not return to start of FLAC reader");
-                extract_flac_metadata(&mut br);
+                let metadata = extract_flac_metadata(&mut br);
+                info!("fields: {:#?}", metadata.fields);
             } else {
                 info!("track is not flac");
             }
@@ -1961,6 +1962,8 @@ fn format_rfc1123(dt: chrono::DateTime<Utc>) -> String {
     dt.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
 }
 
+// FLAC stuff see https://www.rfc-editor.org/rfc/rfc9639
+
 // TODO these should not require reading the entire file into memory
 
 const FLAC_MARKER: [u8; 4] = [0x66_u8, 0x4C_u8, 0x61_u8, 0x43_u8];
@@ -1995,13 +1998,69 @@ enum FlacMetadataBlockType {
     Forbidden,
 }
 
-fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
+struct FlacMetadata {
+    /// The minimum block size (in samples) used in the stream, excluding the last block.
+    minimum_block_size: u16,
+
+    /// The maximum block size (in samples) used in the stream.
+    maximum_block_size: u16,
+
+    /// The minimum frame size (in bytes) used in the stream. A value of 0 signifies that the value is not known.
+    minimum_frame_size: u32,
+
+    /// The maximum frame size (in bytes) used in the stream. A value of 0 signifies that the value is not known.
+    maximum_frame_size: u32,
+
+    /// Sample rate in Hz.
+    sample_rate: u32,
+
+    /// (number of channels)-1. FLAC supports from 1 to 8 channels.
+    channels: u8,
+
+    /// (bits per sample)-1. FLAC supports from 4 to 32 bits per sample.
+    bits: u8,
+
+    /// Total number of interchannel samples in the stream. A value of 0 here means the number of total samples is unknown.
+    total: u64,
+
+    /// MD5 checksum of the unencoded audio data. A value of 0 signifies that the value is not known.
+    // checksum: [u8; 16],
+    checksum: u128,
+
+    /// The name of the program that generated the file or stream.
+    vendor: String,
+
+    /// Metadata describing various aspects of the contained audio.
+    fields: Vec<FlacMetadataCommentField>,
+}
+
+#[derive(Debug, PartialEq)]
+struct FlacMetadataCommentField {
+    name: String,
+    content: String,
+}
+
+fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
+    let mut metadata = FlacMetadata {
+        minimum_block_size: 0,
+        maximum_block_size: 0,
+        minimum_frame_size: 0,
+        maximum_frame_size: 0,
+        sample_rate: 0,
+        channels: 0,
+        bits: 0,
+        total: 0,
+        // checksum: [0; 16],
+        checksum: 0,
+        vendor: String::new(),
+        fields: vec![],
+    };
+
     let mut buf = [0; 4];
     reader
         .read_exact(&mut buf)
         .expect("failed to read FLAC marker");
     debug_assert_eq!(buf, FLAC_MARKER);
-    println!("{buf:?}");
 
     // Each metadata block starts with a 4-byte header. The first bit in this header flags
     // whether a metadata block is the last one. It is 0 when other metadata blocks follow;
@@ -2079,11 +2138,11 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
 
                 // u(16)	The minimum block size (in samples) used in the stream, excluding the last block.
                 let minimum_block_size = u16::from_be_bytes((&data[0..2]).try_into().unwrap());
-                println!("    minimum_block_size: {minimum_block_size}");
+                metadata.minimum_block_size = minimum_block_size;
 
                 // u(16)	The maximum block size (in samples) used in the stream.
                 let maximum_block_size = u16::from_be_bytes((&data[2..4]).try_into().unwrap());
-                println!("    maximum_block_size: {maximum_block_size}");
+                metadata.maximum_block_size = maximum_block_size;
 
                 // The minimum block size and the maximum block size MUST be in the 16-65535
                 // range. The minimum block size MUST be equal to or less than the maximum block size.
@@ -2092,37 +2151,40 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
                 let mut u32_data = [0_u8; 4];
                 u32_data[1..].copy_from_slice(&data[4..7]);
                 let minimum_frame_size = u32::from_be_bytes(u32_data);
-                println!("    minimum_frame_size: {minimum_frame_size}");
+                metadata.minimum_frame_size = minimum_frame_size;
 
                 // u(24)	The maximum frame size (in bytes) used in the stream. A value of 0 signifies that the value is not known.
                 let mut u32_data = [0_u8; 4];
                 u32_data[1..].copy_from_slice(&data[7..10]);
                 let maximum_frame_size = u32::from_be_bytes(u32_data);
-                println!("    maximum_frame_size: {maximum_frame_size}");
+                metadata.maximum_frame_size = maximum_frame_size;
 
                 // u(20)	Sample rate in Hz.
                 let mut u32_data = [0_u8; 4];
                 u32_data[1..].copy_from_slice(&data[10..13]);
                 let sample_rate = u32::from_be_bytes(u32_data) >> 4;
-                println!("    sample_rate: {sample_rate}");
+                metadata.sample_rate = sample_rate;
 
                 // u(3)	(number of channels)-1. FLAC supports from 1 to 8 channels.
                 let channels = ((data[12] & 15) >> 1) + 1;
-                println!("    channels: {channels}");
+                metadata.channels = channels;
 
                 // u(5)	(bits per sample)-1. FLAC supports from 4 to 32 bits per sample.
-                let bits = (u16::from_be_bytes((&data[12..14]).try_into().unwrap()) >> 4 & 31) + 1;
-                println!("    bits: {bits}");
+                let bits = u8::try_from(
+                    (u16::from_be_bytes((&data[12..14]).try_into().unwrap()) >> 4 & 31) + 1,
+                )
+                .expect("bit magic should make this fit in u8");
+                metadata.bits = bits;
 
                 // u(36)	Total number of interchannel samples in the stream. A value of 0 here means the number of total samples is unknown.
                 let mut u64_data = [0_u8; 8];
                 u64_data[3..].copy_from_slice(&data[13..18]);
                 let total = u64::from_be_bytes(u64_data) & 0x000F_FFFF_FFFF;
-                println!("    total: {total}");
+                metadata.total = total;
 
                 // u(128)	MD5 checksum of the unencoded audio data. This allows the decoder to determine if an error exists in the audio data even when, despite the error, the bitstream itself is valid. A value of 0 signifies that the value is not known.
                 let checksum = u128::from_be_bytes((&data[18..]).try_into().unwrap());
-                println!("    checksum: {checksum:02x}");
+                metadata.checksum = checksum;
             }
             FlacMetadataBlockType::Padding => {
                 // nothing to do for padding
@@ -2205,13 +2267,12 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
                 // UTF-8 coded and is not terminated in any way.
                 let vendor_length =
                     u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-                // println!("  vendor length: {vendor_length}");
 
                 pos += 4;
 
                 let vendor = String::from_utf8((&data[pos..pos + vendor_length]).into())
                     .expect("vendor string must be UTF-8");
-                println!("    vendor: {vendor}");
+                metadata.vendor = vendor;
 
                 pos += vendor_length;
 
@@ -2223,13 +2284,13 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
                 // little-endian. The field itself follows it. Like the vendor string, the
                 // field is UTF-8 coded and not terminated in any way.
                 let fields = u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
+                metadata.fields = Vec::with_capacity(fields);
 
                 pos += 4;
 
                 for _ in 0..fields {
                     let field_length =
                         u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-                    // println!("  field length: {field_length}");
 
                     pos += 4;
 
@@ -2255,7 +2316,10 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
                     let (name, content) = field
                         .split_once('=')
                         .expect("comment field must be seperated by '='");
-                    println!("    {name}: {content}");
+                    metadata.fields.push(FlacMetadataCommentField {
+                        name: name.to_string(),
+                        content: content.to_string(),
+                    });
                 }
             }
             FlacMetadataBlockType::Cuesheet => {
@@ -2517,6 +2581,8 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
             break;
         }
     }
+
+    metadata
 }
 
 #[cfg(test)]
@@ -4120,6 +4186,43 @@ CACHE-CONTROL: max-age=10\r
     fn test_extract_flac_metadata() {
         let f = File::open("src/riff.flac").unwrap();
         let mut br = BufReader::new(f);
-        extract_flac_metadata(&mut br);
+        let metadata = extract_flac_metadata(&mut br);
+
+        assert_eq!(metadata.minimum_block_size, 4096);
+        assert_eq!(metadata.maximum_block_size, 4096);
+        assert_eq!(metadata.minimum_frame_size, 2465);
+        assert_eq!(metadata.maximum_frame_size, 12367);
+        assert_eq!(metadata.sample_rate, 48000);
+        assert_eq!(metadata.channels, 2);
+        assert_eq!(metadata.bits, 16);
+        assert_eq!(metadata.total, 274176);
+        assert_eq!(metadata.checksum, 0xebede16f6f0c2fc9259bc4724a78e101);
+
+        assert_eq!(metadata.vendor, "reference libFLAC 1.5.0 20250211");
+        assert_eq!(
+            metadata.fields,
+            vec![
+                FlacMetadataCommentField {
+                    name: "TITLE".to_string(),
+                    content: "riff".to_string(),
+                },
+                FlacMetadataCommentField {
+                    name: "ARTIST".to_string(),
+                    content: "carl".to_string(),
+                },
+                FlacMetadataCommentField {
+                    name: "ALBUMARTIST".to_string(),
+                    content: "carl".to_string(),
+                },
+                FlacMetadataCommentField {
+                    name: "ALBUM".to_string(),
+                    content: "none".to_string(),
+                },
+                FlacMetadataCommentField {
+                    name: "RELEASEDATE".to_string(),
+                    content: "2025".to_string(),
+                },
+            ]
+        );
     }
 }
