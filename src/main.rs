@@ -10,6 +10,7 @@ use std::io::BufReader;
 use std::io::ErrorKind;
 use std::io::Read;
 use std::io::Result;
+use std::io::Seek;
 use std::io::Write as _;
 use std::net::TcpListener;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -866,9 +867,12 @@ fn generate_browse_an_album_response(
         let temp = urlencoding::decode(track.file.as_str()).unwrap();
         let file = collection.base.join(temp.as_ref());
         info!("track file is {}", file.display());
-        if let Ok(file_data) = fs::read(file) {
-            if is_flac(&file_data) {
-                extract_flac_metadata(&file_data);
+        if let Ok(file) = File::open(file) {
+            let mut br = BufReader::new(file);
+            if is_flac(&mut br) {
+                br.rewind()
+                    .expect("could not return to start of FLAC reader");
+                extract_flac_metadata(&mut br);
             } else {
                 info!("track is not flac");
             }
@@ -1961,8 +1965,12 @@ fn format_rfc1123(dt: chrono::DateTime<Utc>) -> String {
 
 const FLAC_MARKER: [u8; 4] = [0x66_u8, 0x4C_u8, 0x61_u8, 0x43_u8];
 
-fn is_flac(data: &[u8]) -> bool {
-    data[0..4] == FLAC_MARKER
+fn is_flac(reader: &mut BufReader<impl Read>) -> bool {
+    let mut buf = [0; 4];
+    reader
+        .read_exact(&mut buf)
+        .expect("failed to attempt to read FLAC marker");
+    buf == FLAC_MARKER
 }
 
 #[derive(Debug)]
@@ -1987,11 +1995,13 @@ enum FlacMetadataBlockType {
     Forbidden,
 }
 
-fn extract_flac_metadata(data: &[u8]) {
-    debug_assert_eq!(data[0..4], FLAC_MARKER);
-    println!("{:?}", &data[0..4]);
-
-    let mut pos = 4;
+fn extract_flac_metadata(reader: &mut BufReader<impl Read>) {
+    let mut buf = [0; 4];
+    reader
+        .read_exact(&mut buf)
+        .expect("failed to read FLAC marker");
+    debug_assert_eq!(buf, FLAC_MARKER);
+    println!("{buf:?}");
 
     // Each metadata block starts with a 4-byte header. The first bit in this header flags
     // whether a metadata block is the last one. It is 0 when other metadata blocks follow;
@@ -2002,7 +2012,10 @@ fn extract_flac_metadata(data: &[u8]) {
     // unsigned number coded big-endian.
     loop {
         println!("metadata block");
-        let header = &data[pos..pos + 4];
+        let mut header = [0; 4];
+        reader
+            .read_exact(&mut header)
+            .expect("failed to read FLAC metadata block header");
         let last_metadata_block = (header[0] & 0b1000_0000) >> 7;
         let metadata_block_type = match header[0] & 0b111_1111 {
             0 => FlacMetadataBlockType::Streaminfo,
@@ -2029,7 +2042,10 @@ fn extract_flac_metadata(data: &[u8]) {
         // );
         println!("  size: {block_size}");
 
-        let data = &data[pos + 4..pos + 4 + block_size];
+        let mut data = vec![0; block_size];
+        reader
+            .read_exact(&mut data)
+            .expect("failed to read FLAC metadata block");
         // println!("  data: {data:02x?}");
 
         match metadata_block_type {
@@ -2496,8 +2512,6 @@ fn extract_flac_metadata(data: &[u8]) {
                 warn!("FLAC metadata contains forbidden block, ignoring");
             }
         }
-
-        pos += block_size + 4;
 
         if last_metadata_block == 1 {
             break;
@@ -4093,16 +4107,19 @@ CACHE-CONTROL: max-age=10\r
 
     #[test]
     fn test_is_flac() {
-        let flac_data = include_bytes!("riff.flac");
-        assert!(is_flac(flac_data));
+        let f = File::open("src/riff.flac").unwrap();
+        let mut br = BufReader::new(f);
+        assert!(is_flac(&mut br));
 
-        let not_flac_data = include_bytes!("cover.jpg");
-        assert!(!is_flac(not_flac_data));
+        let f = File::open("src/cover.jpg").unwrap();
+        let mut br = BufReader::new(f);
+        assert!(!is_flac(&mut br));
     }
 
     #[test]
     fn test_extract_flac_metadata() {
-        let data = include_bytes!("riff.flac");
-        extract_flac_metadata(data);
+        let f = File::open("src/riff.flac").unwrap();
+        let mut br = BufReader::new(f);
+        extract_flac_metadata(&mut br);
     }
 }
