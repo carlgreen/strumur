@@ -296,7 +296,7 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                         } else {
                             warn!("no track number found in {display_file_name}");
                             debug!("fields in {display_file_name}: {field_names:?}",);
-                            continue;
+                            0
                         };
                         let Some(track_title) = metadata
                             .fields
