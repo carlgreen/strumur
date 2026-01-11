@@ -286,18 +286,19 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                             debug!("fields in {display_file_name}: {field_names:?}");
                             continue;
                         };
-                        let track_number = if let Some(number) = metadata
+                        let track_number = metadata
                             .fields
                             .iter()
                             .find(|f| f.name.to_uppercase() == "TRACKNUMBER")
                             .map(|f| f.content.clone())
-                        {
-                            number.parse::<u8>().expect("number")
-                        } else {
-                            warn!("no track number found in {display_file_name}");
-                            debug!("fields in {display_file_name}: {field_names:?}",);
-                            0
-                        };
+                            .map_or_else(
+                                || {
+                                    warn!("no track number found in {display_file_name}");
+                                    debug!("fields in {display_file_name}: {field_names:?}",);
+                                    0
+                                },
+                                |number| number.parse::<u8>().expect("number"),
+                            );
                         let Some(track_title) = metadata
                             .fields
                             .iter()
