@@ -784,17 +784,21 @@ fn parse_some_headers(buf_reader: &mut BufReader<impl Read>) -> HashMap<String, 
 }
 
 fn get_content_length(request_line: &str, http_request_headers: &HashMap<String, String>) -> usize {
-    http_request_headers.get("Content-Length").map_or_else(
-        || {
-            if request_line.starts_with("GET ") {
-                // assume no body
-                0
-            } else {
-                panic!("no content length");
-            }
-        },
-        |content_length| content_length.parse().unwrap(),
-    )
+    http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("Content-Length"))
+        .and_then(|content_length_key| http_request_headers.get(content_length_key))
+        .map_or_else(
+            || {
+                if request_line.starts_with("GET ") {
+                    // assume no body
+                    0
+                } else {
+                    panic!("no content length");
+                }
+            },
+            |content_length| content_length.parse().unwrap(),
+        )
 }
 
 fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> Option<String> {
@@ -1410,7 +1414,11 @@ fn handle_device_connection(
             (content.to_string(), HTTP_RESPONSE_OK)
         }
         "POST /ContentDirectory/Control HTTP/1.1" => {
-            http_request_headers.get("Soapaction").map_or_else(
+            let soap_action_key = http_request_headers
+                .keys()
+                .find(|k| k.eq_ignore_ascii_case("Soapaction"))
+                .expect("no soap action");
+            http_request_headers.get(soap_action_key).map_or_else(
                 || {
                     warn!("control: no soap action");
                     (String::new(), "400 BAD REQUEST")
