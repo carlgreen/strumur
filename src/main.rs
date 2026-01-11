@@ -24,6 +24,7 @@ use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
+use chrono::NaiveTime;
 use chrono::Utc;
 use log::{Level, debug, error, info, trace, warn};
 use rand::Rng;
@@ -192,6 +193,11 @@ struct Track {
     number: u8,
     title: String,
     file: String,
+    duration: NaiveTime,
+    size: u64,
+    bits_per_sample: u8,
+    sample_frequency: u32,
+    channels: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -249,11 +255,18 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                 let display_file_name = entry.path().display().to_string();
 
                 if let Ok(file) = File::open(entry.path()) {
+                    let file_metadata = file.metadata().expect("could not read metadata");
                     let mut br = BufReader::new(file);
                     if is_flac(&mut br) {
                         br.rewind()
                             .expect("could not return to start of FLAC reader");
                         let metadata = extract_flac_metadata(&mut br);
+
+                        let duration = metadata.duration();
+                        let size = file_metadata.len();
+                        let bits_per_sample = metadata.bits;
+                        let sample_frequency = metadata.sample_rate;
+                        let channels = metadata.channels;
 
                         let field_names = {
                             let mut names = metadata
@@ -340,6 +353,11 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                                 .to_str()
                                 .expect("can only handle utf8 for now") // maybe just store as Path?
                                 .to_owned(),
+                            duration,
+                            size,
+                            bits_per_sample,
+                            sample_frequency,
+                            channels,
                         };
 
                         let artist: Option<&mut Artist> = collection
@@ -978,11 +996,16 @@ fn generate_browse_an_album_response(
         let id = starting_index + i + 1; // WTF
         let track_title = xml::escape::escape_str_attribute(&track.title);
         let track_number = track.number;
+        let duration = format_time_nice(track.duration);
+        let size = track.size;
+        let bits_per_sample = track.bits_per_sample;
+        let sample_frequency = track.sample_frequency;
+        let channels = track.channels;
         let file = format!("{}/{}", addr, track.file);
         let file = xml::escape::escape_str_attribute(&file);
         write!(
             result,
-            r#"<item id="0$albums${album_id}$*i{id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$albums${album_id}$*i{id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
@@ -1144,11 +1167,16 @@ fn generate_browse_an_artist_album_response(
         let id = starting_index + i + 1; // WTF
         let track_title = xml::escape::escape_str_attribute(&track.title);
         let track_number = track.number;
+        let duration = format_time_nice(track.duration);
+        let size = track.size;
+        let bits_per_sample = track.bits_per_sample;
+        let sample_frequency = track.sample_frequency;
+        let channels = track.channels;
         let file = format!("{}/{}", addr, track.file);
         let file = xml::escape::escape_str_attribute(&file);
         write!(
             result,
-            r#"<item id="0$=Artist${artist_id}$albums${album_id}${id}" parentID="0$=Artist${artist_id}$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$=Artist${artist_id}$albums${album_id}${id}" parentID="0$=Artist${artist_id}$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
@@ -1179,6 +1207,14 @@ fn generate_browse_all_artists_response(
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
+}
+
+/// this is what i have to do to not have extra leading zeros on the hour field. probably very fallable.
+fn format_time_nice(time: NaiveTime) -> String {
+    time.format("%_H:%M:%S%.3f")
+        .to_string()
+        .trim_start()
+        .to_string()
 }
 
 fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
@@ -2132,6 +2168,27 @@ struct FlacMetadata {
     fields: Vec<FlacMetadataCommentField>,
 }
 
+impl FlacMetadata {
+    fn duration(&self) -> NaiveTime {
+        let whole_seconds = self.total / u64::from(self.sample_rate);
+        let remainder = self.total % u64::from(self.sample_rate);
+        let milli = (f64::from(u32::try_from(remainder).expect("crazy if not"))
+            / f64::from(self.sample_rate)
+            * 1000.0)
+            .trunc();
+
+        // i think i'm ok here but i haven't really thought about it
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let nano = milli as u32 * 1_000_000;
+
+        NaiveTime::from_num_seconds_from_midnight_opt(
+            u32::try_from(whole_seconds).expect("too much seconds"),
+            nano,
+        )
+        .expect("exceeded time")
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct FlacMetadataCommentField {
     name: String,
@@ -2716,6 +2773,11 @@ mod tests {
             title: track_title.to_string(),
             file: format!("Music/{artist_name}/{album_title}/{track_number:02} {track_title}.flac")
                 .replace(' ', "*20"),
+            duration: NaiveTime::from_hms_milli_opt(0, 2, 18, 893).unwrap(),
+            size: 18323574,
+            bits_per_sample: 16,
+            sample_frequency: 44100,
+            channels: 2,
         }
     }
 
@@ -3398,7 +3460,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$albums$*a3$*i2" parentID="0$albums$*a3" restricted="1">
@@ -3410,7 +3472,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$albums$*a3$*i3" parentID="0$albums$*a3" restricted="1">
@@ -3422,7 +3484,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
 </DIDL-Lite>"#,
@@ -3669,7 +3731,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$=Artist$3$albums$1$2" parentID="0$=Artist$3$albums$1" restricted="1">
@@ -3681,7 +3743,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
     <item id="0$=Artist$3$albums$1$3" parentID="0$=Artist$3$albums$1" restricted="1">
@@ -3693,7 +3755,7 @@ mod tests {
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" bitrate="176400" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
 </DIDL-Lite>"#,
@@ -4270,6 +4332,12 @@ CACHE-CONTROL: max-age=10\r
     }
 
     #[test]
+    fn test_format_time_nice() {
+        let time = NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap();
+        assert_eq!(format_time_nice(time), "0:00:05.712");
+    }
+
+    #[test]
     fn test_is_flac() {
         let f = File::open("src/riff.flac").unwrap();
         let mut br = BufReader::new(f);
@@ -4295,6 +4363,10 @@ CACHE-CONTROL: max-age=10\r
         assert_eq!(metadata.bits, 16);
         assert_eq!(metadata.total, 274176);
         assert_eq!(metadata.checksum, 0xebede16f6f0c2fc9259bc4724a78e101);
+        assert_eq!(
+            metadata.duration(),
+            NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap()
+        );
 
         assert_eq!(metadata.vendor, "reference libFLAC 1.5.0 20250211");
         assert_eq!(
