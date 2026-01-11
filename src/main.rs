@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt::Write;
 use std::fs;
+use std::fs::DirEntry;
 use std::fs::File;
 use std::fs::read_to_string;
 use std::io::BufRead;
@@ -230,114 +231,219 @@ fn populate_collection(location: &str) -> Collection {
 
     let start = Instant::now();
 
-    // naively assume folder structure is great!
-    let artist_dirs = fs::read_dir(location).expect("no Music folder location in home directory");
-    for path in artist_dirs.flatten() {
-        if !path.file_type().unwrap().is_dir() {
-            debug!("non-directory found, ignoring: {}", path.path().display());
-            continue;
-        }
-
-        let artist_name = path.file_name().into_string().unwrap();
-        let mut artist = Artist {
-            name: artist_name.clone(),
-            albums: vec![],
-        };
-
-        let album_dirs = fs::read_dir(path.path()).unwrap();
-        for path in album_dirs.flatten() {
-            if !path.file_type().unwrap().is_dir() {
-                debug!("non-directory found, ignoring: {}", path.path().display());
-                continue;
-            }
-
-            let album_title = path.file_name().into_string().unwrap();
-            let mut album = Album {
-                title: album_title.clone(),
-                date: Utc::now().naive_utc().date(), // placeholder
-                tracks: vec![],
-                cover: String::new(),
-            };
-
-            let mut images = Vec::new();
-
-            let album_files = fs::read_dir(path.path()).unwrap();
-            for path in album_files.flatten() {
-                if !path.file_type().unwrap().is_file() {
-                    debug!("non-file found, ignoring: {}", path.path().display());
-                    continue;
-                }
-
-                let file_name = path.file_name().into_string().unwrap();
-                let p = path.path();
-                let ext = match p.extension() {
-                    Some(ext) => ext.to_str().unwrap(),
-                    None if p.starts_with(".") => p
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .strip_prefix('.')
-                        .unwrap(),
-                    None => {
-                        debug!("skipping no extesion {file_name}");
-                        continue;
-                    }
-                };
-
-                match ext.to_lowercase().as_str() {
-                    "flac" | "m4a" | "m4p" | "mp3" | "ogg" | "wav" | "wma" => {
-                        // TODO maybe this should store the local path, and encode it etc. on request?
-                        let url = encode_path_for_url(&path.path(), location);
-                        let track = Track {
-                            number: 0,
-                            title: file_name,
-                            file: url,
-                        };
-                        album.tracks.push(track);
-                    }
-                    "m4v" | "mpeg" => {
-                        trace!("skipping video file {file_name}");
-                    }
-                    "m3u" => {
-                        trace!("skipping playlist {file_name}");
-                    }
-                    "gif" | "jpg" | "jpeg" | "png" => {
-                        images.push(path.path());
-                    }
-                    _ => {
-                        trace!("skipping unknown extension {file_name}");
-                    }
-                }
-            }
-
-            if !images.is_empty() {
-                let mut cover = None;
-                let candidates = vec!["cover.jpg", "folder.jpg"];
-                for candidate in candidates {
-                    cover = find_something(&images, candidate);
-                    if cover.is_some() {
-                        break;
-                    }
-                }
-                if let Some(cover) = cover {
-                    // TODO maybe this should store the local path, and encode it etc. on request?
-                    let url = encode_path_for_url(&cover, location);
-                    album.cover = url;
-                } else {
-                    debug!("no suitable artwork found for {album_title} in {images:#?}");
-                }
-            }
-
-            artist.albums.push(album);
-        }
-
-        collection.artists.push(artist);
-    }
+    read_dir(location, location, &mut collection);
 
     info!("Populated collection in {:.2?}", start.elapsed());
 
     collection
+}
+
+fn read_dir(location: &str, path: &str, collection: &mut Collection) {
+    let entries = fs::read_dir(path).expect("no Music folder location in home directory");
+    for entry in entries.flatten() {
+        if let Ok(file_type) = entry.file_type() {
+            if file_type.is_dir() {
+                read_dir(location, entry.path().to_str().unwrap(), collection);
+            }
+            if file_type.is_file() {
+                let display_file_name = entry.path().display().to_string();
+
+                if let Ok(file) = File::open(entry.path()) {
+                    let mut br = BufReader::new(file);
+                    if is_flac(&mut br) {
+                        br.rewind()
+                            .expect("could not return to start of FLAC reader");
+                        let metadata = extract_flac_metadata(&mut br);
+
+                        let field_names = {
+                            let mut names = metadata
+                                .fields
+                                .iter()
+                                .map(|f| f.name.clone())
+                                .collect::<Vec<String>>();
+                            names.sort();
+                            names
+                        };
+                        // info!("field_names: {field_names:#?}");
+
+                        let Some(artist_name) = metadata
+                            .fields
+                            .iter()
+                            .find(|f| f.name.to_uppercase() == "ARTIST")
+                            .map(|f| f.content.clone())
+                        else {
+                            warn!("no artist name found in {display_file_name}");
+                            debug!("fields in {display_file_name}: {field_names:?}");
+                            continue;
+                        };
+                        let Some(album_title) = metadata
+                            .fields
+                            .iter()
+                            .find(|f| f.name.to_uppercase() == "ALBUM")
+                            .map(|f| f.content.clone())
+                        else {
+                            warn!("no album title found in {display_file_name}");
+                            debug!("fields in {display_file_name}: {field_names:?}");
+                            continue;
+                        };
+                        let track_number = if let Some(number) = metadata
+                            .fields
+                            .iter()
+                            .find(|f| f.name.to_uppercase() == "TRACKNUMBER")
+                            .map(|f| f.content.clone())
+                        {
+                            number.parse::<u8>().expect("number")
+                        } else {
+                            warn!("no track number found in {display_file_name}");
+                            debug!("fields in {display_file_name}: {field_names:?}",);
+                            continue;
+                        };
+                        let Some(track_title) = metadata
+                            .fields
+                            .iter()
+                            .find(|f| f.name.to_uppercase() == "TITLE")
+                            .map(|f| f.content.clone())
+                        else {
+                            warn!("no track title found in {display_file_name}");
+                            debug!("fields in {display_file_name}: {field_names:?}");
+                            continue;
+                        };
+                        let release_date = if let Some(mut datestr) = metadata
+                            .fields
+                            .iter()
+                            .find(|f| f.name.to_uppercase() == "DATE")
+                            .map(|f| f.content.clone())
+                        {
+                            // want like yyyy-mm-dd, but might be just yyyy-mm or even yyyy
+                            if datestr.len() == 4 {
+                                datestr += "-01";
+                            }
+                            if datestr.len() == 7 {
+                                datestr += "-01";
+                            }
+                            datestr.parse::<NaiveDate>().unwrap_or_else(|err| {
+                                panic!("{err}. expected valid date not {datestr}")
+                            })
+                        } else {
+                            warn!("no release date found in {display_file_name}");
+                            debug!("fields in {display_file_name}: {field_names:?}");
+                            continue;
+                        };
+
+                        let track = Track {
+                            number: track_number,
+                            title: track_title,
+                            file: entry
+                                .path()
+                                .as_os_str()
+                                .to_str()
+                                .expect("can only handle utf8 for now") // maybe just store as Path?
+                                .to_owned(),
+                        };
+
+                        let artist: Option<&mut Artist> = collection
+                            .artists
+                            .iter_mut()
+                            .find(|a| a.name == artist_name);
+                        if let Some(artist) = artist {
+                            let album = artist.albums.iter_mut().find(|a| a.title == album_title);
+                            if let Some(album) = album {
+                                album.tracks.push(track);
+                            } else {
+                                let cover_url = find_album_artwork(location, &entry, &album_title);
+
+                                let album = Album {
+                                    title: album_title,
+                                    date: release_date,
+                                    tracks: vec![track],
+                                    cover: cover_url.unwrap_or_default(),
+                                };
+                                artist.albums.push(album);
+                            }
+                        } else {
+                            let cover_url = find_album_artwork(location, &entry, &album_title);
+
+                            let album = Album {
+                                title: album_title,
+                                date: release_date,
+                                tracks: vec![track],
+                                cover: cover_url.unwrap_or_default(),
+                            };
+                            let artist = Artist {
+                                name: artist_name,
+                                albums: vec![album],
+                            };
+                            collection.artists.push(artist);
+                        }
+                    } else {
+                        trace!("{display_file_name} is not supported");
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn find_album_artwork(location: &str, entry: &DirEntry, album_title: &str) -> Option<String> {
+    // assume some kind of folder structure like artists/albums/tracks
+    let p = entry.path();
+    let probable_album_directory = p
+        .parent()
+        .expect("every file should have a parent directory");
+
+    let mut images = Vec::new();
+
+    let album_files = fs::read_dir(probable_album_directory).unwrap();
+    for path in album_files.flatten() {
+        if !path.file_type().unwrap().is_file() {
+            debug!("non-file found, ignoring: {}", path.path().display());
+            continue;
+        }
+
+        let file_name = path.file_name().into_string().unwrap();
+        let p = path.path();
+        let ext = match p.extension() {
+            Some(ext) => ext.to_str().unwrap(),
+            None if p.starts_with(".") => p
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .strip_prefix('.')
+                .unwrap(),
+            None => {
+                debug!("skipping no extesion {file_name}");
+                continue;
+            }
+        };
+
+        match ext.to_lowercase().as_str() {
+            "gif" | "jpg" | "jpeg" | "png" => {
+                images.push(path.path());
+            }
+            _ => {}
+        }
+    }
+
+    if images.len() == 1 {
+        // one image found, that will do
+        return Some(encode_path_for_url(
+            images.first().expect("just checked the length"),
+            location,
+        ));
+    }
+    if !images.is_empty() {
+        let candidates = vec!["cover.jpg", "folder.jpg"];
+        for candidate in candidates {
+            if let Some(cover) = find_something(&images, candidate) {
+                // TODO maybe this should store the local path, and encode it etc. on request?
+                return Some(encode_path_for_url(&cover, location));
+            }
+        }
+        debug!("no suitable artwork found for {album_title} in {images:#?}");
+    }
+
+    None
 }
 
 fn find_something(images: &[PathBuf], name: &str) -> Option<PathBuf> {
@@ -871,22 +977,6 @@ fn generate_browse_an_album_response(
         let id = starting_index + i + 1; // WTF
         let track_title = xml::escape::escape_str_attribute(&track.title);
         let track_number = track.number;
-        let temp = urlencoding::decode(track.file.as_str()).unwrap();
-        let file = collection.base.join(temp.as_ref());
-        info!("track file is {}", file.display());
-        if let Ok(file) = File::open(file) {
-            let mut br = BufReader::new(file);
-            if is_flac(&mut br) {
-                br.rewind()
-                    .expect("could not return to start of FLAC reader");
-                let metadata = extract_flac_metadata(&mut br);
-                info!("fields: {:#?}", metadata.fields);
-            } else {
-                info!("track is not flac");
-            }
-        } else {
-            info!("maybe file isn't even real");
-        }
         let file = format!("{}/{}", addr, track.file);
         let file = xml::escape::escape_str_attribute(&file);
         write!(
