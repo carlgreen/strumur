@@ -2245,6 +2245,9 @@ struct FlacMetadata {
 
     /// Contains image data of pictures in some way belonging to the audio
     picture: Vec<FlacMetadataPicture>,
+
+    /// Can be used to store seek points
+    seek_table: Vec<FlacMetadataSeekPoint>,
 }
 
 impl FlacMetadata {
@@ -2315,6 +2318,13 @@ impl std::fmt::Debug for Picture<'_> {
     }
 }
 
+#[derive(Debug)]
+struct FlacMetadataSeekPoint {
+    sample_number: u64,
+    offset: u64,
+    samples: u16,
+}
+
 fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
     let mut metadata = FlacMetadata {
         minimum_block_size: 0,
@@ -2330,6 +2340,7 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
         vendor: String::new(),
         fields: vec![],
         picture: vec![],
+        seek_table: vec![],
     };
 
     let mut buf = [0; 4];
@@ -2507,21 +2518,23 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
 
                 while pos < data.len() {
                     let seek_data = &data[pos..pos + 18];
-                    println!("  seek point");
 
                     // u(64)	Sample number of the first sample in the target frame or 0xFFFFFFFFFFFFFFFF for a placeholder point.
                     let sample_number = u64::from_be_bytes((&seek_data[0..8]).try_into().unwrap());
-                    println!("    sample_number: {sample_number}");
 
                     // u(64)	Offset (in bytes) from the first byte of the first frame header to the first byte of the target frame's header.
                     let offset = u64::from_be_bytes((&seek_data[8..16]).try_into().unwrap());
-                    println!("    offset: {offset}");
 
                     // u(16)	Number of samples in the target frame.
                     let samples = u16::from_be_bytes((&seek_data[16..18]).try_into().unwrap());
-                    println!("    samples: {samples}");
 
                     pos += 18;
+
+                    metadata.seek_table.push(FlacMetadataSeekPoint {
+                        sample_number,
+                        offset,
+                        samples,
+                    });
                 }
             }
             FlacMetadataBlockType::VorbisComment => {
