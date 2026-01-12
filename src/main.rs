@@ -947,6 +947,7 @@ fn generate_browse_albums_response(
             let track_count = album.get_tracks().len();
             let cover = format!("{}/{}", addr, album.cover);
             let cover = xml::escape::escape_str_attribute(&cover);
+            // TODO album art details
             write!(
                 result,
                 r#"<container id="0$albums$*a{some_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:date>{date}</dc:date><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
@@ -2140,6 +2141,73 @@ enum FlacMetadataBlockType {
     Forbidden,
 }
 
+#[derive(Debug)]
+enum FlacMetadataPictureType {
+    /// 0 Other
+    Other,
+
+    /// 1 PNG file icon of 32x32 pixels (see [RFC2083])
+    PNGIcon,
+
+    /// 2 General file icon
+    GeneralIcon,
+
+    /// 3 Front cover
+    FrontCover,
+
+    /// 4 Back cover
+    BackCover,
+
+    /// 5 Liner notes page
+    LinerNotes,
+
+    /// 6 Media label (e.g., CD, Vinyl or Cassette label)
+    MediaLabel,
+
+    /// 7 Lead artist, lead performer, or soloist
+    LeadArtist,
+
+    /// 8 Artist or performer
+    Artist,
+
+    /// 9 Conductor
+    Conductor,
+
+    /// 10 Band or orchestra
+    Band,
+
+    /// 11 Composer
+    Composer,
+
+    /// 12 Lyricist or text writer
+    Lyricist,
+
+    /// 13 Recording location
+    RecordingLocation,
+
+    /// 14 During recording
+    DuringRecording,
+
+    /// 15 During performance
+    DuringPerformance,
+
+    /// 16 Movie or video screen capture
+    VideoCapture,
+
+    /// 17 A bright colored fish
+    BrightColoredFish,
+
+    /// 18 Illustration
+    Illustration,
+
+    /// 19 Band or artist logotype
+    Logo,
+
+    /// 20 Publisher or studio logotype
+    PublisherStudioLogo,
+}
+
+#[derive(Debug)]
 struct FlacMetadata {
     /// The minimum block size (in samples) used in the stream, excluding the last block.
     minimum_block_size: u16,
@@ -2174,6 +2242,9 @@ struct FlacMetadata {
 
     /// Metadata describing various aspects of the contained audio.
     fields: Vec<FlacMetadataCommentField>,
+
+    /// Contains image data of pictures in some way belonging to the audio
+    picture: Vec<FlacMetadataPicture>,
 }
 
 impl FlacMetadata {
@@ -2203,6 +2274,47 @@ struct FlacMetadataCommentField {
     content: String,
 }
 
+struct FlacMetadataPicture {
+    picture_type: FlacMetadataPictureType,
+    media_type: String,
+    description: String,
+    width: u32,
+    height: u32,
+    depth: u32,
+    colors: u32,
+    picture: Vec<u8>,
+}
+
+impl std::fmt::Debug for FlacMetadataPicture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FlacMetadataPicture")
+            .field("picture_type", &self.picture_type)
+            .field("media_type", &self.media_type)
+            .field("description", &self.description)
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("depth", &self.depth)
+            .field("colors", &self.colors)
+            .field("picture", &Picture(&self.picture))
+            .finish()
+    }
+}
+
+struct Picture<'a>(&'a [u8]);
+
+impl std::fmt::Debug for Picture<'_> {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Print at most 8 elements, abbreviate the rest
+        let mut f = fmt.debug_set();
+        let f = f.entries(self.0.iter().take(8));
+        if self.0.len() > 8 {
+            f.finish_non_exhaustive()
+        } else {
+            f.finish()
+        }
+    }
+}
+
 fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
     let mut metadata = FlacMetadata {
         minimum_block_size: 0,
@@ -2217,6 +2329,7 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
         checksum: 0,
         vendor: String::new(),
         fields: vec![],
+        picture: vec![],
     };
 
     let mut buf = [0; 4];
@@ -2659,8 +2772,34 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // Table 12
                 // Data	Description
                 // u(32)	The picture type according to Table 13.
-                let picture_type = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-                println!("    picture_type: {picture_type}");
+                let n = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
+                let picture_type = match n {
+                    0 => FlacMetadataPictureType::Other,
+                    1 => FlacMetadataPictureType::PNGIcon,
+                    2 => FlacMetadataPictureType::GeneralIcon,
+                    3 => FlacMetadataPictureType::FrontCover,
+                    4 => FlacMetadataPictureType::BackCover,
+                    5 => FlacMetadataPictureType::LinerNotes,
+                    6 => FlacMetadataPictureType::MediaLabel,
+                    7 => FlacMetadataPictureType::LeadArtist,
+                    8 => FlacMetadataPictureType::Artist,
+                    9 => FlacMetadataPictureType::Conductor,
+                    10 => FlacMetadataPictureType::Band,
+                    11 => FlacMetadataPictureType::Composer,
+                    12 => FlacMetadataPictureType::Lyricist,
+                    13 => FlacMetadataPictureType::RecordingLocation,
+                    14 => FlacMetadataPictureType::DuringRecording,
+                    15 => FlacMetadataPictureType::DuringPerformance,
+                    16 => FlacMetadataPictureType::VideoCapture,
+                    17 => FlacMetadataPictureType::BrightColoredFish,
+                    18 => FlacMetadataPictureType::Illustration,
+                    19 => FlacMetadataPictureType::Logo,
+                    20 => FlacMetadataPictureType::PublisherStudioLogo,
+                    _ => {
+                        error!("invalid picture type: {n}");
+                        continue;
+                    }
+                };
 
                 pos += 4;
 
@@ -2678,59 +2817,61 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                     warn!("picture is stored at URI");
                 }
                 // debug_assert!(media_type.is_ascii());
-                println!("    media_type: {media_type}");
 
                 pos += media_type_length;
 
                 // u(32)	The length of the description string in bytes.
                 let description_length =
                     u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-                println!("    description_length: {description_length}");
 
                 pos += 4;
 
                 // u(n*8)	The description of the picture in UTF-8.
                 let description = String::from_utf8((&data[pos..pos + description_length]).into())
                     .expect("field string must be UTF-8");
-                println!("    description: {description}");
 
                 pos += description_length;
 
                 // u(32)	The width of the picture in pixels.
                 let width = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-                println!("    width: {width}");
 
                 pos += 4;
 
                 // u(32)	The height of the picture in pixels.
                 let height = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-                println!("    height: {height}");
 
                 pos += 4;
 
                 // u(32)	The color depth of the picture in bits per pixel.
                 let depth = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-                println!("    depth: {depth}");
 
                 pos += 4;
 
                 // u(32)	For indexed-color pictures (e.g., GIF), the number of colors used; 0 for non-indexed pictures.
                 let colors = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-                println!("    colors: {colors}");
 
                 pos += 4;
 
                 // u(32)	The length of the picture data in bytes.
                 let length = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-                // println!("    length: {length}");
 
                 pos += 4;
 
                 debug_assert_eq!(length, data.len() - pos);
 
                 // u(n*8)	The binary picture data.
-                // let picture = &data[pos..pos + length];
-                // println!("    picture: {picture:02x?}");
+                let picture = &data[pos..pos + length];
+
+                metadata.picture.push(FlacMetadataPicture {
+                    picture_type,
+                    media_type,
+                    description,
+                    width,
+                    height,
+                    depth,
+                    colors,
+                    picture: picture.into(),
+                });
             }
             FlacMetadataBlockType::Reserved => {
                 warn!("FLAC metadata contains reserved block {metadata_block_type:?}, ignoring");
