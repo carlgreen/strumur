@@ -2819,7 +2819,6 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // u(32)	The length of the media type string in bytes.
                 let media_type_length =
                     u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-                // println!("    media_type_length: {media_type_length}");
 
                 pos += 4;
 
