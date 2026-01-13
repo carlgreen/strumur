@@ -2248,6 +2248,10 @@ struct FlacMetadata {
 
     /// Can be used to store seek points
     seek_table: Vec<FlacMetadataSeekPoint>,
+
+    /// Store either the track and index point structure of a Compact Disc Digital Audio (CD-DA)
+    /// along with its audio or to provide a mechanism to store locations of interest
+    cue_sheet: Option<FlacMetadataCueSheet>,
 }
 
 impl FlacMetadata {
@@ -2325,6 +2329,51 @@ struct FlacMetadataSeekPoint {
     samples: u16,
 }
 
+#[derive(Debug)]
+struct FlacMetadataCueSheet {
+    /// Media catalog number in ASCII printable characters 0x20-0x7E.
+    catalog_number: String,
+
+    /// Number of lead-in samples.
+    lead_in_samples: u64,
+
+    /// 1 if the cuesheet corresponds to a CD-DA; else 0.
+    is_cdda: bool,
+
+    /// Cuesheet tracks
+    tracks: Vec<FlacMetadataCueSheetTrack>,
+}
+
+#[derive(Debug)]
+struct FlacMetadataCueSheetTrack {
+    /// Track offset of the first index point in samples, relative to the beginning of the FLAC audio stream.
+    offset: u64,
+
+    /// Track number.
+    number: u8,
+
+    /// Track ISRC.
+    isrc: Option<String>,
+
+    /// The track type. This corresponds to the CD-DA Q-channel control bit 3.
+    is_audio: bool,
+
+    /// The pre-emphasis flag. This corresponds to the CD-DA Q-channel control bit 5.
+    preemphasis_flag: bool,
+
+    /// Index points for all tracks except the lead-out track
+    index_points: Vec<FlacMetadataCueSheetTrackIndexPoint>,
+}
+
+#[derive(Debug)]
+struct FlacMetadataCueSheetTrackIndexPoint {
+    /// Offset in samples, relative to the track offset, of the index point.
+    offset: u64,
+
+    /// The track index point number.
+    number: u8,
+}
+
 fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
     let mut metadata = FlacMetadata {
         minimum_block_size: 0,
@@ -2341,6 +2390,7 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
         fields: vec![],
         picture: vec![],
         seek_table: vec![],
+        cue_sheet: None,
     };
 
     let mut buf = [0; 4];
@@ -2631,7 +2681,6 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                     "catalog number string must be UTF-8 and then some further restrictions",
                 );
                 // debug_assert!(catalog_number.is_ascii());
-                println!("    catalog_number: {catalog_number}");
 
                 pos += 128;
 
@@ -2648,13 +2697,11 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // point of the first track, not necessarily to INDEX 01 of the first track; even
                 // the first track MAY have INDEX 00 data.
                 let lead_in_samples = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
-                println!("    lead_in_samples: {lead_in_samples}");
 
                 pos += 8;
 
                 // u(1)	1 if the cuesheet corresponds to a CD-DA; else 0.
-                let cdda_flag = data[pos] >> 7;
-                println!("    cdda_flag: {cdda_flag}");
+                let is_cdda = data[pos] >> 7 == 1;
 
                 // u(7+258*8)	Reserved. All bits MUST be set to zero.
                 let mut reserved = [00; 259];
@@ -2670,21 +2717,20 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // tracks and one lead-out track). The lead-out track is always the last track in
                 // the cuesheet. For CD-DA, the lead-out track number MUST be 170 as specified by
                 // [IEC.60908.1999]; otherwise, it MUST be 255.
-                let tracks = data[pos];
-                println!("    tracks: {tracks}");
+                let track_count = data[pos];
 
                 pos += 1;
 
+                let mut tracks = vec![];
+
                 // Cuesheet tracks	A number of structures as specified in Section 8.7.1 equal to the number of tracks specified previously.
-                for _ in 0..tracks {
-                    println!("    cuesheet track");
+                for _ in 0..track_count {
                     // u(64)	Track offset of the first index point in samples, relative to the beginning of the FLAC audio stream.
                     // Note that the track offset differs from the one in CD-DA, where the track's
                     // offset in the table of contents (TOC) is that of the track's INDEX 01 even
                     // if there is an INDEX 00. For CD-DA, the track offset MUST be evenly
                     // divisible by 588 samples (588 samples = 44100 samples/s * 1/75 s).
                     let offset = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
-                    println!("      offset: {offset}");
 
                     pos += 8;
 
@@ -2695,7 +2741,6 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                     // is recommended to start with track 1 and increase sequentially. Track
                     // numbers MUST be unique within a cuesheet.
                     let number = data[pos];
-                    println!("      number: {number}");
 
                     pos += 1;
 
@@ -2703,18 +2748,38 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                     // The track ISRC (International Standard Recording Code) is a 12-digit
                     // alphanumeric code; see [ISRC-handbook]. A value of 12 ASCII 0x00 characters
                     // MAY be used to denote the absence of an ISRC.
-                    let isrc = &data[pos..pos + 12];
-                    println!("      isrc: {isrc:02x?}");
+                    let raw_isrc = &data[pos..pos + 12];
+
+                    let isrc = if raw_isrc == [0u8; 12] {
+                        None
+                    } else {
+                        // ISRC is alphanumeric, using digits (the ten Arabic numerals 0 - 9) and the 26 upper case letters
+                        // of the Roman alphabet.
+                        // Lower case letters are not strictly permitted by the specification though it is recommended that
+                        // systems map lower-case letters to their upper-case equivalents before validating or using
+                        // codes.
+                        debug!("raw isrc: {raw_isrc:02x?}");
+                        match String::from_utf8(raw_isrc.into()) {
+                            Ok(str) => {
+                                // TODO validate that it is only alphanumeric
+                                Some(str.to_ascii_uppercase())
+                            }
+                            Err(err) => {
+                                error!(
+                                    "ISRC {raw_isrc:02x?} could not be converted to a string: {err}"
+                                );
+                                None
+                            }
+                        }
+                    };
 
                     pos += 12;
 
                     // u(1)	The track type: 0 for audio, 1 for non-audio. This corresponds to the CD-DA Q-channel control bit 3.
-                    let track_type = data[pos] >> 7;
-                    println!("      track_type: {track_type}");
+                    let is_audio: bool = data[pos] >> 7 == 0;
 
                     // u(1)	The pre-emphasis flag: 0 for no pre-emphasis, 1 for pre-emphasis. This corresponds to the CD-DA Q-channel control bit 5.
-                    let preemphasis_flag = data[pos] >> 6 & 1;
-                    println!("      preemphasis_flag: {preemphasis_flag}");
+                    let preemphasis_flag = data[pos] >> 6 & 1 == 1;
 
                     // u(6+13*8)	Reserved. All bits MUST be set to zero.
                     let mut reserved = [00; 14];
@@ -2728,21 +2793,19 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                     // There MUST be at least one index point in every track in a cuesheet except
                     // for the lead-out track, which MUST have zero. For CD-DA, the number of index
                     // points MUST NOT be more than 100.
-                    let index_points = data[pos];
-                    println!("      index_points: {index_points}");
+                    let index_point_count = data[pos];
 
                     pos += 1;
 
-                    // Cuesheet track index points	For all tracks except the lead-out track, a number of structures as specified in Section 8.7.1.1 equal to the number of index points specified previously.
-                    for _ in 0..index_points {
-                        println!("      index point");
+                    let mut index_points = vec![];
 
+                    // Cuesheet track index points	For all tracks except the lead-out track, a number of structures as specified in Section 8.7.1.1 equal to the number of index points specified previously.
+                    for _ in 0..index_point_count {
                         // u(64)	Offset in samples, relative to the track offset, of the index point.
                         // For CD-DA, the track index point offset MUST be evenly divisible by 588
                         // samples (588 samples = 44100 samples/s * 1/75 s). Note that the offset
                         // is from the beginning of the track, not the beginning of the audio data.
                         let offset = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
-                        println!("        offset: {offset}");
 
                         pos += 8;
 
@@ -2752,7 +2815,6 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                         // and subsequently, index point numbers MUST increase by 1. Index point
                         // numbers MUST be unique within a track.
                         let number = data[pos];
-                        println!("        number: {number}");
 
                         pos += 1;
 
@@ -2761,8 +2823,26 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                         debug_assert!(reserved.iter().all(|val| *val == 0));
 
                         pos += 3;
+
+                        index_points.push(FlacMetadataCueSheetTrackIndexPoint { offset, number });
                     }
+
+                    tracks.push(FlacMetadataCueSheetTrack {
+                        offset,
+                        number,
+                        isrc,
+                        is_audio,
+                        preemphasis_flag,
+                        index_points,
+                    });
                 }
+
+                metadata.cue_sheet = Some(FlacMetadataCueSheet {
+                    catalog_number,
+                    lead_in_samples,
+                    is_cdda,
+                    tracks,
+                });
             }
             FlacMetadataBlockType::Picture => {
                 // The picture metadata block contains image data of a picture in some way
