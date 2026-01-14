@@ -2252,6 +2252,9 @@ struct FlacMetadata {
     /// Store either the track and index point structure of a Compact Disc Digital Audio (CD-DA)
     /// along with its audio or to provide a mechanism to store locations of interest
     cue_sheet: Option<FlacMetadataCueSheet>,
+
+    /// Used by third-party applications
+    application: Vec<FlacMetadataApplication>,
 }
 
 impl FlacMetadata {
@@ -2375,6 +2378,15 @@ struct FlacMetadataCueSheetTrackIndexPoint {
     number: u8,
 }
 
+#[derive(Debug, PartialEq)]
+struct FlacMetadataApplication {
+    /// Registered application ID
+    id: u32,
+
+    /// Application data
+    data: Vec<u8>,
+}
+
 fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
     let mut metadata = FlacMetadata {
         minimum_block_size: 0,
@@ -2392,6 +2404,7 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
         picture: vec![],
         seek_table: vec![],
         cue_sheet: None,
+        application: vec![],
     };
 
     let mut buf = [0; 4];
@@ -2537,7 +2550,6 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
 
                 // u(32)	Registered application ID.
                 let application_id = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-                println!("    application_id: 0x{application_id:x}");
 
                 pos += 4;
 
@@ -2545,11 +2557,11 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // bytes). n is 8 times the size described in the metadata block header minus the
                 // 32 bits already used for the application ID.
                 let application_data = &data[pos..];
-                // if its a string, print it like that
-                match String::from_utf8(application_data.into()) {
-                    Ok(str) => println!("    application_data: {str}"),
-                    Err(_) => println!("    application_data: {application_data:02x?}"),
-                }
+
+                metadata.application.push(FlacMetadataApplication {
+                    id: application_id,
+                    data: application_data.into(),
+                });
             }
             FlacMetadataBlockType::SeekTable => {
                 // The seek table metadata block can be used to store seek points. It is possible
@@ -4717,6 +4729,14 @@ CACHE-CONTROL: max-age=10\r
                 depth: 24,
                 colors: 0,
                 picture: include_bytes!("cover.jpg").into(),
+            }]
+        );
+
+        assert_eq!(
+            metadata.application,
+            vec![FlacMetadataApplication {
+                id: 0x41424344,
+                data: "this is fake application stuff for testing.\0\0\0\0\0\0\0".into(),
             }]
         );
 
