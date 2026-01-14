@@ -2421,7 +2421,6 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
     // for the size of the metadata block in bytes, excluding the 4 header bytes, as an
     // unsigned number coded big-endian.
     loop {
-        println!("metadata block");
         let mut header = [0; 4];
         reader
             .read_exact(&mut header)
@@ -2441,22 +2440,15 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 unreachable!("value was Bitwise AND with 0b111_1111 so should be in range 0..=127")
             }
         };
-        println!("  type: {metadata_block_type:?}");
 
         let block_size = usize::from(header[3])
             + usize::from(header[2]) * 0x100
             + usize::from(header[1]) * 0x10000;
-        // println!(
-        //     "  block size data: {header:02x?} ({:02x}, {:02x}, {:02x})",
-        //     header[3], header[2], header[1]
-        // );
-        println!("  size: {block_size}");
 
         let mut data = vec![0; block_size];
         reader
             .read_exact(&mut data)
             .expect("failed to read FLAC metadata block");
-        // println!("  data: {data:02x?}");
 
         match metadata_block_type {
             FlacMetadataBlockType::Streaminfo => {
