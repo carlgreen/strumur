@@ -2141,7 +2141,7 @@ enum FlacMetadataBlockType {
     Forbidden,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum FlacMetadataPictureType {
     /// 0 Other
     Other,
@@ -2281,6 +2281,7 @@ struct FlacMetadataCommentField {
     content: String,
 }
 
+#[derive(PartialEq)]
 struct FlacMetadataPicture {
     picture_type: FlacMetadataPictureType,
     media_type: String,
@@ -2322,14 +2323,14 @@ impl std::fmt::Debug for Picture<'_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct FlacMetadataSeekPoint {
     sample_number: u64,
     offset: u64,
     samples: u16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct FlacMetadataCueSheet {
     /// Media catalog number in ASCII printable characters 0x20-0x7E.
     catalog_number: String,
@@ -2344,7 +2345,7 @@ struct FlacMetadataCueSheet {
     tracks: Vec<FlacMetadataCueSheetTrack>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct FlacMetadataCueSheetTrack {
     /// Track offset of the first index point in samples, relative to the beginning of the FLAC audio stream.
     offset: u64,
@@ -2365,7 +2366,7 @@ struct FlacMetadataCueSheetTrack {
     index_points: Vec<FlacMetadataCueSheetTrackIndexPoint>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct FlacMetadataCueSheetTrackIndexPoint {
     /// Offset in samples, relative to the track offset, of the index point.
     offset: u64,
@@ -2677,9 +2678,12 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // u(128*8)	Media catalog number in ASCII printable characters 0x20-0x7E.
                 // If the media catalog number is less than 128 bytes long, it is right-padded with
                 // 0x00 bytes. For CD-DA, this is a 13-digit number followed by 115 0x00 bytes.
-                let catalog_number = String::from_utf8((&data[pos..pos + 128]).into()).expect(
-                    "catalog number string must be UTF-8 and then some further restrictions",
-                );
+                let catalog_number = String::from_utf8((&data[pos..pos + 128]).into())
+                    .expect(
+                        "catalog number string must be UTF-8 and then some further restrictions",
+                    )
+                    .trim_end_matches('\0')
+                    .into();
                 // debug_assert!(catalog_number.is_ascii());
 
                 pos += 128;
@@ -4634,6 +4638,116 @@ CACHE-CONTROL: max-age=10\r
                     content: "2025".to_string(),
                 },
             ]
+        );
+
+        assert_eq!(
+            metadata.seek_table,
+            vec![
+                FlacMetadataSeekPoint {
+                    sample_number: 0,
+                    offset: 0,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 20480,
+                    offset: 34807,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 45056,
+                    offset: 89597,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 69632,
+                    offset: 145375,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 94208,
+                    offset: 192402,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 118784,
+                    offset: 239699,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 143360,
+                    offset: 300422,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 167936,
+                    offset: 361855,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 188416,
+                    offset: 413037,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 212992,
+                    offset: 462389,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 237568,
+                    offset: 510317,
+                    samples: 4096
+                },
+                FlacMetadataSeekPoint {
+                    sample_number: 262144,
+                    offset: 559113,
+                    samples: 4096
+                },
+            ]
+        );
+
+        assert_eq!(
+            metadata.picture,
+            vec![FlacMetadataPicture {
+                picture_type: FlacMetadataPictureType::FrontCover,
+                media_type: "image/jpeg".to_string(),
+                description: String::new(),
+                width: 1024,
+                height: 768,
+                depth: 24,
+                colors: 0,
+                picture: include_bytes!("cover.jpg").into(),
+            }]
+        );
+
+        assert_eq!(
+            metadata.cue_sheet,
+            Some(FlacMetadataCueSheet {
+                catalog_number: "1234567890123".to_string(),
+                lead_in_samples: 0,
+                is_cdda: false,
+                tracks: vec![
+                    FlacMetadataCueSheetTrack {
+                        offset: 0,
+                        number: 1,
+                        isrc: Some("AA6662500001".to_string()),
+                        is_audio: true,
+                        preemphasis_flag: false,
+                        index_points: vec![FlacMetadataCueSheetTrackIndexPoint {
+                            offset: 0,
+                            number: 1,
+                        },],
+                    },
+                    FlacMetadataCueSheetTrack {
+                        offset: 274176,
+                        number: 255,
+                        isrc: None,
+                        is_audio: true,
+                        preemphasis_flag: false,
+                        index_points: vec![],
+                    }
+                ],
+            })
         );
     }
 }
