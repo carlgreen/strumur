@@ -2226,6 +2226,35 @@ enum FlacMetadataPictureType {
     PublisherStudioLogo,
 }
 
+impl FlacMetadataPictureType {
+    fn from_int(value: u32) -> std::result::Result<Self, String> {
+        match value {
+            0 => Ok(Self::Other),
+            1 => Ok(Self::PNGIcon),
+            2 => Ok(Self::GeneralIcon),
+            3 => Ok(Self::FrontCover),
+            4 => Ok(Self::BackCover),
+            5 => Ok(Self::LinerNotes),
+            6 => Ok(Self::MediaLabel),
+            7 => Ok(Self::LeadArtist),
+            8 => Ok(Self::Artist),
+            9 => Ok(Self::Conductor),
+            10 => Ok(Self::Band),
+            11 => Ok(Self::Composer),
+            12 => Ok(Self::Lyricist),
+            13 => Ok(Self::RecordingLocation),
+            14 => Ok(Self::DuringRecording),
+            15 => Ok(Self::DuringPerformance),
+            16 => Ok(Self::VideoCapture),
+            17 => Ok(Self::BrightColoredFish),
+            18 => Ok(Self::Illustration),
+            19 => Ok(Self::Logo),
+            20 => Ok(Self::PublisherStudioLogo),
+            _ => Err(format!("invalid picture type: {value}")),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct FlacMetadata {
     /// The minimum block size (in samples) used in the stream, excluding the last block.
@@ -2922,32 +2951,7 @@ fn extract_flac_picture_metadata(data: &[u8]) -> std::result::Result<FlacMetadat
     // Data	Description
     // u(32)	The picture type according to Table 13.
     let n = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-    let picture_type = match n {
-        0 => FlacMetadataPictureType::Other,
-        1 => FlacMetadataPictureType::PNGIcon,
-        2 => FlacMetadataPictureType::GeneralIcon,
-        3 => FlacMetadataPictureType::FrontCover,
-        4 => FlacMetadataPictureType::BackCover,
-        5 => FlacMetadataPictureType::LinerNotes,
-        6 => FlacMetadataPictureType::MediaLabel,
-        7 => FlacMetadataPictureType::LeadArtist,
-        8 => FlacMetadataPictureType::Artist,
-        9 => FlacMetadataPictureType::Conductor,
-        10 => FlacMetadataPictureType::Band,
-        11 => FlacMetadataPictureType::Composer,
-        12 => FlacMetadataPictureType::Lyricist,
-        13 => FlacMetadataPictureType::RecordingLocation,
-        14 => FlacMetadataPictureType::DuringRecording,
-        15 => FlacMetadataPictureType::DuringPerformance,
-        16 => FlacMetadataPictureType::VideoCapture,
-        17 => FlacMetadataPictureType::BrightColoredFish,
-        18 => FlacMetadataPictureType::Illustration,
-        19 => FlacMetadataPictureType::Logo,
-        20 => FlacMetadataPictureType::PublisherStudioLogo,
-        _ => {
-            return Err(format!("invalid picture type: {n}"));
-        }
-    };
+    let picture_type = FlacMetadataPictureType::from_int(n)?;
 
     pos += 4;
 
