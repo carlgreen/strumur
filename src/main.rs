@@ -279,55 +279,30 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                         };
                         // info!("field_names: {field_names:#?}");
 
-                        let Some(artist_name) = metadata
-                            .fields
-                            .iter()
-                            .find(|f| f.name.to_uppercase() == "ARTIST")
-                            .map(|f| f.content.clone())
-                        else {
+                        let Some(artist_name) = get_field(&metadata, "ARTIST") else {
                             warn!("no artist name found in {display_file_name}");
                             debug!("fields in {display_file_name}: {field_names:?}");
                             continue;
                         };
-                        let Some(album_title) = metadata
-                            .fields
-                            .iter()
-                            .find(|f| f.name.to_uppercase() == "ALBUM")
-                            .map(|f| f.content.clone())
-                        else {
+                        let Some(album_title) = get_field(&metadata, "ALBUM") else {
                             warn!("no album title found in {display_file_name}");
                             debug!("fields in {display_file_name}: {field_names:?}");
                             continue;
                         };
-                        let track_number = metadata
-                            .fields
-                            .iter()
-                            .find(|f| f.name.to_uppercase() == "TRACKNUMBER")
-                            .map(|f| f.content.clone())
-                            .map_or_else(
-                                || {
-                                    warn!("no track number found in {display_file_name}");
-                                    debug!("fields in {display_file_name}: {field_names:?}",);
-                                    0
-                                },
-                                |number| number.parse::<u8>().expect("number"),
-                            );
-                        let Some(track_title) = metadata
-                            .fields
-                            .iter()
-                            .find(|f| f.name.to_uppercase() == "TITLE")
-                            .map(|f| f.content.clone())
-                        else {
+                        let track_number = get_field(&metadata, "TRACKNUMBER").map_or_else(
+                            || {
+                                warn!("no track number found in {display_file_name}");
+                                debug!("fields in {display_file_name}: {field_names:?}",);
+                                0
+                            },
+                            |number| number.parse::<u8>().expect("number"),
+                        );
+                        let Some(track_title) = get_field(&metadata, "TITLE") else {
                             warn!("no track title found in {display_file_name}");
                             debug!("fields in {display_file_name}: {field_names:?}");
                             continue;
                         };
-                        let release_date = if let Some(mut datestr) = metadata
-                            .fields
-                            .iter()
-                            .find(|f| f.name.to_uppercase() == "DATE")
-                            .map(|f| f.content.clone())
-                        {
+                        let release_date = if let Some(mut datestr) = get_field(&metadata, "DATE") {
                             // want like yyyy-mm-dd, but might be just yyyy-mm or even yyyy
                             if datestr.len() == 4 {
                                 datestr += "-01";
@@ -401,6 +376,14 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
             }
         }
     }
+}
+
+fn get_field(metadata: &FlacMetadata, name: &str) -> Option<String> {
+    metadata
+        .fields
+        .iter()
+        .find(|f| f.name.to_uppercase() == name)
+        .map(|f| f.content.clone())
 }
 
 fn find_album_artwork(location: &str, entry: &DirEntry, album_title: &str) -> Option<String> {
