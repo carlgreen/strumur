@@ -3230,7 +3230,6 @@ mod tests {
     }
 
     fn extract_get_system_update_id_response(body: &str) -> u16 {
-        println!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let get_system_update_id_response = body.get_child("GetSystemUpdateIDResponse").unwrap();
@@ -3304,7 +3303,6 @@ mod tests {
     }
 
     fn extract_get_search_capabilities_response(body: &str) -> Option<String> {
-        println!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let get_search_capabilities_response =
@@ -3377,7 +3375,6 @@ mod tests {
     }
 
     fn extract_get_sort_capabilities_response(body: &str) -> Option<String> {
-        println!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let get_sort_capabilities_response = body.get_child("GetSortCapabilitiesResponse").unwrap();
