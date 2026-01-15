@@ -2141,6 +2141,25 @@ enum FlacMetadataBlockType {
     Forbidden,
 }
 
+impl FlacMetadataBlockType {
+    fn from_int(value: u8) -> Self {
+        match value {
+            0 => Self::Streaminfo,
+            1 => Self::Padding,
+            2 => Self::Application,
+            3 => Self::SeekTable,
+            4 => Self::VorbisComment,
+            5 => Self::Cuesheet,
+            6 => Self::Picture,
+            7..=126 => Self::Reserved,
+            127 => Self::Forbidden,
+            _ => {
+                unreachable!("value was Bitwise AND with 0b111_1111 so should be in range 0..=127")
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 enum FlacMetadataPictureType {
     /// 0 Other
@@ -2426,20 +2445,7 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
             .read_exact(&mut header)
             .expect("failed to read FLAC metadata block header");
         let last_metadata_block = (header[0] & 0b1000_0000) >> 7;
-        let metadata_block_type = match header[0] & 0b111_1111 {
-            0 => FlacMetadataBlockType::Streaminfo,
-            1 => FlacMetadataBlockType::Padding,
-            2 => FlacMetadataBlockType::Application,
-            3 => FlacMetadataBlockType::SeekTable,
-            4 => FlacMetadataBlockType::VorbisComment,
-            5 => FlacMetadataBlockType::Cuesheet,
-            6 => FlacMetadataBlockType::Picture,
-            7..=126 => FlacMetadataBlockType::Reserved,
-            127 => FlacMetadataBlockType::Forbidden,
-            _ => {
-                unreachable!("value was Bitwise AND with 0b111_1111 so should be in range 0..=127")
-            }
-        };
+        let metadata_block_type = FlacMetadataBlockType::from_int(header[0] & 0b111_1111);
 
         let block_size = usize::from(header[3])
             + usize::from(header[2]) * 0x100
