@@ -303,13 +303,7 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                             continue;
                         };
                         let release_date = if let Some(mut datestr) = get_field(&metadata, "DATE") {
-                            // want like yyyy-mm-dd, but might be just yyyy-mm or even yyyy
-                            if datestr.len() == 4 {
-                                datestr += "-01";
-                            }
-                            if datestr.len() == 7 {
-                                datestr += "-01";
-                            }
+                            fill_in_missing_date_parts(&mut datestr);
                             datestr.parse::<NaiveDate>().unwrap_or_else(|err| {
                                 panic!("{err}. expected valid date not {datestr}")
                             })
@@ -384,6 +378,17 @@ fn get_field(metadata: &FlacMetadata, name: &str) -> Option<String> {
         .iter()
         .find(|f| f.name.to_uppercase() == name)
         .map(|f| f.content.clone())
+}
+
+/// want like yyyy-mm-dd, but might be just yyyy-mm or even yyyy.
+/// so make missing parts 01, for now
+fn fill_in_missing_date_parts(datestr: &mut String) {
+    if datestr.len() == 4 {
+        *datestr += "-01";
+    }
+    if datestr.len() == 7 {
+        *datestr += "-01";
+    }
 }
 
 fn find_album_artwork(location: &str, entry: &DirEntry, album_title: &str) -> Option<String> {
@@ -4778,5 +4783,20 @@ CACHE-CONTROL: max-age=10\r
                 ],
             })
         );
+    }
+
+    #[test]
+    fn test_fill_in_missing_date_parts() {
+        let mut datestr = "2001".to_string();
+        fill_in_missing_date_parts(&mut datestr);
+        assert_eq!(datestr, "2001-01-01");
+
+        let mut datestr = "2001-09".to_string();
+        fill_in_missing_date_parts(&mut datestr);
+        assert_eq!(datestr, "2001-09-01");
+
+        let mut datestr = "2001-09-05".to_string();
+        fill_in_missing_date_parts(&mut datestr);
+        assert_eq!(datestr, "2001-09-05");
     }
 }
