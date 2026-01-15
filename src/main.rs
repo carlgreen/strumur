@@ -329,46 +329,66 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                             channels,
                         };
 
-                        let artist: Option<&mut Artist> = collection
-                            .artists
-                            .iter_mut()
-                            .find(|a| a.name == artist_name);
-                        if let Some(artist) = artist {
-                            let album = artist.albums.iter_mut().find(|a| a.title == album_title);
-                            if let Some(album) = album {
-                                album.tracks.push(track);
-                            } else {
-                                let cover_url = find_album_artwork(location, &entry, &album_title);
-
-                                let album = Album {
-                                    title: album_title,
-                                    date: release_date,
-                                    tracks: vec![track],
-                                    cover: cover_url.unwrap_or_default(),
-                                };
-                                artist.albums.push(album);
-                            }
-                        } else {
-                            let cover_url = find_album_artwork(location, &entry, &album_title);
-
-                            let album = Album {
-                                title: album_title,
-                                date: release_date,
-                                tracks: vec![track],
-                                cover: cover_url.unwrap_or_default(),
-                            };
-                            let artist = Artist {
-                                name: artist_name,
-                                albums: vec![album],
-                            };
-                            collection.artists.push(artist);
-                        }
+                        add_track_to_collection(
+                            collection,
+                            location,
+                            &entry,
+                            artist_name,
+                            album_title,
+                            release_date,
+                            track,
+                        );
                     } else {
                         trace!("{display_file_name} is not supported");
                     }
                 }
             }
         }
+    }
+}
+
+fn add_track_to_collection(
+    collection: &mut Collection,
+    location: &str,
+    entry: &DirEntry,
+    artist_name: String,
+    album_title: String,
+    release_date: NaiveDate,
+    track: Track,
+) {
+    let artist: Option<&mut Artist> = collection
+        .artists
+        .iter_mut()
+        .find(|a| a.name == artist_name);
+    if let Some(artist) = artist {
+        let album = artist.albums.iter_mut().find(|a| a.title == album_title);
+        if let Some(album) = album {
+            album.tracks.push(track);
+        } else {
+            let cover_url = find_album_artwork(location, entry, &album_title);
+
+            let album = Album {
+                title: album_title,
+                date: release_date,
+                tracks: vec![track],
+                cover: cover_url.unwrap_or_default(),
+            };
+            artist.albums.push(album);
+        }
+    } else {
+        let cover_url = find_album_artwork(location, entry, &album_title);
+
+        let album = Album {
+            title: album_title,
+            date: release_date,
+            tracks: vec![track],
+            cover: cover_url.unwrap_or_default(),
+        };
+        let artist = Artist {
+            name: artist_name,
+            albums: vec![album],
+        };
+        collection.artists.push(artist);
     }
 }
 
