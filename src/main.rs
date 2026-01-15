@@ -2277,6 +2277,26 @@ struct FlacMetadata {
 }
 
 impl FlacMetadata {
+    const fn default() -> Self {
+        Self {
+            minimum_block_size: 0,
+            maximum_block_size: 0,
+            minimum_frame_size: 0,
+            maximum_frame_size: 0,
+            sample_rate: 0,
+            channels: 0,
+            bits: 0,
+            total: 0,
+            checksum: 0,
+            vendor: String::new(),
+            fields: vec![],
+            picture: vec![],
+            seek_table: vec![],
+            cue_sheet: None,
+            application: vec![],
+        }
+    }
+
     fn duration(&self) -> NaiveTime {
         let whole_seconds = self.total / u64::from(self.sample_rate);
         let remainder = self.total % u64::from(self.sample_rate);
@@ -2407,24 +2427,7 @@ struct FlacMetadataApplication {
 }
 
 fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
-    let mut metadata = FlacMetadata {
-        minimum_block_size: 0,
-        maximum_block_size: 0,
-        minimum_frame_size: 0,
-        maximum_frame_size: 0,
-        sample_rate: 0,
-        channels: 0,
-        bits: 0,
-        total: 0,
-        // checksum: [0; 16],
-        checksum: 0,
-        vendor: String::new(),
-        fields: vec![],
-        picture: vec![],
-        seek_table: vec![],
-        cue_sheet: None,
-        application: vec![],
-    };
+    let mut metadata = FlacMetadata::default();
 
     let mut buf = [0; 4];
     reader
