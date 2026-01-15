@@ -2544,22 +2544,9 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // IDs are registered in the IANA "FLAC Application Metadata Block IDs" registry
                 // (see Section 12.2).
 
-                let mut pos = 0;
-
-                // u(32)	Registered application ID.
-                let application_id = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-
-                pos += 4;
-
-                // u(n)	Application data (n MUST be a multiple of 8, i.e., a whole number of
-                // bytes). n is 8 times the size described in the metadata block header minus the
-                // 32 bits already used for the application ID.
-                let application_data = &data[pos..];
-
-                metadata.application.push(FlacMetadataApplication {
-                    id: application_id,
-                    data: application_data.into(),
-                });
+                metadata
+                    .application
+                    .push(extract_flac_application_metadata(&data[..]));
             }
             FlacMetadataBlockType::SeekTable => {
                 // The seek table metadata block can be used to store seek points. It is possible
@@ -2575,28 +2562,7 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // There is also a special "placeholder" seek point that will be ignored by
                 // decoders but can be used to reserve space for future seek point insertion.
 
-                let mut pos = 0;
-
-                while pos < data.len() {
-                    let seek_data = &data[pos..pos + 18];
-
-                    // u(64)	Sample number of the first sample in the target frame or 0xFFFFFFFFFFFFFFFF for a placeholder point.
-                    let sample_number = u64::from_be_bytes((&seek_data[0..8]).try_into().unwrap());
-
-                    // u(64)	Offset (in bytes) from the first byte of the first frame header to the first byte of the target frame's header.
-                    let offset = u64::from_be_bytes((&seek_data[8..16]).try_into().unwrap());
-
-                    // u(16)	Number of samples in the target frame.
-                    let samples = u16::from_be_bytes((&seek_data[16..18]).try_into().unwrap());
-
-                    pos += 18;
-
-                    metadata.seek_table.push(FlacMetadataSeekPoint {
-                        sample_number,
-                        offset,
-                        samples,
-                    });
-                }
+                metadata.seek_table = extract_flac_seek_table_metadata(&data[..]);
             }
             FlacMetadataBlockType::VorbisComment => {
                 // A Vorbis comment metadata block contains human-readable information coded in
@@ -2609,68 +2575,9 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // audio. Many users refer to these fields as "FLAC tags" or simply as "tags".
                 // A FLAC file MUST NOT contain more than one Vorbis comment metadata block.
 
-                let mut pos = 0;
-
-                // In a Vorbis comment metadata block, the metadata block header is directly
-                // followed by 4 bytes containing the length in bytes of the vendor string as
-                // an unsigned number coded little-endian. The vendor string follows, is
-                // UTF-8 coded and is not terminated in any way.
-                let vendor_length =
-                    u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-
-                pos += 4;
-
-                let vendor = String::from_utf8((&data[pos..pos + vendor_length]).into())
-                    .expect("vendor string must be UTF-8");
+                let (vendor, fields) = extract_flac_comment_metadata(&data[..]);
                 metadata.vendor = vendor;
-
-                pos += vendor_length;
-
-                // Following the vendor string are 4 bytes containing the number of fields that
-                // are in the Vorbis comment block, stored as an unsigned number coded
-                // little-endian. If this number is non-zero, it is followed by the fields
-                // themselves, each of which is stored with a 4-byte length. For each field,
-                // the field length in bytes is stored as a 4-byte unsigned number coded
-                // little-endian. The field itself follows it. Like the vendor string, the
-                // field is UTF-8 coded and not terminated in any way.
-                let fields = u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-                metadata.fields = Vec::with_capacity(fields);
-
-                pos += 4;
-
-                for _ in 0..fields {
-                    let field_length =
-                        u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-
-                    pos += 4;
-
-                    if pos + field_length > data.len() {
-                        warn!(
-                            "field data exceeds Vorbis comment length. remaining data {:02x?}",
-                            &data[pos..]
-                        );
-                        break;
-                    }
-                    let field = String::from_utf8((&data[pos..pos + field_length]).into())
-                        .expect("field string must be UTF-8");
-
-                    pos += field_length;
-
-                    // Each field consists of a field name and field contents, separated by an =
-                    // character. The field name MUST only consist of UTF-8 code points U+0020
-                    // through U+007E, excluding U+003D, which is the = character. In other words,
-                    // the field name can contain all printable ASCII characters except the equals
-                    // sign. The evaluation of the field names MUST be case insensitive, so U+0041
-                    // through 0+005A (A-Z) MUST be considered equivalent to U+0061 through U+007A
-                    // (a-z). The field contents can contain any UTF-8 character.
-                    let (name, content) = field
-                        .split_once('=')
-                        .expect("comment field must be seperated by '='");
-                    metadata.fields.push(FlacMetadataCommentField {
-                        name: name.to_string(),
-                        content: content.to_string(),
-                    });
-                }
+                metadata.fields = fields;
             }
             FlacMetadataBlockType::Cuesheet => {
                 // A cuesheet metadata block can be used either to store the track and index point
@@ -2681,182 +2588,7 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // below is complete, and further reference to [IEC.60908.1999] is not needed to
                 // implement this metadata block.
 
-                // The structure of a cuesheet metadata block is enumerated in the following table.
-
-                let mut pos = 0;
-
-                // u(128*8)	Media catalog number in ASCII printable characters 0x20-0x7E.
-                // If the media catalog number is less than 128 bytes long, it is right-padded with
-                // 0x00 bytes. For CD-DA, this is a 13-digit number followed by 115 0x00 bytes.
-                let catalog_number = String::from_utf8((&data[pos..pos + 128]).into())
-                    .expect(
-                        "catalog number string must be UTF-8 and then some further restrictions",
-                    )
-                    .trim_end_matches('\0')
-                    .into();
-                // debug_assert!(catalog_number.is_ascii());
-
-                pos += 128;
-
-                // u(64)	Number of lead-in samples.
-                // The number of lead-in samples has meaning only for CD-DA cuesheets; for other
-                // uses, it should be 0. For CD-DA, the lead-in is the TRACK 00 area where the
-                // table of contents is stored; more precisely, it is the number of samples from
-                // the first sample of the media to the first sample of the first index point of
-                // the first track. According to [IEC.60908.1999], the lead-in MUST be silent, and
-                // CD grabbing software does not usually store it; additionally, the lead-in MUST
-                // be at least two seconds but MAY be longer. For these reasons, the lead-in length
-                // is stored here so that the absolute position of the first track can be computed.
-                // Note that the lead-in stored here is the number of samples up to the first index
-                // point of the first track, not necessarily to INDEX 01 of the first track; even
-                // the first track MAY have INDEX 00 data.
-                let lead_in_samples = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
-
-                pos += 8;
-
-                // u(1)	1 if the cuesheet corresponds to a CD-DA; else 0.
-                let is_cdda = data[pos] >> 7 == 1;
-
-                // u(7+258*8)	Reserved. All bits MUST be set to zero.
-                let mut reserved = [00; 259];
-                reserved.clone_from_slice(&data[pos..pos + 259]);
-                reserved[0] &= 0b0111_1111; // ignore very first bit
-                debug_assert!(reserved.iter().all(|val| *val == 0));
-
-                pos += 259;
-
-                // u(8)	Number of tracks in this cuesheet.
-                // The number of tracks MUST be at least 1, as a cuesheet block MUST have a
-                // lead-out track. For CD-DA, this number MUST be no more than 100 (99 regular
-                // tracks and one lead-out track). The lead-out track is always the last track in
-                // the cuesheet. For CD-DA, the lead-out track number MUST be 170 as specified by
-                // [IEC.60908.1999]; otherwise, it MUST be 255.
-                let track_count = data[pos];
-
-                pos += 1;
-
-                let mut tracks = vec![];
-
-                // Cuesheet tracks	A number of structures as specified in Section 8.7.1 equal to the number of tracks specified previously.
-                for _ in 0..track_count {
-                    // u(64)	Track offset of the first index point in samples, relative to the beginning of the FLAC audio stream.
-                    // Note that the track offset differs from the one in CD-DA, where the track's
-                    // offset in the table of contents (TOC) is that of the track's INDEX 01 even
-                    // if there is an INDEX 00. For CD-DA, the track offset MUST be evenly
-                    // divisible by 588 samples (588 samples = 44100 samples/s * 1/75 s).
-                    let offset = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
-
-                    pos += 8;
-
-                    // u(8)	Track number.
-                    // A track number of 0 is not allowed because the CD-DA specification reserves
-                    // this for the lead-in. For CD-DA, the number MUST be 1-99 or 170 for the
-                    // lead-out; for non-CD-DA, the track number MUST be 255 for the lead-out. It
-                    // is recommended to start with track 1 and increase sequentially. Track
-                    // numbers MUST be unique within a cuesheet.
-                    let number = data[pos];
-
-                    pos += 1;
-
-                    // u(12*8)	Track ISRC.
-                    // The track ISRC (International Standard Recording Code) is a 12-digit
-                    // alphanumeric code; see [ISRC-handbook]. A value of 12 ASCII 0x00 characters
-                    // MAY be used to denote the absence of an ISRC.
-                    let raw_isrc = &data[pos..pos + 12];
-
-                    let isrc = if raw_isrc == [0u8; 12] {
-                        None
-                    } else {
-                        // ISRC is alphanumeric, using digits (the ten Arabic numerals 0 - 9) and the 26 upper case letters
-                        // of the Roman alphabet.
-                        // Lower case letters are not strictly permitted by the specification though it is recommended that
-                        // systems map lower-case letters to their upper-case equivalents before validating or using
-                        // codes.
-                        debug!("raw isrc: {raw_isrc:02x?}");
-                        match String::from_utf8(raw_isrc.into()) {
-                            Ok(str) => {
-                                // TODO validate that it is only alphanumeric
-                                Some(str.to_ascii_uppercase())
-                            }
-                            Err(err) => {
-                                error!(
-                                    "ISRC {raw_isrc:02x?} could not be converted to a string: {err}"
-                                );
-                                None
-                            }
-                        }
-                    };
-
-                    pos += 12;
-
-                    // u(1)	The track type: 0 for audio, 1 for non-audio. This corresponds to the CD-DA Q-channel control bit 3.
-                    let is_audio: bool = data[pos] >> 7 == 0;
-
-                    // u(1)	The pre-emphasis flag: 0 for no pre-emphasis, 1 for pre-emphasis. This corresponds to the CD-DA Q-channel control bit 5.
-                    let preemphasis_flag = data[pos] >> 6 & 1 == 1;
-
-                    // u(6+13*8)	Reserved. All bits MUST be set to zero.
-                    let mut reserved = [00; 14];
-                    reserved.clone_from_slice(&data[pos..pos + 14]);
-                    reserved[0] &= 0b0011_1111; // ignore first two bits
-                    debug_assert!(reserved.iter().all(|val| *val == 0));
-
-                    pos += 14;
-
-                    // u(8)	The number of track index points.
-                    // There MUST be at least one index point in every track in a cuesheet except
-                    // for the lead-out track, which MUST have zero. For CD-DA, the number of index
-                    // points MUST NOT be more than 100.
-                    let index_point_count = data[pos];
-
-                    pos += 1;
-
-                    let mut index_points = vec![];
-
-                    // Cuesheet track index points	For all tracks except the lead-out track, a number of structures as specified in Section 8.7.1.1 equal to the number of index points specified previously.
-                    for _ in 0..index_point_count {
-                        // u(64)	Offset in samples, relative to the track offset, of the index point.
-                        // For CD-DA, the track index point offset MUST be evenly divisible by 588
-                        // samples (588 samples = 44100 samples/s * 1/75 s). Note that the offset
-                        // is from the beginning of the track, not the beginning of the audio data.
-                        let offset = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
-
-                        pos += 8;
-
-                        // u(8)	The track index point number.
-                        // For CD-DA, a track index point number of 0 corresponds to the track
-                        // pre-gap. The first index point in a track MUST have a number of 0 or 1,
-                        // and subsequently, index point numbers MUST increase by 1. Index point
-                        // numbers MUST be unique within a track.
-                        let number = data[pos];
-
-                        pos += 1;
-
-                        // u(3*8)	Reserved. All bits MUST be set to zero.
-                        let reserved = &data[pos..pos + 3];
-                        debug_assert!(reserved.iter().all(|val| *val == 0));
-
-                        pos += 3;
-
-                        index_points.push(FlacMetadataCueSheetTrackIndexPoint { offset, number });
-                    }
-
-                    tracks.push(FlacMetadataCueSheetTrack {
-                        offset,
-                        number,
-                        isrc,
-                        is_audio,
-                        preemphasis_flag,
-                        index_points,
-                    });
-                }
-
-                metadata.cue_sheet = Some(FlacMetadataCueSheet {
-                    catalog_number,
-                    lead_in_samples,
-                    is_cdda,
-                    tracks,
-                });
+                metadata.cue_sheet = Some(extract_flac_cus_sheet_metadata(&data[..]));
             }
             FlacMetadataBlockType::Picture => {
                 // The picture metadata block contains image data of a picture in some way
@@ -2874,110 +2606,10 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
                 // Instead of picture data, the picture metadata block can also contain a URI as
                 // described in [RFC3986].
 
-                let mut pos = 0;
-
-                // Table 12
-                // Data	Description
-                // u(32)	The picture type according to Table 13.
-                let n = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-                let picture_type = match n {
-                    0 => FlacMetadataPictureType::Other,
-                    1 => FlacMetadataPictureType::PNGIcon,
-                    2 => FlacMetadataPictureType::GeneralIcon,
-                    3 => FlacMetadataPictureType::FrontCover,
-                    4 => FlacMetadataPictureType::BackCover,
-                    5 => FlacMetadataPictureType::LinerNotes,
-                    6 => FlacMetadataPictureType::MediaLabel,
-                    7 => FlacMetadataPictureType::LeadArtist,
-                    8 => FlacMetadataPictureType::Artist,
-                    9 => FlacMetadataPictureType::Conductor,
-                    10 => FlacMetadataPictureType::Band,
-                    11 => FlacMetadataPictureType::Composer,
-                    12 => FlacMetadataPictureType::Lyricist,
-                    13 => FlacMetadataPictureType::RecordingLocation,
-                    14 => FlacMetadataPictureType::DuringRecording,
-                    15 => FlacMetadataPictureType::DuringPerformance,
-                    16 => FlacMetadataPictureType::VideoCapture,
-                    17 => FlacMetadataPictureType::BrightColoredFish,
-                    18 => FlacMetadataPictureType::Illustration,
-                    19 => FlacMetadataPictureType::Logo,
-                    20 => FlacMetadataPictureType::PublisherStudioLogo,
-                    _ => {
-                        error!("invalid picture type: {n}");
-                        continue;
-                    }
-                };
-
-                pos += 4;
-
-                // u(32)	The length of the media type string in bytes.
-                let media_type_length =
-                    u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-
-                pos += 4;
-
-                // u(n*8)	The media type string as specified by [RFC2046], or the text string --> to signify that the data part is a URI of the picture instead of the picture data itself. This field must be in printable ASCII characters 0x20-0x7E.
-                let media_type = String::from_utf8((&data[pos..pos + media_type_length]).into())
-                    .expect("field string must be UTF-8 and then some further restrictions");
-                if media_type == "-->" {
-                    warn!("picture is stored at URI");
+                match extract_flac_picture_metadata(&data[..]) {
+                    Ok(picture) => metadata.picture.push(picture),
+                    Err(err) => error!("{err}"),
                 }
-                // debug_assert!(media_type.is_ascii());
-
-                pos += media_type_length;
-
-                // u(32)	The length of the description string in bytes.
-                let description_length =
-                    u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-
-                pos += 4;
-
-                // u(n*8)	The description of the picture in UTF-8.
-                let description = String::from_utf8((&data[pos..pos + description_length]).into())
-                    .expect("field string must be UTF-8");
-
-                pos += description_length;
-
-                // u(32)	The width of the picture in pixels.
-                let width = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-
-                pos += 4;
-
-                // u(32)	The height of the picture in pixels.
-                let height = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-
-                pos += 4;
-
-                // u(32)	The color depth of the picture in bits per pixel.
-                let depth = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-
-                pos += 4;
-
-                // u(32)	For indexed-color pictures (e.g., GIF), the number of colors used; 0 for non-indexed pictures.
-                let colors = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
-
-                pos += 4;
-
-                // u(32)	The length of the picture data in bytes.
-                let length = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
-
-                pos += 4;
-
-                debug_assert_eq!(length, data.len() - pos);
-
-                // u(n*8)	The binary picture data.
-                let picture = &data[pos..pos + length];
-
-                metadata.picture.push(FlacMetadataPicture {
-                    picture_type,
-                    media_type,
-                    description,
-                    width,
-                    height,
-                    depth,
-                    colors,
-                    picture: picture.into(),
-                });
             }
             FlacMetadataBlockType::Reserved => {
                 warn!("FLAC metadata contains reserved block {metadata_block_type:?}, ignoring");
@@ -2993,6 +2625,395 @@ fn extract_flac_metadata(reader: &mut BufReader<impl Read>) -> FlacMetadata {
     }
 
     metadata
+}
+
+fn extract_flac_application_metadata(data: &[u8]) -> FlacMetadataApplication {
+    let mut pos = 0;
+
+    // u(32)	Registered application ID.
+    let application_id = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
+
+    pos += 4;
+
+    // u(n)	Application data (n MUST be a multiple of 8, i.e., a whole number of
+    // bytes). n is 8 times the size described in the metadata block header minus the
+    // 32 bits already used for the application ID.
+    let application_data = &data[pos..];
+
+    FlacMetadataApplication {
+        id: application_id,
+        data: application_data.into(),
+    }
+}
+
+fn extract_flac_seek_table_metadata(data: &[u8]) -> Vec<FlacMetadataSeekPoint> {
+    let mut seek_table = vec![];
+
+    let mut pos = 0;
+
+    while pos < data.len() {
+        let seek_data = &data[pos..pos + 18];
+
+        // u(64)	Sample number of the first sample in the target frame or 0xFFFFFFFFFFFFFFFF for a placeholder point.
+        let sample_number = u64::from_be_bytes((&seek_data[0..8]).try_into().unwrap());
+
+        // u(64)	Offset (in bytes) from the first byte of the first frame header to the first byte of the target frame's header.
+        let offset = u64::from_be_bytes((&seek_data[8..16]).try_into().unwrap());
+
+        // u(16)	Number of samples in the target frame.
+        let samples = u16::from_be_bytes((&seek_data[16..18]).try_into().unwrap());
+
+        pos += 18;
+
+        seek_table.push(FlacMetadataSeekPoint {
+            sample_number,
+            offset,
+            samples,
+        });
+    }
+
+    seek_table
+}
+
+fn extract_flac_comment_metadata(data: &[u8]) -> (String, Vec<FlacMetadataCommentField>) {
+    let mut pos = 0;
+
+    // In a Vorbis comment metadata block, the metadata block header is directly
+    // followed by 4 bytes containing the length in bytes of the vendor string as
+    // an unsigned number coded little-endian. The vendor string follows, is
+    // UTF-8 coded and is not terminated in any way.
+    let vendor_length = u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
+
+    pos += 4;
+
+    let vendor = String::from_utf8((&data[pos..pos + vendor_length]).into())
+        .expect("vendor string must be UTF-8");
+
+    pos += vendor_length;
+
+    // Following the vendor string are 4 bytes containing the number of fields that
+    // are in the Vorbis comment block, stored as an unsigned number coded
+    // little-endian. If this number is non-zero, it is followed by the fields
+    // themselves, each of which is stored with a 4-byte length. For each field,
+    // the field length in bytes is stored as a 4-byte unsigned number coded
+    // little-endian. The field itself follows it. Like the vendor string, the
+    // field is UTF-8 coded and not terminated in any way.
+    let field_count = u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
+    let mut fields = Vec::with_capacity(field_count);
+
+    pos += 4;
+
+    for _ in 0..field_count {
+        let field_length = u32::from_le_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
+
+        pos += 4;
+
+        if pos + field_length > data.len() {
+            warn!(
+                "field data exceeds Vorbis comment length. remaining data {:02x?}",
+                &data[pos..]
+            );
+            break;
+        }
+        let field = String::from_utf8((&data[pos..pos + field_length]).into())
+            .expect("field string must be UTF-8");
+
+        pos += field_length;
+
+        // Each field consists of a field name and field contents, separated by an =
+        // character. The field name MUST only consist of UTF-8 code points U+0020
+        // through U+007E, excluding U+003D, which is the = character. In other words,
+        // the field name can contain all printable ASCII characters except the equals
+        // sign. The evaluation of the field names MUST be case insensitive, so U+0041
+        // through 0+005A (A-Z) MUST be considered equivalent to U+0061 through U+007A
+        // (a-z). The field contents can contain any UTF-8 character.
+        let (name, content) = field
+            .split_once('=')
+            .expect("comment field must be seperated by '='");
+        fields.push(FlacMetadataCommentField {
+            name: name.to_string(),
+            content: content.to_string(),
+        });
+    }
+
+    (vendor, fields)
+}
+
+fn extract_flac_cus_sheet_metadata(data: &[u8]) -> FlacMetadataCueSheet {
+    let mut pos = 0;
+
+    // u(128*8)	Media catalog number in ASCII printable characters 0x20-0x7E.
+    // If the media catalog number is less than 128 bytes long, it is right-padded with
+    // 0x00 bytes. For CD-DA, this is a 13-digit number followed by 115 0x00 bytes.
+    let catalog_number = String::from_utf8((&data[pos..pos + 128]).into())
+        .expect("catalog number string must be UTF-8 and then some further restrictions")
+        .trim_end_matches('\0')
+        .into();
+    // debug_assert!(catalog_number.is_ascii());
+
+    pos += 128;
+
+    // u(64)	Number of lead-in samples.
+    // The number of lead-in samples has meaning only for CD-DA cuesheets; for other
+    // uses, it should be 0. For CD-DA, the lead-in is the TRACK 00 area where the
+    // table of contents is stored; more precisely, it is the number of samples from
+    // the first sample of the media to the first sample of the first index point of
+    // the first track. According to [IEC.60908.1999], the lead-in MUST be silent, and
+    // CD grabbing software does not usually store it; additionally, the lead-in MUST
+    // be at least two seconds but MAY be longer. For these reasons, the lead-in length
+    // is stored here so that the absolute position of the first track can be computed.
+    // Note that the lead-in stored here is the number of samples up to the first index
+    // point of the first track, not necessarily to INDEX 01 of the first track; even
+    // the first track MAY have INDEX 00 data.
+    let lead_in_samples = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
+
+    pos += 8;
+
+    // u(1)	1 if the cuesheet corresponds to a CD-DA; else 0.
+    let is_cdda = data[pos] >> 7 == 1;
+
+    // u(7+258*8)	Reserved. All bits MUST be set to zero.
+    let mut reserved = [00; 259];
+    reserved.clone_from_slice(&data[pos..pos + 259]);
+    reserved[0] &= 0b0111_1111; // ignore very first bit
+    debug_assert!(reserved.iter().all(|val| *val == 0));
+
+    pos += 259;
+
+    // u(8)	Number of tracks in this cuesheet.
+    // The number of tracks MUST be at least 1, as a cuesheet block MUST have a
+    // lead-out track. For CD-DA, this number MUST be no more than 100 (99 regular
+    // tracks and one lead-out track). The lead-out track is always the last track in
+    // the cuesheet. For CD-DA, the lead-out track number MUST be 170 as specified by
+    // [IEC.60908.1999]; otherwise, it MUST be 255.
+    let track_count = data[pos];
+
+    pos += 1;
+
+    let mut tracks = vec![];
+
+    // Cuesheet tracks	A number of structures as specified in Section 8.7.1 equal to the number of tracks specified previously.
+    for _ in 0..track_count {
+        // u(64)	Track offset of the first index point in samples, relative to the beginning of the FLAC audio stream.
+        // Note that the track offset differs from the one in CD-DA, where the track's
+        // offset in the table of contents (TOC) is that of the track's INDEX 01 even
+        // if there is an INDEX 00. For CD-DA, the track offset MUST be evenly
+        // divisible by 588 samples (588 samples = 44100 samples/s * 1/75 s).
+        let offset = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
+
+        pos += 8;
+
+        // u(8)	Track number.
+        // A track number of 0 is not allowed because the CD-DA specification reserves
+        // this for the lead-in. For CD-DA, the number MUST be 1-99 or 170 for the
+        // lead-out; for non-CD-DA, the track number MUST be 255 for the lead-out. It
+        // is recommended to start with track 1 and increase sequentially. Track
+        // numbers MUST be unique within a cuesheet.
+        let number = data[pos];
+
+        pos += 1;
+
+        // u(12*8)	Track ISRC.
+        // The track ISRC (International Standard Recording Code) is a 12-digit
+        // alphanumeric code; see [ISRC-handbook]. A value of 12 ASCII 0x00 characters
+        // MAY be used to denote the absence of an ISRC.
+        let raw_isrc = &data[pos..pos + 12];
+
+        let isrc = if raw_isrc == [0u8; 12] {
+            None
+        } else {
+            // ISRC is alphanumeric, using digits (the ten Arabic numerals 0 - 9) and the 26 upper case letters
+            // of the Roman alphabet.
+            // Lower case letters are not strictly permitted by the specification though it is recommended that
+            // systems map lower-case letters to their upper-case equivalents before validating or using
+            // codes.
+            debug!("raw isrc: {raw_isrc:02x?}");
+            match String::from_utf8(raw_isrc.into()) {
+                Ok(str) => {
+                    // TODO validate that it is only alphanumeric
+                    Some(str.to_ascii_uppercase())
+                }
+                Err(err) => {
+                    error!("ISRC {raw_isrc:02x?} could not be converted to a string: {err}");
+                    None
+                }
+            }
+        };
+
+        pos += 12;
+
+        // u(1)	The track type: 0 for audio, 1 for non-audio. This corresponds to the CD-DA Q-channel control bit 3.
+        let is_audio: bool = data[pos] >> 7 == 0;
+
+        // u(1)	The pre-emphasis flag: 0 for no pre-emphasis, 1 for pre-emphasis. This corresponds to the CD-DA Q-channel control bit 5.
+        let preemphasis_flag = data[pos] >> 6 & 1 == 1;
+
+        // u(6+13*8)	Reserved. All bits MUST be set to zero.
+        let mut reserved = [00; 14];
+        reserved.clone_from_slice(&data[pos..pos + 14]);
+        reserved[0] &= 0b0011_1111; // ignore first two bits
+        debug_assert!(reserved.iter().all(|val| *val == 0));
+
+        pos += 14;
+
+        // u(8)	The number of track index points.
+        // There MUST be at least one index point in every track in a cuesheet except
+        // for the lead-out track, which MUST have zero. For CD-DA, the number of index
+        // points MUST NOT be more than 100.
+        let index_point_count = data[pos];
+
+        pos += 1;
+
+        let mut index_points = vec![];
+
+        // Cuesheet track index points	For all tracks except the lead-out track, a number of structures as specified in Section 8.7.1.1 equal to the number of index points specified previously.
+        for _ in 0..index_point_count {
+            // u(64)	Offset in samples, relative to the track offset, of the index point.
+            // For CD-DA, the track index point offset MUST be evenly divisible by 588
+            // samples (588 samples = 44100 samples/s * 1/75 s). Note that the offset
+            // is from the beginning of the track, not the beginning of the audio data.
+            let offset = u64::from_be_bytes((&data[pos..pos + 8]).try_into().unwrap());
+
+            pos += 8;
+
+            // u(8)	The track index point number.
+            // For CD-DA, a track index point number of 0 corresponds to the track
+            // pre-gap. The first index point in a track MUST have a number of 0 or 1,
+            // and subsequently, index point numbers MUST increase by 1. Index point
+            // numbers MUST be unique within a track.
+            let number = data[pos];
+
+            pos += 1;
+
+            // u(3*8)	Reserved. All bits MUST be set to zero.
+            let reserved = &data[pos..pos + 3];
+            debug_assert!(reserved.iter().all(|val| *val == 0));
+
+            pos += 3;
+
+            index_points.push(FlacMetadataCueSheetTrackIndexPoint { offset, number });
+        }
+
+        tracks.push(FlacMetadataCueSheetTrack {
+            offset,
+            number,
+            isrc,
+            is_audio,
+            preemphasis_flag,
+            index_points,
+        });
+    }
+
+    FlacMetadataCueSheet {
+        catalog_number,
+        lead_in_samples,
+        is_cdda,
+        tracks,
+    }
+}
+
+fn extract_flac_picture_metadata(data: &[u8]) -> std::result::Result<FlacMetadataPicture, String> {
+    let mut pos = 0;
+
+    // Table 12
+    // Data	Description
+    // u(32)	The picture type according to Table 13.
+    let n = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
+    let picture_type = match n {
+        0 => FlacMetadataPictureType::Other,
+        1 => FlacMetadataPictureType::PNGIcon,
+        2 => FlacMetadataPictureType::GeneralIcon,
+        3 => FlacMetadataPictureType::FrontCover,
+        4 => FlacMetadataPictureType::BackCover,
+        5 => FlacMetadataPictureType::LinerNotes,
+        6 => FlacMetadataPictureType::MediaLabel,
+        7 => FlacMetadataPictureType::LeadArtist,
+        8 => FlacMetadataPictureType::Artist,
+        9 => FlacMetadataPictureType::Conductor,
+        10 => FlacMetadataPictureType::Band,
+        11 => FlacMetadataPictureType::Composer,
+        12 => FlacMetadataPictureType::Lyricist,
+        13 => FlacMetadataPictureType::RecordingLocation,
+        14 => FlacMetadataPictureType::DuringRecording,
+        15 => FlacMetadataPictureType::DuringPerformance,
+        16 => FlacMetadataPictureType::VideoCapture,
+        17 => FlacMetadataPictureType::BrightColoredFish,
+        18 => FlacMetadataPictureType::Illustration,
+        19 => FlacMetadataPictureType::Logo,
+        20 => FlacMetadataPictureType::PublisherStudioLogo,
+        _ => {
+            return Err(format!("invalid picture type: {n}"));
+        }
+    };
+
+    pos += 4;
+
+    // u(32)	The length of the media type string in bytes.
+    let media_type_length = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
+
+    pos += 4;
+
+    // u(n*8)	The media type string as specified by [RFC2046], or the text string --> to signify that the data part is a URI of the picture instead of the picture data itself. This field must be in printable ASCII characters 0x20-0x7E.
+    let media_type = String::from_utf8((&data[pos..pos + media_type_length]).into())
+        .expect("field string must be UTF-8 and then some further restrictions");
+    if media_type == "-->" {
+        warn!("picture is stored at URI");
+    }
+    // debug_assert!(media_type.is_ascii());
+
+    pos += media_type_length;
+
+    // u(32)	The length of the description string in bytes.
+    let description_length = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
+
+    pos += 4;
+
+    // u(n*8)	The description of the picture in UTF-8.
+    let description = String::from_utf8((&data[pos..pos + description_length]).into())
+        .expect("field string must be UTF-8");
+
+    pos += description_length;
+
+    // u(32)	The width of the picture in pixels.
+    let width = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
+
+    pos += 4;
+
+    // u(32)	The height of the picture in pixels.
+    let height = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
+
+    pos += 4;
+
+    // u(32)	The color depth of the picture in bits per pixel.
+    let depth = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
+
+    pos += 4;
+
+    // u(32)	For indexed-color pictures (e.g., GIF), the number of colors used; 0 for non-indexed pictures.
+    let colors = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap());
+
+    pos += 4;
+
+    // u(32)	The length of the picture data in bytes.
+    let length = u32::from_be_bytes((&data[pos..pos + 4]).try_into().unwrap()) as usize;
+
+    pos += 4;
+
+    debug_assert_eq!(length, data.len() - pos);
+
+    // u(n*8)	The binary picture data.
+    let picture = &data[pos..pos + length];
+
+    Ok(FlacMetadataPicture {
+        picture_type,
+        media_type,
+        description,
+        width,
+        height,
+        depth,
+        colors,
+        picture: picture.into(),
+    })
 }
 
 #[cfg(test)]
