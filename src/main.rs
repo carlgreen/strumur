@@ -961,7 +961,7 @@ fn generate_browse_an_album_response(
     let mut found = None;
     'artists: for artist in collection.get_artists() {
         for album in artist.get_albums() {
-            if format!("*a{}", some_id + 1) == album_id {
+            if format!("*a{some_id}") == album_id {
                 found = Some((artist, album));
                 break 'artists;
             }
@@ -3686,7 +3686,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = generate_browse_request("0$albums$*a3", 0, 500);
+        let input = generate_browse_request("0$albums$*a2", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -3719,7 +3719,7 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <item id="0$albums$*a3$*i1" parentID="0$albums$*a3" restricted="1">
+    <item id="0$albums$*a2$*i1" parentID="0$albums$*a2" restricted="1">
         <dc:title>g&lt;11</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -3731,7 +3731,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$albums$*a3$*i2" parentID="0$albums$*a3" restricted="1">
+    <item id="0$albums$*a2$*i2" parentID="0$albums$*a2" restricted="1">
         <dc:title>g12</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -3743,7 +3743,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$albums$*a3$*i3" parentID="0$albums$*a3" restricted="1">
+    <item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1">
         <dc:title>g13</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
