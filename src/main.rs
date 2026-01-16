@@ -158,7 +158,7 @@ impl SysInfo {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Artist {
     name: String,
     albums: Vec<Album>,
@@ -174,10 +174,10 @@ impl Artist {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Album {
     title: String,
-    date: NaiveDate,
+    date: Option<NaiveDate>,
     tracks: Vec<Track>,
     cover: String,
 }
@@ -188,7 +188,7 @@ impl Album {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Track {
     number: u8,
     title: String,
@@ -302,16 +302,19 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                             debug!("fields in {display_file_name}: {field_names:?}");
                             continue;
                         };
-                        let release_date = if let Some(mut datestr) = get_field(&metadata, "DATE") {
-                            fill_in_missing_date_parts(&mut datestr);
-                            datestr.parse::<NaiveDate>().unwrap_or_else(|err| {
-                                panic!("{err}. expected valid date not {datestr}")
-                            })
-                        } else {
-                            warn!("no release date found in {display_file_name}");
-                            debug!("fields in {display_file_name}: {field_names:?}");
-                            continue;
-                        };
+                        let release_date = get_field(&metadata, "DATE").map_or_else(
+                            || {
+                                warn!("no release date found in {display_file_name}");
+                                debug!("fields in {display_file_name}: {field_names:?}");
+                                None
+                            },
+                            |mut datestr| {
+                                fill_in_missing_date_parts(&mut datestr);
+                                Some(datestr.parse::<NaiveDate>().unwrap_or_else(|err| {
+                                    panic!("{err}. expected valid date not {datestr}")
+                                }))
+                            },
+                        );
 
                         let track = Track {
                             number: track_number,
@@ -353,7 +356,7 @@ fn add_track_to_collection(
     entry: &DirEntry,
     artist_name: String,
     album_title: String,
-    release_date: NaiveDate,
+    release_date: Option<NaiveDate>,
     track: Track,
 ) {
     let artist: Option<&mut Artist> = collection
@@ -1226,8 +1229,8 @@ fn format_time_nice(time: NaiveTime) -> String {
         .to_string()
 }
 
-fn create_date_element(date: NaiveDate) -> String {
-    format!("<dc:date>{date}</dc:date>")
+fn create_date_element(date: Option<NaiveDate>) -> String {
+    date.map_or_else(String::new, |date| format!("<dc:date>{date}</dc:date>"))
 }
 
 fn create_album_art_element(addr: &str, cover: &str) -> String {
@@ -3053,7 +3056,7 @@ mod tests {
         Album {
             title: album_title.to_string(),
             // date: NaiveDate::from_ymd_opt(1996, 2, 12).expect("invalid or out-of-range date"),
-            date,
+            date: Some(date),
             tracks: vec![],
             cover: format!("Music/{artist_name}/{album_title}/cover.jpg"),
         }
@@ -4821,5 +4824,32 @@ CACHE-CONTROL: max-age=10\r
         let mut datestr = "2001-09-05".to_string();
         fill_in_missing_date_parts(&mut datestr);
         assert_eq!(datestr, "2001-09-05");
+    }
+
+    #[test]
+    fn test_populate_collection() {
+        let location = "./testdata/collection/";
+        let collection = populate_collection(location);
+        assert_eq!(
+            collection.artists,
+            vec![Artist {
+                name: "carl".to_string(),
+                albums: vec![Album {
+                    title: "none".to_string(),
+                    date: None,
+                    tracks: vec![Track {
+                        number: 0,
+                        title: "riff".to_string(),
+                        file: "./testdata/collection/riff.flac".to_string(),
+                        duration: NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap(),
+                        size: 664150,
+                        bits_per_sample: 16,
+                        sample_frequency: 48000,
+                        channels: 2,
+                    }],
+                    cover: String::new(),
+                }]
+            }]
+        );
     }
 }
