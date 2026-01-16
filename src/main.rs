@@ -951,14 +951,13 @@ fn generate_browse_albums_response(
         {
             number_returned += 1;
             let album_title = xml::escape::escape_str_attribute(&album.title);
-            let date = album.date.to_string();
+            let date = create_date_element(album.date);
             let track_count = album.get_tracks().len();
-            let cover = format!("{}/{}", addr, album.cover);
-            let cover = xml::escape::escape_str_attribute(&cover);
+            let cover = create_album_art_element(addr, &album.cover);
             // TODO album art details
             write!(
                 result,
-                r#"<container id="0$albums$*a{some_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:date>{date}</dc:date><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+                r#"<container id="0$albums$*a{some_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
             ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             some_id += 1;
             if number_returned >= requested_count {
@@ -996,9 +995,8 @@ fn generate_browse_an_album_response(
     let mut number_returned = 0;
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = &album.title;
-    let date = album.date.to_string();
-    let cover = format!("{}/{}", addr, album.cover);
-    let cover = xml::escape::escape_str_attribute(&cover);
+    let date = create_date_element(album.date);
+    let cover = create_album_art_element(addr, &album.cover);
     let mut result = String::new();
     for (i, track) in tracks
         .skip(starting_index)
@@ -1018,7 +1016,7 @@ fn generate_browse_an_album_response(
         let file = xml::escape::escape_str_attribute(&file);
         write!(
             result,
-            r#"<item id="0$albums${album_id}$*i{id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$albums${album_id}$*i{id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
@@ -1128,13 +1126,12 @@ fn generate_browse_an_artist_albums_response(
         number_returned += 1;
         let id = starting_index + i + 1; // WTF
         let title = xml::escape::escape_str_attribute(&album.title);
-        let date = album.date.to_string();
+        let date = create_date_element(album.date);
         let track_count = album.get_tracks().len();
-        let cover = format!("{}/{}", addr, album.cover);
-        let cover = xml::escape::escape_str_attribute(&cover);
+        let cover = create_album_art_element(addr, &album.cover);
         write!(
             result,
-            r#"<container id="0$=Artist${artist_id}$albums${id}" parentID="0$=Artist${artist_id}$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{title}</dc:title><dc:date>{date}</dc:date><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+            r#"<container id="0$=Artist${artist_id}$albums${id}" parentID="0$=Artist${artist_id}$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
@@ -1167,9 +1164,8 @@ fn generate_browse_an_artist_album_response(
     let mut number_returned = 0;
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = xml::escape::escape_str_attribute(&album.title);
-    let date = album.date.to_string();
-    let cover = format!("{}/{}", addr, album.cover);
-    let cover = xml::escape::escape_str_attribute(&cover);
+    let date = create_date_element(album.date);
+    let cover = create_album_art_element(addr, &album.cover);
     let mut result = String::new();
     for (i, track) in tracks
         .skip(starting_index)
@@ -1189,7 +1185,7 @@ fn generate_browse_an_artist_album_response(
         let file = xml::escape::escape_str_attribute(&file);
         write!(
             result,
-            r#"<item id="0$=Artist${artist_id}$albums${album_id}${id}" parentID="0$=Artist${artist_id}$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title><dc:date>{date}</dc:date><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><upnp:albumArtURI dlna:profileID="JPEG_MED">{cover}</upnp:albumArtURI><res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$=Artist${artist_id}$albums${album_id}${id}" parentID="0$=Artist${artist_id}$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
@@ -1228,6 +1224,16 @@ fn format_time_nice(time: NaiveTime) -> String {
         .to_string()
         .trim_start()
         .to_string()
+}
+
+fn create_date_element(date: NaiveDate) -> String {
+    format!("<dc:date>{date}</dc:date>")
+}
+
+fn create_album_art_element(addr: &str, cover: &str) -> String {
+    let cover = format!("{addr}/{cover}");
+    let cover = xml::escape::escape_str_attribute(&cover);
+    format!("<upnp:albumArtURI dlna:profileID=\"JPEG_MED\">{cover}</upnp:albumArtURI>")
 }
 
 fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
