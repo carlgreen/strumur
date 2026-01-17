@@ -190,6 +190,7 @@ impl Album {
 
 #[derive(Clone, Debug, PartialEq)]
 struct Track {
+    disc: u8,
     number: u8,
     title: String,
     file: String,
@@ -252,7 +253,14 @@ fn populate_collection(location: &str) -> Collection {
             }
         });
         for album in &mut artist.albums {
-            album.tracks.sort_by_key(|track| track.number);
+            album.tracks.sort_by(|t1, t2| {
+                let disc_ordering = t1.disc.cmp(&t2.disc);
+                if disc_ordering.is_eq() {
+                    t1.number.cmp(&t2.number)
+                } else {
+                    disc_ordering
+                }
+            });
         }
     }
 
@@ -296,8 +304,6 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                         };
                         // info!("field_names: {field_names:#?}");
 
-                        // TODO support multi-disc albums
-
                         let Some(artist_name) = get_field(&metadata, "ARTIST") else {
                             warn!("no artist name found in {display_file_name}");
                             debug!("fields in {display_file_name}: {field_names:?}");
@@ -308,6 +314,13 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                             debug!("fields in {display_file_name}: {field_names:?}");
                             continue;
                         };
+                        let disc_number = get_field(&metadata, "DISCNUMBER").map_or_else(
+                            || {
+                                // no disc number is probably the norm
+                                0
+                            },
+                            |number| number.parse::<u8>().expect("number"),
+                        );
                         let track_number = get_field(&metadata, "TRACKNUMBER").map_or_else(
                             || {
                                 warn!("no track number found in {display_file_name}");
@@ -336,6 +349,7 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                         );
 
                         let track = Track {
+                            disc: disc_number,
                             number: track_number,
                             title: track_title,
                             file: entry
@@ -3088,6 +3102,7 @@ mod tests {
         track_title: &str,
     ) -> Track {
         Track {
+            disc: 0,
             number: track_number,
             title: track_title.to_string(),
             file: format!("Music/{artist_name}/{album_title}/{track_number:02} {track_title}.flac")
@@ -4857,6 +4872,7 @@ CACHE-CONTROL: max-age=10\r
                     title: "none".to_string(),
                     date: None,
                     tracks: vec![Track {
+                        disc: 0,
                         number: 0,
                         title: "riff".to_string(),
                         file: "./testdata/collection/riff.flac".to_string(),
