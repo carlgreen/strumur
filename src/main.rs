@@ -241,6 +241,23 @@ fn populate_collection(location: &str) -> Collection {
 
     info!("Populated collection in {:.2?}", start.elapsed());
 
+    collection.artists.sort_by_key(|artist| artist.name.clone());
+    for artist in &mut collection.artists {
+        artist.albums.sort_by(|a1, a2| {
+            let date_ordering = a1.date.cmp(&a2.date);
+            if date_ordering.is_eq() {
+                a1.title.cmp(&a2.title)
+            } else {
+                date_ordering
+            }
+        });
+        for album in &mut artist.albums {
+            album.tracks.sort_by_key(|track| track.number);
+        }
+    }
+
+    info!("Collection sorted");
+
     collection
 }
 
@@ -278,6 +295,8 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                             names
                         };
                         // info!("field_names: {field_names:#?}");
+
+                        // TODO support multi-disc albums
 
                         let Some(artist_name) = get_field(&metadata, "ARTIST") else {
                             warn!("no artist name found in {display_file_name}");
