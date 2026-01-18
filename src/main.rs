@@ -1498,11 +1498,14 @@ fn parse_soap_search_request(
     )
 }
 
-fn parse_search_criteria(s: &str) -> &str {
+fn parse_search_criteria(s: &str) -> String {
     // TODO actually parse stuff
     let re = Regex::new(r#"dc:title contains "(?P<title>.*)" and @refID exists false"#).unwrap();
     re.captures(s)
-        .and_then(|cap| cap.name("title").map(|title| title.as_str()))
+        .and_then(|cap| {
+            cap.name("title")
+                .map(|title| title.as_str().to_ascii_lowercase())
+        })
         .unwrap_or_default()
 }
 
@@ -1527,7 +1530,7 @@ fn generate_search_response(
             for (i, artist) in collection.get_artists().enumerate() {
                 let artist_id = i + 1; // WTF
                 let artist_name = xml::escape::escape_str_attribute(&artist.name);
-                if artist.name.contains(search_criteria) {
+                if artist.name.to_ascii_lowercase().contains(search_criteria) {
                     write!(
                         result,
                         r#"<container id="0$=Artist${artist_id}" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>{artist_name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
@@ -1538,7 +1541,7 @@ fn generate_search_response(
 
                 for album in artist.get_albums() {
                     let album_title = xml::escape::escape_str_attribute(&album.title);
-                    if album.title.contains(search_criteria) {
+                    if album.title.to_ascii_lowercase().contains(search_criteria) {
                         // let track_count = album.get_tracks().count();
                         // let date = create_date_element(album.date);
                         // let cover = create_album_art_element(addr, &album.cover);
@@ -1556,7 +1559,7 @@ fn generate_search_response(
                     for (j, track) in album.get_tracks().enumerate() {
                         let track_id = j + 1; // WTF
 
-                        if track.title.contains(search_criteria) {
+                        if track.title.to_ascii_lowercase().contains(search_criteria) {
                             // let date = create_date_element(album.date);
                             // let cover = create_album_art_element(addr, &album.cover);
 
@@ -1765,8 +1768,7 @@ fn handle_content_directory_actions<'a>(
                 "search:\n\tcontainer_id: {container_id:?}\n\tsearch_criteria: {search_criteria:?}\n\tstarting_index: {starting_index:?}\n\trequested_count: {requested_count:?}"
             );
 
-            let temp = search_criteria.unwrap_or_default();
-            let search_criteria = parse_search_criteria(&temp);
+            let search_criteria = parse_search_criteria(&search_criteria.unwrap_or_default());
 
             let container_id = container_id.unwrap_or_else(|| {
                 warn!("no container id, assuming 0");
@@ -1776,7 +1778,7 @@ fn handle_content_directory_actions<'a>(
             generate_search_response(
                 collection,
                 &container_id,
-                search_criteria,
+                &search_criteria,
                 starting_index,
                 requested_count,
                 addr,
