@@ -29,6 +29,7 @@ use chrono::Utc;
 use log::{Level, debug, error, info, trace, warn};
 use rand::Rng;
 use rand::rngs::ThreadRng;
+use regex::Regex;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use stderrlog::Timestamp;
 use uuid::Uuid;
@@ -858,7 +859,7 @@ fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> O
     }
 }
 
-fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
+fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
     let mut object_id = None;
     let mut starting_index: Option<u16> = None;
     let mut requested_count: Option<u16> = None;
@@ -1406,6 +1407,206 @@ fn generate_browse_response(
     )
 }
 
+fn parse_soap_search_request(
+    body: &str,
+) -> (
+    Option<Vec<String>>,
+    Option<String>,
+    Option<u16>,
+    Option<u16>,
+) {
+    let mut container_id = None;
+    let mut search_criteria = None;
+    let mut starting_index: Option<u16> = None;
+    let mut requested_count: Option<u16> = None;
+    let envelope = Element::parse(body.as_bytes()).unwrap();
+    let body = envelope.get_child("Body").unwrap();
+    match body.get_child("Search") {
+        Some(browse) => {
+            for child in &browse.children {
+                match child.as_element().unwrap().name.as_str() {
+                    "ContainerID" => {
+                        container_id = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .split('$')
+                                .map(ToString::to_string)
+                                .collect(),
+                        );
+                    }
+                    "SearchCriteria" => {
+                        search_criteria = child.as_element().unwrap().get_text().map(Into::into);
+                        if let Some(search_criteria) = &search_criteria {
+                            warn!("search criteria: {search_criteria}. what's up");
+                        } else {
+                            warn!("no search criteria. why are we here?");
+                        }
+                    }
+                    "Filter" => {
+                        let filter = child.as_element().unwrap().get_text().unwrap();
+                        if filter == "*" {
+                            info!("no filter. simple.");
+                        } else {
+                            warn!("some filter: {filter}. what's up");
+                        }
+                    }
+                    "StartingIndex" => {
+                        starting_index = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        );
+                    }
+                    "RequestedCount" => {
+                        requested_count = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        );
+                    }
+                    "SortCriteria" => {
+                        let sort_criteria = child.as_element().unwrap().get_text();
+                        if let Some(sort_criteria) = sort_criteria {
+                            warn!("sort criteria: {sort_criteria}. what's up");
+                        } else {
+                            warn!("no sort criteria. do i just make this up?");
+                        }
+                    }
+                    anything => warn!("what is {anything:?}"),
+                }
+            }
+        }
+        None => panic!("no Browse child"),
+    }
+
+    (
+        container_id,
+        search_criteria,
+        starting_index,
+        requested_count,
+    )
+}
+
+fn parse_search_criteria(s: &str) -> &str {
+    // TODO actually parse stuff
+    let re = Regex::new(r#"dc:title contains "(?P<title>.*)" and @refID exists false"#).unwrap();
+    re.captures(s)
+        .and_then(|cap| cap.name("title").map(|title| title.as_str()))
+        .unwrap_or_default()
+}
+
+fn generate_search_response(
+    collection: &Collection,
+    container_id: &[String],
+    search_criteria: &str,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    addr: &str,
+) -> (String, &'static str) {
+    // TODO handle starting_index, requested_count
+    let search_response = match container_id {
+        [root] if root == "0" => {
+            // let total_matches = collection.get_albums().count();
+            let mut total_matches = 0; // TODO how do i figure this out?
+            // let starting_index = starting_index.unwrap().into();
+            // let requested_count: usize = requested_count.unwrap().into();
+            let mut number_returned = 0;
+            let mut result = String::new();
+            let mut album_id = 0;
+            for (i, artist) in collection.get_artists().enumerate() {
+                let artist_id = i + 1; // WTF
+                let artist_name = xml::escape::escape_str_attribute(&artist.name);
+                if artist.name.contains(search_criteria) {
+                    write!(
+                        result,
+                        r#"<container id="0$=Artist${artist_id}" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>{artist_name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
+                    ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+
+                    number_returned += 1;
+                }
+
+                for album in artist.get_albums() {
+                    let album_title = xml::escape::escape_str_attribute(&album.title);
+                    if album.title.contains(search_criteria) {
+                        // let track_count = album.get_tracks().count();
+                        // let date = create_date_element(album.date);
+                        // let cover = create_album_art_element(addr, &album.cover);
+
+                        write!(
+                            result,
+                            // childCount="{track_count}"
+                            // {date}<upnp:artist>{artist_name}</upnp:artist><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}
+                            r#"<container id="0$albums$*a{album_id}" parentID="0$albums" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:creator>{artist_name}</dc:creator><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+                        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+
+                        number_returned += 1;
+                    }
+
+                    for (j, track) in album.get_tracks().enumerate() {
+                        let track_id = j + 1; // WTF
+
+                        if track.title.contains(search_criteria) {
+                            // let date = create_date_element(album.date);
+                            // let cover = create_album_art_element(addr, &album.cover);
+
+                            let track_title = xml::escape::escape_str_attribute(&track.title);
+                            let track_number = track.number;
+                            let duration = format_time_nice(track.duration);
+                            let size = track.size;
+                            let bits_per_sample = track.bits_per_sample;
+                            let sample_frequency = track.sample_frequency;
+                            let channels = track.channels;
+                            let file = format!("{}/{}", addr, track.file);
+                            let file = xml::escape::escape_str_attribute(&file);
+                            write!(
+                                result,
+                                // id="0$=Artist${artist_id}$albums${album_id}${track_id}" parentID="0$=Artist${artist_id}$albums${album_id}"
+                                // {date}{cover}
+                                r#"<item id="0$albums$*a{album_id}$*i{track_id}" parentID="0$albums$*a{album_id}" restricted="1"><dc:title>{track_title}</dc:title><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+                            ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+
+                            number_returned += 1;
+                        }
+                    }
+
+                    album_id += 1;
+                }
+            }
+
+            // TODO this isn't right
+            total_matches = number_returned;
+
+            Some(format_response(&result, number_returned, total_matches))
+        }
+        _ => {
+            error!("control: unexpected container ID: {container_id:?}");
+            None
+        }
+    };
+    search_response.map_or_else(
+        || (String::new(), "400 BAD REQUEST"),
+        |search_response| {
+            let body = format!(
+                r#"
+        <u:SearchResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{search_response}
+        </u:SearchResponse>"#
+            );
+            (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
+        },
+    )
+}
+
 fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
@@ -1533,7 +1734,7 @@ fn handle_content_directory_actions<'a>(
                 || {
                     panic!("no body");
                 },
-                |body| parse_soap_request(&body),
+                |body| parse_soap_browse_request(&body),
             );
 
             object_id.map_or_else(
@@ -1551,8 +1752,37 @@ fn handle_content_directory_actions<'a>(
                 },
             )
         }
-        CDS_SEARCH_ACTION
-        | CDS_CREATE_OBJECT_ACTION
+        CDS_SEARCH_ACTION => {
+            let (container_id, search_criteria, starting_index, requested_count) = body
+                .map_or_else(
+                    || {
+                        panic!("no body");
+                    },
+                    |body| parse_soap_search_request(&body),
+                );
+
+            println!(
+                "search:\n\tcontainer_id: {container_id:?}\n\tsearch_criteria: {search_criteria:?}\n\tstarting_index: {starting_index:?}\n\trequested_count: {requested_count:?}"
+            );
+
+            let temp = search_criteria.unwrap_or_default();
+            let search_criteria = parse_search_criteria(&temp);
+
+            let container_id = container_id.unwrap_or_else(|| {
+                warn!("no container id, assuming 0");
+                vec!["0".to_string()]
+            });
+
+            generate_search_response(
+                collection,
+                &container_id,
+                search_criteria,
+                starting_index,
+                requested_count,
+                addr,
+            )
+        }
+        CDS_CREATE_OBJECT_ACTION
         | CDS_DESTROY_OBJECT_ACTION
         | CDS_UPDATE_OBJECT_ACTION
         | CDS_IMPORT_RESOURCE_ACTION
@@ -4348,6 +4578,175 @@ mod tests {
     </s:Body>
 </s:Envelope>"#,
         );
+    }
+
+    #[test]
+    fn test_parse_search_criteria() {
+        let input = "dc:title contains \"g\" and @refID exists false";
+        let search_criteria = parse_search_criteria(input);
+        assert_eq!(search_criteria, "g");
+    }
+
+    fn generate_search_request(
+        search_str: &str,
+        starting_index: u16,
+        requested_count: u16,
+    ) -> String {
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Search""#;
+        // TOOD assuming ContainerID is always 0?
+        let body = format!(
+            r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:Search xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <ContainerID>0</ContainerID>
+            <SearchCriteria>dc:title contains "{search_str}" and @refID exists false</SearchCriteria>
+            <Filter>*</Filter>
+            <StartingIndex>{starting_index}</StartingIndex>
+            <RequestedCount>{requested_count}</RequestedCount>
+            <SortCriteria></SortCriteria>
+        </u:Search>
+    </s:Body>
+</s:Envelope>"#
+        );
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + &body
+    }
+
+    fn extract_search_response(body: &str) -> (String, u16, u16, String) {
+        debug!("about to parse {body}");
+        let envelope = Element::parse(body.as_bytes()).unwrap();
+        let body = envelope.get_child("Body").unwrap();
+        let search_response = body.get_child("SearchResponse").unwrap();
+
+        let result = search_response
+            .get_child("Result")
+            .unwrap()
+            .get_text()
+            .unwrap();
+
+        let number_returned: u16 = search_response
+            .get_child("NumberReturned")
+            .unwrap()
+            .get_text()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        let total_matches: u16 = search_response
+            .get_child("TotalMatches")
+            .unwrap()
+            .get_text()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        let update_id = search_response
+            .get_child("UpdateID")
+            .unwrap()
+            .get_text()
+            .unwrap();
+
+        (
+            result.into(),
+            number_returned,
+            total_matches,
+            update_id.into(),
+        )
+    }
+
+    #[test]
+    fn test_handle_search() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_search_request("g", 0, 5);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_search_response(&body);
+
+        // what do i expect? maybe one artist (ghi), one album (g1), and three tracks (g<11, g12,
+        // and g13)?
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+    <container id="0$=Artist$3" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>ghi</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$albums$*a2" parentID="0$albums" restricted="1" searchable="1">
+        <dc:title>g1</dc:title>
+        <dc:creator>ghi</dc:creator>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <item id="0$albums$*a2$*i1" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g&lt;11</dc:title>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a2$*i2" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g12</dc:title>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g13</dc:title>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 5);
+        assert_eq!(total_matches, 5);
+        assert_eq!(update_id, "25");
     }
 
     #[test]
