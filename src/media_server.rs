@@ -1158,11 +1158,11 @@ mod tests {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#GetSystemUpdateID""#;
         let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-    <s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-        <s:Body>
-            <u:GetSystemUpdateID xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
-        </s:Body>
-    </s:Envelope>"#;
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:GetSystemUpdateID xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
+    </s:Body>
+</s:Envelope>"#;
 
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
@@ -1231,11 +1231,11 @@ mod tests {
     fn generate_get_search_capabilities_request() -> String {
         let soap_action_header = r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#GetSearchCapabilities""#;
         let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-    <s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-        <s:Body>
-            <u:GetSearchCapabilities xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
-        </s:Body>
-    </s:Envelope>"#;
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:GetSearchCapabilities xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
+    </s:Body>
+</s:Envelope>"#;
 
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
@@ -1303,11 +1303,11 @@ mod tests {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#GetSortCapabilities""#;
         let body = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-    <s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-        <s:Body>
-            <u:GetSortCapabilities xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
-        </s:Body>
-    </s:Envelope>"#;
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:GetSortCapabilities xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1" />
+    </s:Body>
+</s:Envelope>"#;
 
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
@@ -1379,18 +1379,18 @@ mod tests {
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
         let body = format!(
             r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-    <s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-        <s:Body>
-            <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
-                <ObjectID>{object_id}</ObjectID>
-                <BrowseFlag>BrowseDirectChildren</BrowseFlag>
-                <Filter>*</Filter>
-                <StartingIndex>{starting_index}</StartingIndex>
-                <RequestedCount>{requested_count}</RequestedCount>
-                <SortCriteria></SortCriteria>
-            </u:Browse>
-        </s:Body>
-    </s:Envelope>"#
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <ObjectID>{object_id}</ObjectID>
+            <BrowseFlag>BrowseDirectChildren</BrowseFlag>
+            <Filter>*</Filter>
+            <StartingIndex>{starting_index}</StartingIndex>
+            <RequestedCount>{requested_count}</RequestedCount>
+            <SortCriteria></SortCriteria>
+        </u:Browse>
+    </s:Body>
+</s:Envelope>"#
         );
 
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
@@ -1490,47 +1490,47 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <container id="0$albums" parentID="0" restricted="1" searchable="1">
-            <dc:title>12 albums</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$items" parentID="0" restricted="1" searchable="1">
-            <dc:title>13 items</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$playlists" parentID="0" restricted="1" searchable="1">
-            <dc:title>0 playlists</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$=Artist" parentID="0" restricted="1" searchable="1">
-            <dc:title>Artist</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$=Date" parentID="0" restricted="1" searchable="1">
-            <dc:title>Date</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$=Genre" parentID="0" restricted="1" searchable="1">
-            <dc:title>Genre</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$=All Artists" parentID="0" restricted="1" searchable="1">
-            <dc:title>All Artists</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$=Composer" parentID="0" restricted="1" searchable="1">
-            <dc:title>Composer</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$untagged" parentID="0" restricted="1" searchable="1">
-            <dc:title>[untagged]</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$folders" parentID="0" restricted="1" searchable="1">
-            <dc:title>[folder view]</dc:title>
-            <upnp:class>object.container.storageFolder</upnp:class>
-        </container>
-    </DIDL-Lite>"#,
+    <container id="0$albums" parentID="0" restricted="1" searchable="1">
+        <dc:title>12 albums</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$items" parentID="0" restricted="1" searchable="1">
+        <dc:title>13 items</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$playlists" parentID="0" restricted="1" searchable="1">
+        <dc:title>0 playlists</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$=Artist" parentID="0" restricted="1" searchable="1">
+        <dc:title>Artist</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$=Date" parentID="0" restricted="1" searchable="1">
+        <dc:title>Date</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$=Genre" parentID="0" restricted="1" searchable="1">
+        <dc:title>Genre</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$=All Artists" parentID="0" restricted="1" searchable="1">
+        <dc:title>All Artists</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$=Composer" parentID="0" restricted="1" searchable="1">
+        <dc:title>Composer</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$untagged" parentID="0" restricted="1" searchable="1">
+        <dc:title>[untagged]</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$folders" parentID="0" restricted="1" searchable="1">
+        <dc:title>[folder view]</dc:title>
+        <upnp:class>object.container.storageFolder</upnp:class>
+    </container>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 10);
         assert_eq!(total_matches, 10);
@@ -1575,52 +1575,52 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <container id="0$albums$*a0" parentID="0$albums" childCount="4" restricted="1" searchable="1">
-            <dc:title>a1</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:artist>a&lt;bc</upnp:artist>
-            <dc:creator>a&lt;bc</dc:creator>
-            <upnp:artist role="AlbumArtist">a&lt;bc</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/a&lt;bc/a1/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-        <container id="0$albums$*a1" parentID="0$albums" childCount="0" restricted="1" searchable="1">
-            <dc:title>d&lt;1</dc:title>
-            <dc:date>2005-07-02</dc:date>
-            <upnp:artist>def</upnp:artist>
-            <dc:creator>def</dc:creator>
-            <upnp:artist role="AlbumArtist">def</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/def/d&lt;1/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-        <container id="0$albums$*a2" parentID="0$albums" childCount="3" restricted="1" searchable="1">
-            <dc:title>g1</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-        <container id="0$albums$*a3" parentID="0$albums" childCount="4" restricted="1" searchable="1">
-            <dc:title>h2</dc:title>
-            <dc:date>2002-07-30</dc:date>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-        <container id="0$albums$*a4" parentID="0$albums" childCount="2" restricted="1" searchable="1">
-            <dc:title>i3</dc:title>
-            <dc:date>2011-11-11</dc:date>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-    </DIDL-Lite>"#,
+    <container id="0$albums$*a0" parentID="0$albums" childCount="4" restricted="1" searchable="1">
+        <dc:title>a1</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:artist>a&lt;bc</upnp:artist>
+        <dc:creator>a&lt;bc</dc:creator>
+        <upnp:artist role="AlbumArtist">a&lt;bc</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/a&lt;bc/a1/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a1" parentID="0$albums" childCount="0" restricted="1" searchable="1">
+        <dc:title>d&lt;1</dc:title>
+        <dc:date>2005-07-02</dc:date>
+        <upnp:artist>def</upnp:artist>
+        <dc:creator>def</dc:creator>
+        <upnp:artist role="AlbumArtist">def</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/def/d&lt;1/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a2" parentID="0$albums" childCount="3" restricted="1" searchable="1">
+        <dc:title>g1</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a3" parentID="0$albums" childCount="4" restricted="1" searchable="1">
+        <dc:title>h2</dc:title>
+        <dc:date>2002-07-30</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$albums$*a4" parentID="0$albums" childCount="2" restricted="1" searchable="1">
+        <dc:title>i3</dc:title>
+        <dc:date>2011-11-11</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 12);
@@ -1665,43 +1665,43 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <item id="0$albums$*a2$*i1" parentID="0$albums$*a2" restricted="1">
-            <dc:title>g&lt;11</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:album>g1</upnp:album>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
-            <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-        </item>
-        <item id="0$albums$*a2$*i2" parentID="0$albums$*a2" restricted="1">
-            <dc:title>g12</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:album>g1</upnp:album>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
-            <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-        </item>
-        <item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1">
-            <dc:title>g13</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:album>g1</upnp:album>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
-            <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-        </item>
-    </DIDL-Lite>"#,
+    <item id="0$albums$*a2$*i1" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g&lt;11</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a2$*i2" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g12</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g13</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
@@ -1745,27 +1745,27 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <container id="0$=Artist$1" parentID="0$=Artist" restricted="1" searchable="1">
-            <dc:title>a&lt;bc</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=Artist$2" parentID="0$=Artist" restricted="1" searchable="1">
-            <dc:title>def</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=Artist$3" parentID="0$=Artist" restricted="1" searchable="1">
-            <dc:title>ghi</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=Artist$4" parentID="0$=Artist" restricted="1" searchable="1">
-            <dc:title>jk</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=Artist$5" parentID="0$=Artist" restricted="1" searchable="1">
-            <dc:title>lm</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-    </DIDL-Lite>"#,
+    <container id="0$=Artist$1" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>a&lt;bc</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=Artist$2" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>def</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=Artist$3" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>ghi</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=Artist$4" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>jk</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=Artist$5" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>lm</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
@@ -1809,19 +1809,19 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <container id="0$=Artist$3$albums" parentID="0$=Artist$3" restricted="1" searchable="1">
-            <dc:title>3 albums</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$=Artist$3$items" parentID="0$=Artist$3" restricted="1" searchable="1">
-            <dc:title>9 items</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-        <container id="0$=Artist$3$=Date" parentID="0$=Artist$3" restricted="1" searchable="1">
-            <dc:title>Date</dc:title>
-            <upnp:class>object.container</upnp:class>
-        </container>
-    </DIDL-Lite>"#,
+    <container id="0$=Artist$3$albums" parentID="0$=Artist$3" restricted="1" searchable="1">
+        <dc:title>3 albums</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$=Artist$3$items" parentID="0$=Artist$3" restricted="1" searchable="1">
+        <dc:title>9 items</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+    <container id="0$=Artist$3$=Date" parentID="0$=Artist$3" restricted="1" searchable="1">
+        <dc:title>Date</dc:title>
+        <upnp:class>object.container</upnp:class>
+    </container>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
@@ -1865,34 +1865,34 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <container id="0$=Artist$3$albums$1" parentID="0$=Artist$3$albums" childCount="3" restricted="1" searchable="1">
-            <dc:title>g1</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-        <container id="0$=Artist$3$albums$2" parentID="0$=Artist$3$albums" childCount="4" restricted="1" searchable="1">
-            <dc:title>h2</dc:title>
-            <dc:date>2002-07-30</dc:date>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-        <container id="0$=Artist$3$albums$3" parentID="0$=Artist$3$albums" childCount="2" restricted="1" searchable="1">
-            <dc:title>i3</dc:title>
-            <dc:date>2011-11-11</dc:date>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
-            <upnp:class>object.container.album.musicAlbum</upnp:class>
-        </container>
-    </DIDL-Lite>"#,
+    <container id="0$=Artist$3$albums$1" parentID="0$=Artist$3$albums" childCount="3" restricted="1" searchable="1">
+        <dc:title>g1</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$=Artist$3$albums$2" parentID="0$=Artist$3$albums" childCount="4" restricted="1" searchable="1">
+        <dc:title>h2</dc:title>
+        <dc:date>2002-07-30</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <container id="0$=Artist$3$albums$3" parentID="0$=Artist$3$albums" childCount="2" restricted="1" searchable="1">
+        <dc:title>i3</dc:title>
+        <dc:date>2011-11-11</dc:date>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
@@ -1936,43 +1936,43 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <item id="0$=Artist$3$albums$1$1" parentID="0$=Artist$3$albums$1" restricted="1">
-            <dc:title>g&lt;11</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:album>g1</upnp:album>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
-            <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-        </item>
-        <item id="0$=Artist$3$albums$1$2" parentID="0$=Artist$3$albums$1" restricted="1">
-            <dc:title>g12</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:album>g1</upnp:album>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
-            <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-        </item>
-        <item id="0$=Artist$3$albums$1$3" parentID="0$=Artist$3$albums$1" restricted="1">
-            <dc:title>g13</dc:title>
-            <dc:date>1996-02-12</dc:date>
-            <upnp:album>g1</upnp:album>
-            <upnp:artist>ghi</upnp:artist>
-            <dc:creator>ghi</dc:creator>
-            <upnp:artist role="AlbumArtist">ghi</upnp:artist>
-            <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
-            <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
-            <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
-            <upnp:class>object.item.audioItem.musicTrack</upnp:class>
-        </item>
-    </DIDL-Lite>"#,
+    <item id="0$=Artist$3$albums$1$1" parentID="0$=Artist$3$albums$1" restricted="1">
+        <dc:title>g&lt;11</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$=Artist$3$albums$1$2" parentID="0$=Artist$3$albums$1" restricted="1">
+        <dc:title>g12</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$=Artist$3$albums$1$3" parentID="0$=Artist$3$albums$1" restricted="1">
+        <dc:title>g13</dc:title>
+        <dc:date>1996-02-12</dc:date>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
@@ -2016,27 +2016,27 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-        <container id="0$=All Artists$1" parentID="0$=All Artists" restricted="1" searchable="1">
-            <dc:title>a&lt;bc</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=All Artists$2" parentID="0$=All Artists" restricted="1" searchable="1">
-            <dc:title>def</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=All Artists$3" parentID="0$=All Artists" restricted="1" searchable="1">
-            <dc:title>ghi</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=All Artists$4" parentID="0$=All Artists" restricted="1" searchable="1">
-            <dc:title>jk</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-        <container id="0$=All Artists$5" parentID="0$=All Artists" restricted="1" searchable="1">
-            <dc:title>lm</dc:title>
-            <upnp:class>object.container.person.musicArtist</upnp:class>
-        </container>
-    </DIDL-Lite>"#,
+    <container id="0$=All Artists$1" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>a&lt;bc</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=All Artists$2" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>def</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=All Artists$3" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>ghi</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=All Artists$4" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>jk</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$=All Artists$5" parentID="0$=All Artists" restricted="1" searchable="1">
+        <dc:title>lm</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+</DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
@@ -2216,20 +2216,20 @@ mod tests {
         compare_xml(
             &body,
             r#"<?xml version="1.0"?>
-    <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-        <s:Body>
-            <s:Fault>
-                <faultcode>s:Client</faultcode>
-                <faultstring>UPnPError</faultstring>
-                <detail>
-                    <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
-                        <errorCode>401</errorCode>
-                        <errorDescription>Missing Request</errorDescription>
-                    </UPnPError>
-                </detail>
-            </s:Fault>
-        </s:Body>
-    </s:Envelope>"#,
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Missing Request</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
         );
     }
 
