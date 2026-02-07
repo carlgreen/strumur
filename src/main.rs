@@ -29,7 +29,6 @@ use chrono::Utc;
 use log::{Level, debug, error, info, trace, warn};
 use rand::Rng;
 use rand::rngs::ThreadRng;
-use regex::Regex;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use stderrlog::Timestamp;
 use uuid::Uuid;
@@ -2353,26 +2352,10 @@ fn parse_search_criteria(input: &str) -> std::result::Result<Option<SearchCrit>,
     search_crit(&mut scanner)
 }
 
-/// some example search criteria might look like:
-/// "upnp:class = \"object.container.person.musicArtist\" and (upnp:artist contains \"lo\" or dc:title contains \"lo\")
-/// "upnp:class = \"object.container.album.musicAlbum\" and (upnp:album contains \"lo\" or dc:title contains \"lo\" or upnp:artist contains \"lo\")
-/// "upnp:class derivedfrom \"object.item.audioItem\" and (dc:title contains \"lo\" or upnp:artist contains \"lo\" or dc:creator contains \"lo\")
-/// "upnp:class = \"object.container.playlistContainer\" and dc:title contains \"lo\"
-fn parse_search_criteria_basic(s: &str) -> String {
-    // TODO actually parse stuff
-    let re = Regex::new(r#"dc:title contains "(?P<title>.*)" and @refID exists false"#).unwrap();
-    re.captures(s)
-        .and_then(|cap| {
-            cap.name("title")
-                .map(|title| title.as_str().to_ascii_lowercase())
-        })
-        .unwrap_or_default()
-}
-
 fn generate_search_response(
     collection: &Collection,
     container_id: &[String],
-    search_criteria: &str,
+    search_criteria: Option<&SearchCrit>,
     starting_index: Option<u16>,
     requested_count: Option<u16>,
     addr: &str,
@@ -2390,7 +2373,9 @@ fn generate_search_response(
             for (i, artist) in collection.get_artists().enumerate() {
                 let artist_id = i + 1; // WTF
                 let artist_name = xml::escape::escape_str_attribute(&artist.name);
-                if artist.name.to_ascii_lowercase().contains(search_criteria) {
+                let include =
+                    include_this(search_criteria, &SearchWhat::Artist, None, None, artist);
+                if include {
                     write!(
                         result,
                         r#"<container id="0$=Artist${artist_id}" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>{artist_name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
@@ -2401,7 +2386,14 @@ fn generate_search_response(
 
                 for album in artist.get_albums() {
                     let album_title = xml::escape::escape_str_attribute(&album.title);
-                    if album.title.to_ascii_lowercase().contains(search_criteria) {
+                    let include = include_this(
+                        search_criteria,
+                        &SearchWhat::Album,
+                        None,
+                        Some(album),
+                        artist,
+                    );
+                    if include {
                         // let track_count = album.get_tracks().count();
                         // let date = create_date_element(album.date);
                         // let cover = create_album_art_element(addr, &album.cover);
@@ -2419,7 +2411,14 @@ fn generate_search_response(
                     for (j, track) in album.get_tracks().enumerate() {
                         let track_id = j + 1; // WTF
 
-                        if track.title.to_ascii_lowercase().contains(search_criteria) {
+                        let include = include_this(
+                            search_criteria,
+                            &SearchWhat::Track,
+                            Some(track),
+                            Some(album),
+                            artist,
+                        );
+                        if include {
                             // let date = create_date_element(album.date);
                             // let cover = create_album_art_element(addr, &album.cover);
 
@@ -2468,6 +2467,100 @@ fn generate_search_response(
             (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
         },
     )
+}
+
+enum SearchWhat {
+    Artist,
+    Album,
+    Track,
+}
+
+fn include_this(
+    search_criteria: Option<&SearchCrit>,
+    what: &SearchWhat,
+    track: Option<&Track>,
+    album: Option<&Album>,
+    artist: &Artist,
+) -> bool {
+    // if search_criteria is None then treat as All
+    match search_criteria {
+        Some(SearchCrit::All) | None => true,
+        Some(search_criteria) => match search_criteria {
+            SearchCrit::All => true,
+            SearchCrit::SearchExp(search_exp) => {
+                include_by_search_exp(search_exp, what, track, album, artist)
+            }
+        },
+    }
+}
+
+fn include_by_search_exp(
+    search_exp: &SearchExp,
+    what: &SearchWhat,
+    track: Option<&Track>,
+    album: Option<&Album>,
+    artist: &Artist,
+) -> bool {
+    match search_exp {
+        SearchExp::Rel(rel_exp) => {
+            match rel_exp {
+                RelExp::BinOp(s, bin_op, quoted_val) => {
+                    let QuotedVal::String(quoted_val) = quoted_val;
+                    match bin_op {
+                        BinOp::RelOp(rel_op) => {
+                            todo!("BinOp::RelOp: {rel_op:?}")
+                        }
+                        BinOp::StringOp(string_op) => match string_op {
+                            StringOp::Contains => {
+                                if s.as_str() == "dc:title" {
+                                    let title = match what {
+                                        SearchWhat::Artist => artist.name.clone(),
+                                        SearchWhat::Album => album.unwrap().title.clone(),
+                                        SearchWhat::Track => track.unwrap().title.clone(),
+                                    };
+                                    title.to_ascii_lowercase().contains(quoted_val)
+                                } else {
+                                    warn!("unsupported property {s}");
+                                    false
+                                }
+                            }
+                            StringOp::DoesNotContain => {
+                                todo!("doesn't contain")
+                            }
+                            StringOp::DerivedFrom => {
+                                todo!("derived from")
+                            }
+                        },
+                    }
+                }
+                RelExp::ExistsOp(s, exists_op, bool_val) => {
+                    let bool_val = match bool_val {
+                        BoolVal::True => true,
+                        BoolVal::False => false,
+                    };
+                    if s.as_str() == "@refID" {
+                        // i don't do ref IDs (yet anyway)
+                        match exists_op {
+                            ExistsOp::Exists => !bool_val,
+                        }
+                    } else {
+                        warn!("unsupported property {s} for {exists_op:?}");
+                        false
+                    }
+                }
+            }
+        }
+        SearchExp::Log(search_exp1, log_op, search_exp2) => match log_op {
+            LogOp::And => {
+                include_by_search_exp(search_exp1, what, track, album, artist)
+                    && include_by_search_exp(search_exp2, what, track, album, artist)
+            }
+            LogOp::Or => todo!("or"),
+        },
+        SearchExp::Brackets(search_exp) => {
+            todo!("SearchExp::Brackets: {search_exp:?}")
+        }
+    }
 }
 
 fn handle_device_connection(
@@ -2629,16 +2722,14 @@ fn handle_content_directory_actions<'a>(
                 "search:\n\tcontainer_id: {container_id:?}\n\tsearch_criteria: {search_criteria:?}\n\tstarting_index: {starting_index:?}\n\trequested_count: {requested_count:?}"
             );
 
-            let real_search_criteria = match parse_search_criteria(&search_criteria) {
+            let search_criteria = match parse_search_criteria(&search_criteria) {
                 Ok(search_criteria) => search_criteria,
                 Err(err) => {
                     warn!("could not parse {search_criteria}: {err:?}");
                     return soap_upnp_error(708, "Invalid search criteria");
                 }
             };
-            info!("somehow search this: {real_search_criteria:#?}");
-
-            let search_criteria = parse_search_criteria_basic(&search_criteria);
+            trace!("search criteria: {search_criteria:?}");
 
             let container_id = container_id.unwrap_or_else(|| {
                 warn!("no container id, assuming 0");
@@ -2648,7 +2739,7 @@ fn handle_content_directory_actions<'a>(
             generate_search_response(
                 collection,
                 &container_id,
-                &search_criteria,
+                search_criteria.as_ref(),
                 starting_index,
                 requested_count,
                 addr,
@@ -5450,13 +5541,6 @@ mod tests {
     </s:Body>
 </s:Envelope>"#,
         );
-    }
-
-    #[test]
-    fn test_parse_search_criteria_basic() {
-        let input = "dc:title contains \"g\" and @refID exists false";
-        let search_criteria = parse_search_criteria_basic(input);
-        assert_eq!(search_criteria, "g");
     }
 
     fn generate_search_request(
