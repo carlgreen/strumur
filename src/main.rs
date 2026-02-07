@@ -1504,6 +1504,21 @@ struct Scanner {
     characters: Vec<char>,
 }
 
+impl std::fmt::Debug for Scanner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "Scanner: {}",
+            &self.characters.iter().copied().collect::<String>()
+        )?;
+        write!(
+            f,
+            "         {}^",
+            String::from_utf8(vec![b'.'; self.cursor]).unwrap()
+        )
+    }
+}
+
 impl Scanner {
     fn new(string: &str) -> Self {
         trace!("scanning `{string}`");
