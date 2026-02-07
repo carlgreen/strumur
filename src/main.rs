@@ -2,6 +2,7 @@ mod advertise;
 mod collection;
 mod flac;
 mod media_server;
+mod search_parser;
 
 extern crate socket2;
 
