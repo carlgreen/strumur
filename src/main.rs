@@ -1669,29 +1669,29 @@ fn search_or(scanner: &mut Scanner) -> std::result::Result<Option<SearchExp>, Er
 
 fn search_and(scanner: &mut Scanner) -> std::result::Result<Option<SearchExp>, Error> {
     match search_core(scanner) {
-        Ok(Some(left)) => {
-            wchar(scanner);
-            match log_op(&mut scanner.clone()) {
-                Ok(Some(LogOp::And)) => {
-                    log_op(scanner).unwrap();
-                    wchar(scanner);
+        Ok(Some(mut left)) => {
+            loop {
+                wchar(scanner);
+                match log_op(&mut scanner.clone()) {
+                    Ok(Some(LogOp::And)) => {
+                        log_op(scanner).unwrap();
+                        wchar(scanner);
 
-                    match search_core(scanner) {
-                        Ok(Some(exp)) => Ok(Some(SearchExp::Log(
-                            Box::new(left),
-                            LogOp::And,
-                            Box::new(exp),
-                        ))),
-                        Ok(None) => Ok(None),
-                        Err(err) => Err(err),
+                        match search_core(scanner) {
+                            Ok(Some(exp)) => {
+                                left = SearchExp::Log(Box::new(left), LogOp::And, Box::new(exp));
+                            }
+                            Ok(None) => return Ok(None),
+                            Err(err) => return Err(err),
+                        }
                     }
+                    Ok(Some(LogOp::Or)) => {
+                        // back out with what we've got
+                        return Ok(Some(left));
+                    }
+                    Ok(None) => return Ok(Some(left)),
+                    Err(err) => return Err(err),
                 }
-                Ok(Some(LogOp::Or)) => {
-                    // back out with what we've got
-                    Ok(Some(left))
-                }
-                Ok(None) => Ok(Some(left)),
-                Err(err) => Err(err),
             }
         }
         Ok(None) => Ok(None),
@@ -2182,6 +2182,33 @@ mod parse_tests {
                         QuotedVal::String("2001-10-31".to_string())
                     )))
                 ))))
+            ))))
+        );
+
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class = "object.container.album.musicAlbum" and dc:title contains "lo" and dc:date >= "2001-10-01""#
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
+                Box::new(SearchExp::Log(
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "upnp:class".to_string(),
+                        BinOp::RelOp(RelOp::Equal),
+                        QuotedVal::String("object.container.album.musicAlbum".to_string())
+                    ))),
+                    LogOp::And,
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "dc:title".to_string(),
+                        BinOp::StringOp(StringOp::Contains),
+                        QuotedVal::String("lo".to_string())
+                    )))
+                )),
+                LogOp::And,
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "dc:date".to_string(),
+                    BinOp::RelOp(RelOp::GreaterEqual),
+                    QuotedVal::String("2001-10-01".to_string())
+                ))),
             ))))
         );
 
