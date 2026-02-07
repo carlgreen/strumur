@@ -9,11 +9,11 @@ use std::io::Read;
 
 use chrono::NaiveDate;
 use chrono::NaiveTime;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use xmltree::Element;
 
-use crate::Collection;
+use crate::collection::{Album, Artist, Collection, Track};
 
 const HTTP_PROTOCOL_NAME: &str = "HTTP";
 
@@ -157,7 +157,7 @@ fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> O
     }
 }
 
-fn parse_soap_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
+fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
     let mut object_id = None;
     let mut starting_index: Option<u16> = None;
     let mut requested_count: Option<u16> = None;
@@ -705,6 +705,1168 @@ fn generate_browse_response(
     )
 }
 
+fn parse_soap_search_request(
+    body: &str,
+) -> (
+    Option<Vec<String>>,
+    Option<String>,
+    Option<u16>,
+    Option<u16>,
+) {
+    let mut container_id = None;
+    let mut search_criteria = None;
+    let mut starting_index: Option<u16> = None;
+    let mut requested_count: Option<u16> = None;
+    let envelope = Element::parse(body.as_bytes()).unwrap();
+    let body = envelope.get_child("Body").unwrap();
+    match body.get_child("Search") {
+        Some(browse) => {
+            for child in &browse.children {
+                match child.as_element().unwrap().name.as_str() {
+                    "ContainerID" => {
+                        container_id = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .split('$')
+                                .map(ToString::to_string)
+                                .collect(),
+                        );
+                    }
+                    "SearchCriteria" => {
+                        search_criteria = child.as_element().unwrap().get_text().map(Into::into);
+                        if let Some(search_criteria) = &search_criteria {
+                            warn!("search criteria: {search_criteria}. what's up");
+                        } else {
+                            warn!("no search criteria. why are we here?");
+                        }
+                    }
+                    "Filter" => {
+                        let filter = child.as_element().unwrap().get_text().unwrap();
+                        if filter == "*" {
+                            info!("no filter. simple.");
+                        } else {
+                            warn!("some filter: {filter}. what's up");
+                        }
+                    }
+                    "StartingIndex" => {
+                        starting_index = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        );
+                    }
+                    "RequestedCount" => {
+                        requested_count = Some(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap()
+                                .parse()
+                                .unwrap(),
+                        );
+                    }
+                    "SortCriteria" => {
+                        let sort_criteria = child.as_element().unwrap().get_text();
+                        if let Some(sort_criteria) = sort_criteria {
+                            warn!("sort criteria: {sort_criteria}. what's up");
+                        } else {
+                            warn!("no sort criteria. do i just make this up?");
+                        }
+                    }
+                    anything => warn!("what is {anything:?}"),
+                }
+            }
+        }
+        None => panic!("no Browse child"),
+    }
+
+    (
+        container_id,
+        search_criteria,
+        starting_index,
+        requested_count,
+    )
+}
+
+#[derive(Clone)]
+struct Scanner {
+    cursor: usize,
+    characters: Vec<char>,
+}
+
+impl std::fmt::Debug for Scanner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "Scanner: {}",
+            &self.characters.iter().copied().collect::<String>()
+        )?;
+        write!(
+            f,
+            "         {}^",
+            String::from_utf8(vec![b'.'; self.cursor]).unwrap()
+        )
+    }
+}
+
+impl Scanner {
+    fn new(string: &str) -> Self {
+        trace!("scanning `{string}`");
+        Self {
+            cursor: 0,
+            characters: string.chars().collect(),
+        }
+    }
+
+    const fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    fn peek(&self) -> Option<&char> {
+        self.characters.get(self.cursor)
+    }
+
+    fn pop(&mut self) -> Option<&char> {
+        match self.characters.get(self.cursor) {
+            Some(character) => {
+                self.cursor += 1;
+
+                Some(character)
+            }
+            None => None,
+        }
+    }
+
+    fn scan<T>(
+        &mut self,
+        cb: impl Fn(&str) -> Option<Action<T>>,
+    ) -> std::result::Result<Option<T>, Error> {
+        let mut sequence = String::new();
+        let mut require = false;
+        let mut request = None;
+
+        loop {
+            if let Some(target) = self.characters.get(self.cursor) {
+                sequence.push(*target);
+
+                match cb(&sequence) {
+                    Some(Action::Return(result)) => {
+                        self.cursor += 1;
+
+                        break Ok(Some(result));
+                    }
+                    Some(Action::Request(result)) => {
+                        self.cursor += 1;
+
+                        require = false;
+                        request = Some(result);
+                    }
+                    Some(Action::Require) => {
+                        self.cursor += 1;
+
+                        require = true;
+                    }
+                    None => {
+                        if require {
+                            break Err(Error::Character(self.cursor));
+                        }
+                        break Ok(request);
+                    }
+                }
+            } else {
+                if require {
+                    break Err(Error::EndOfSymbol);
+                }
+                break Ok(request);
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Error {
+    Character(usize),
+    EndOfSymbol,
+}
+
+enum Action<T> {
+    Request(T),
+    Require,
+    Return(T),
+}
+
+#[derive(Debug, PartialEq)]
+enum SearchCrit {
+    All,
+    SearchExp(SearchExp),
+}
+
+/// searchCrit = searchExp | asterisk
+/// asterisk = ‘*’ (* UTF-8 code 0x2A, asterisk character *)
+///
+/// The special value ‘*’ means “find everything”, or “return all objects that exist beneath the
+/// selected starting container”.
+fn search_crit(scanner: &mut Scanner) -> std::result::Result<Option<SearchCrit>, Error> {
+    match scanner.peek() {
+        Some('*') => {
+            scanner.pop();
+            Ok(Some(SearchCrit::All))
+        }
+        Some(_) => match search_exp(scanner) {
+            Ok(Some(exp)) => Ok(Some(SearchCrit::SearchExp(exp))),
+            Ok(None) => Ok(None),
+            Err(err) => Err(err),
+        },
+        None => Ok(None),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum SearchExp {
+    Rel(RelExp),
+    Log(Box<SearchExp>, LogOp, Box<SearchExp>),
+    Brackets(Box<SearchExp>),
+}
+
+/// searchExp = relExp | searchExp wChar+ logOp wChar+ searchExp | ‘(’ wChar* searchExp wChar* ‘)’
+///
+/// Operator precedence, highest to lowest:
+///  - dQuote
+///  - ( )
+///  - binOp, existsOp
+///  - and
+///  - or
+fn search_exp(scanner: &mut Scanner) -> std::result::Result<Option<SearchExp>, Error> {
+    search_or(scanner)
+}
+
+fn search_or(scanner: &mut Scanner) -> std::result::Result<Option<SearchExp>, Error> {
+    match search_and(scanner) {
+        Ok(Some(mut left)) => {
+            loop {
+                wchar(scanner);
+                match log_op(&mut scanner.clone()) {
+                    Ok(Some(LogOp::Or)) => {
+                        log_op(scanner).unwrap();
+                        wchar(scanner);
+
+                        match search_and(scanner) {
+                            Ok(Some(exp)) => {
+                                left = SearchExp::Log(Box::new(left), LogOp::Or, Box::new(exp));
+                            }
+                            Ok(None) => return Ok(None),
+                            Err(err) => return Err(err),
+                        }
+                    }
+                    Ok(Some(_)) => {
+                        // back out with what we've got
+                        return Ok(Some(left));
+                    }
+                    Ok(None) => return Ok(Some(left)),
+                    Err(err) => return Err(err),
+                }
+            }
+        }
+        Ok(None) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+fn search_and(scanner: &mut Scanner) -> std::result::Result<Option<SearchExp>, Error> {
+    match search_core(scanner) {
+        Ok(Some(mut left)) => {
+            loop {
+                wchar(scanner);
+                match log_op(&mut scanner.clone()) {
+                    Ok(Some(LogOp::And)) => {
+                        log_op(scanner).unwrap();
+                        wchar(scanner);
+
+                        match search_core(scanner) {
+                            Ok(Some(exp)) => {
+                                left = SearchExp::Log(Box::new(left), LogOp::And, Box::new(exp));
+                            }
+                            Ok(None) => return Ok(None),
+                            Err(err) => return Err(err),
+                        }
+                    }
+                    Ok(Some(LogOp::Or)) => {
+                        // back out with what we've got
+                        return Ok(Some(left));
+                    }
+                    Ok(None) => return Ok(Some(left)),
+                    Err(err) => return Err(err),
+                }
+            }
+        }
+        Ok(None) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+fn search_core(scanner: &mut Scanner) -> std::result::Result<Option<SearchExp>, Error> {
+    match scanner.peek() {
+        Some('(') => {
+            scanner.pop();
+            match search_exp(scanner) {
+                Ok(Some(exp)) => match scanner.pop() {
+                    Some(')') => Ok(Some(SearchExp::Brackets(Box::new(exp)))),
+                    _ => Err(Error::Character(scanner.cursor())),
+                },
+                _ => Err(Error::Character(scanner.cursor())),
+            }
+        }
+        Some(_) => {
+            let mut test_scanner = scanner.clone();
+            if let Ok(Some(exp)) = rel_exp(&mut test_scanner) {
+                rel_exp(scanner).unwrap(); // we just tested this works
+                Ok(Some(SearchExp::Rel(exp)))
+            } else {
+                Err(Error::Character(scanner.cursor()))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum LogOp {
+    And,
+    Or,
+}
+
+/// logOp = ‘and’ | ‘or’
+fn log_op(scanner: &mut Scanner) -> std::result::Result<Option<LogOp>, Error> {
+    scanner.scan(|symbol| match symbol {
+        "a" | "an" | "o" => Some(Action::Require),
+        "and" => Some(Action::Return(LogOp::And)),
+        "or" => Some(Action::Return(LogOp::Or)),
+        _ => None,
+    })
+}
+
+#[derive(Debug, PartialEq)]
+enum RelExp {
+    BinOp(String, BinOp, QuotedVal),
+    ExistsOp(String, ExistsOp, BoolVal),
+}
+
+/// relExp = property wChar+ binOp wChar+ quotedVal | property wChar+ existsOp wChar+ boolVal
+/// property = (* property name as defined in section 2.4 *)
+///
+/// Property existence testing. Property existence is queried for by using the ‘exists’ operator.
+/// Strictly speaking, ‘exists’ could be a unary operator. This searchCriteria syntax makes it a
+/// binary operator to simplify search string parsing—there are no unary operators. The string
+/// "actor exists true" is true for every object that has at least one occurrence of the actor
+/// property. It is false for any object that has no actor property. Similarly, the string "actor
+/// exists false" is false for every object that has at least one occurrence of the actor property.
+/// It is true for any object that has no actor property.
+///
+/// Property omission. Any property value query (as distinct from an existence query) applied to an
+/// object that does not have that property, evaluates to false.
+///
+/// Numeric comparisons. When the operator in a relExp is a relOp, and both the escapedQuote value
+/// and the actual property value are sequences of decimal digits or sequences of decimal digits
+/// preceded by either a ‘+’ or ‘-’ sign (i.e., integers), the comparison is done numerically. For
+/// all other combinations of operators and property values, the comparison is done by treating
+/// both values as strings, converting a numeric value to its string representation in decimal if
+/// necessary.
+/// Note: The CDS is not expected to recognize any kind of numeric data other than decimal
+/// integers, composed only of decimal digits with the optional leading sign.
+fn rel_exp(scanner: &mut Scanner) -> std::result::Result<Option<RelExp>, Error> {
+    #[derive(Debug)]
+    enum BinOrExists {
+        Bin(BinOp),
+        Exists(ExistsOp),
+    }
+
+    let mut sequence = String::new();
+    let property = loop {
+        match scanner.peek().copied() {
+            Some(c) if c.is_whitespace() => {
+                // TODO lets have lots of whitespace ok
+                scanner.pop();
+                break sequence;
+            }
+            Some(c) => {
+                scanner.pop();
+                sequence.push(c);
+            }
+            None => {
+                if sequence.is_empty() {
+                    return Ok(None);
+                }
+                return Err(Error::EndOfSymbol);
+            }
+        }
+    };
+
+    let bin_or_exists = if let Ok(Some(res)) = bin_op(&mut scanner.clone()) {
+        bin_op(scanner).unwrap(); // we just tested this works
+        BinOrExists::Bin(res)
+    } else if let Ok(Some(res)) = exists_op(&mut scanner.clone()) {
+        exists_op(scanner).unwrap(); // we just tested this works
+        BinOrExists::Exists(res)
+    } else {
+        return Ok(None);
+    };
+
+    wchar(scanner);
+
+    match bin_or_exists {
+        BinOrExists::Bin(op) => match quoted_val(scanner) {
+            Ok(Some(val)) => Ok(Some(RelExp::BinOp(property, op, val))),
+            Ok(None) => Ok(None),
+            Err(err) => Err(err),
+        },
+        BinOrExists::Exists(op) => match bool_val(scanner) {
+            Ok(Some(val)) => Ok(Some(RelExp::ExistsOp(property, op, val))),
+            Ok(None) => Ok(None),
+            Err(err) => Err(err),
+        },
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum BinOp {
+    RelOp(RelOp),
+    StringOp(StringOp),
+}
+
+/// binOp = relOp | stringOp
+/// TODO: figure out how to not scan twice...
+fn bin_op(scanner: &mut Scanner) -> std::result::Result<Option<BinOp>, Error> {
+    if let Ok(Some(_res)) = rel_op(&mut scanner.clone()) {
+        rel_op(scanner).map(|op| op.map(BinOp::RelOp))
+    } else if let Ok(Some(_res)) = string_op(&mut scanner.clone()) {
+        string_op(scanner).map(|op| op.map(BinOp::StringOp))
+    } else {
+        Ok(None)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum RelOp {
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+}
+
+/// relOp = ‘=’ | ‘!=’ | ‘<’ | ‘<=’ | ‘>’ | ‘>=’
+fn rel_op(scanner: &mut Scanner) -> std::result::Result<Option<RelOp>, Error> {
+    scanner.scan(|symbol| match symbol {
+        "=" => Some(Action::Return(RelOp::Equal)),
+        "!" => Some(Action::Require),
+        "!=" => Some(Action::Return(RelOp::NotEqual)),
+        "<" => Some(Action::Request(RelOp::Less)),
+        "<=" => Some(Action::Return(RelOp::LessEqual)),
+        ">" => Some(Action::Request(RelOp::Greater)),
+        ">=" => Some(Action::Return(RelOp::GreaterEqual)),
+        _ => None,
+    })
+}
+
+#[derive(Debug, PartialEq)]
+enum StringOp {
+    Contains,
+    DoesNotContain,
+    DerivedFrom,
+}
+
+/// stringOp = ‘contains’ | ‘doesNotContain’ | ‘derivedfrom’
+///
+/// Class derivation testing. Existence of objects whose class is derived from some base class
+/// specification is queried for by using the ‘derivedfrom’ operator.
+fn string_op(scanner: &mut Scanner) -> std::result::Result<Option<StringOp>, Error> {
+    scanner.scan(|symbol| match symbol {
+        "c" | "d" | "co" | "con" | "cont" | "conta" | "contai" | "contain" | "do" | "doe"
+        | "does" | "doesN" | "doesNo" | "doesNot" | "doesNotC" | "doesNotCo" | "doesNotCon"
+        | "doesNotCont" | "doesNotConta" | "doesNotContai" | "de" | "der" | "deri" | "deriv"
+        | "derive" | "derived" | "derivedf" | "derivedfr" | "derivedfro" => Some(Action::Require),
+        "contains" => Some(Action::Return(StringOp::Contains)),
+        "doesNotContain" => Some(Action::Return(StringOp::DoesNotContain)),
+        "derivedfrom" => Some(Action::Return(StringOp::DerivedFrom)),
+        _ => None,
+    })
+}
+
+#[derive(Debug, PartialEq)]
+enum ExistsOp {
+    Exists,
+}
+
+/// existsOp = ‘exists’
+fn exists_op(scanner: &mut Scanner) -> std::result::Result<Option<ExistsOp>, Error> {
+    scanner.scan(|symbol| match symbol {
+        "e" | "ex" | "exi" | "exis" | "exist" => Some(Action::Require),
+        "exists" => Some(Action::Return(ExistsOp::Exists)),
+        _ => None,
+    })
+}
+
+#[derive(Debug, PartialEq)]
+enum BoolVal {
+    True,
+    False,
+}
+
+/// boolVal = ‘true’ | ‘false’
+fn bool_val(scanner: &mut Scanner) -> std::result::Result<Option<BoolVal>, Error> {
+    scanner.scan(|symbol| match symbol {
+        "t" | "tr" | "tru" | "f" | "fa" | "fal" | "fals" => Some(Action::Require),
+        "true" => Some(Action::Return(BoolVal::True)),
+        "false" => Some(Action::Return(BoolVal::False)),
+        _ => None,
+    })
+}
+
+#[derive(Debug, PartialEq)]
+enum QuotedVal {
+    String(String),
+}
+
+/// quotedVal = dQuote escapedQuote dQuote
+/// escapedQuote  = (* double-quote escaped string as defined in section 2.3.1 *)
+/// dQuote = ‘"’ (* UTF-8 code 0x22, double quote character *)
+///
+/// String comparisons. All operators when applied to strings use case-insensitive comparisons.
+fn quoted_val(scanner: &mut Scanner) -> std::result::Result<Option<QuotedVal>, Error> {
+    let mut sequence = String::new();
+
+    match scanner.peek() {
+        Some('"') => scanner.pop(),
+        _ => return Ok(None),
+    };
+
+    loop {
+        match scanner.peek().copied() {
+            Some(target) => {
+                scanner.pop();
+
+                match target {
+                    '"' => {
+                        break Ok(Some(QuotedVal::String(sequence)));
+                    }
+                    c => {
+                        sequence.push(c);
+                    }
+                }
+            }
+            None => {
+                break Err(Error::EndOfSymbol);
+            }
+        }
+    }
+}
+
+enum WChar {
+    WChar,
+}
+
+/// wChar = space | hTab | lineFeed | vTab | formFeed | return
+/// hTab = (* UTF-8 code 0x09, horizontal tab character *)
+/// lineFeed = (* UTF-8 code 0x0A, line feed character *)
+/// vTab = (* UTF-8 code 0x0B, vertical tab character *)
+/// formFeed = (* UTF-8 code 0x0C, form feed character *)
+/// return = (* UTF-8 code 0x0D, carriage return character *)
+/// space = ‘ ’ (* UTF-8 code 0x20, space character *)
+fn wchar(scanner: &mut Scanner) -> Option<WChar> {
+    let mut wchar = None;
+    loop {
+        match scanner.peek() {
+            Some(c) if c.is_whitespace() => {
+                scanner.pop();
+                wchar = Some(WChar::WChar);
+            }
+            _ => {
+                break wchar;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+
+    #[test]
+    fn test_search_exp() {
+        assert_eq!(
+            search_exp(&mut Scanner::new("title contains \"xyz\"")),
+            Ok(Some(SearchExp::Rel(RelExp::BinOp(
+                "title".to_string(),
+                BinOp::StringOp(StringOp::Contains),
+                QuotedVal::String("xyz".to_string())
+            ))))
+        );
+        assert_eq!(
+            search_exp(&mut Scanner::new(
+                "date exists true and title contains \"xyz\""
+            )),
+            Ok(Some(SearchExp::Log(
+                Box::new(SearchExp::Rel(RelExp::ExistsOp(
+                    "date".to_string(),
+                    ExistsOp::Exists,
+                    BoolVal::True,
+                ))),
+                LogOp::And,
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "title".to_string(),
+                    BinOp::StringOp(StringOp::Contains),
+                    QuotedVal::String("xyz".to_string())
+                ))),
+            )))
+        );
+        assert_eq!(
+            search_exp(&mut Scanner::new("(title contains \"xyz\")")),
+            Ok(Some(SearchExp::Brackets(Box::new(SearchExp::Rel(
+                RelExp::BinOp(
+                    "title".to_string(),
+                    BinOp::StringOp(StringOp::Contains),
+                    QuotedVal::String("xyz".to_string())
+                )
+            )))))
+        );
+        assert_eq!(
+            search_exp(&mut Scanner::new("((title contains \"xyz\"))")),
+            Ok(Some(SearchExp::Brackets(Box::new(SearchExp::Brackets(
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "title".to_string(),
+                    BinOp::StringOp(StringOp::Contains),
+                    QuotedVal::String("xyz".to_string())
+                )))
+            )))))
+        );
+        // TODO test some bad stuff?
+    }
+
+    #[test]
+    fn test_log_op() {
+        assert_eq!(log_op(&mut Scanner::new("and")), Ok(Some(LogOp::And)));
+        assert_eq!(log_op(&mut Scanner::new("aX")), Err(Error::Character(1)));
+        assert_eq!(log_op(&mut Scanner::new("anX")), Err(Error::Character(2)));
+        assert_eq!(log_op(&mut Scanner::new("or")), Ok(Some(LogOp::Or)));
+        assert_eq!(log_op(&mut Scanner::new("o")), Err(Error::EndOfSymbol));
+        assert_eq!(log_op(&mut Scanner::new("not")), Ok(None));
+    }
+
+    #[test]
+    fn test_rel_exp() {
+        assert_eq!(
+            rel_exp(&mut Scanner::new("title contains \"xyz\"")),
+            Ok(Some(RelExp::BinOp(
+                "title".to_string(),
+                BinOp::StringOp(StringOp::Contains),
+                QuotedVal::String("xyz".to_string())
+            )))
+        );
+        assert_eq!(
+            rel_exp(&mut Scanner::new("date exists true")),
+            Ok(Some(RelExp::ExistsOp(
+                "date".to_string(),
+                ExistsOp::Exists,
+                BoolVal::True,
+            )))
+        );
+        // TODO test some bad stuff?
+    }
+
+    #[test]
+    fn test_bin_op() {
+        assert_eq!(
+            bin_op(&mut Scanner::new("=")),
+            Ok(Some(BinOp::RelOp(RelOp::Equal)))
+        );
+        assert_eq!(
+            bin_op(&mut Scanner::new("contains")),
+            Ok(Some(BinOp::StringOp(StringOp::Contains)))
+        );
+    }
+
+    #[test]
+    fn test_rel_op() {
+        assert_eq!(rel_op(&mut Scanner::new("=")), Ok(Some(RelOp::Equal)));
+        assert_eq!(rel_op(&mut Scanner::new("!=")), Ok(Some(RelOp::NotEqual)));
+        assert_eq!(rel_op(&mut Scanner::new("<")), Ok(Some(RelOp::Less)));
+        assert_eq!(rel_op(&mut Scanner::new("<=")), Ok(Some(RelOp::LessEqual)));
+        assert_eq!(rel_op(&mut Scanner::new(">")), Ok(Some(RelOp::Greater)));
+        assert_eq!(
+            rel_op(&mut Scanner::new(">=")),
+            Ok(Some(RelOp::GreaterEqual))
+        );
+    }
+
+    #[test]
+    fn test_string_op() {
+        assert_eq!(
+            string_op(&mut Scanner::new("contains")),
+            Ok(Some(StringOp::Contains))
+        );
+        assert_eq!(
+            string_op(&mut Scanner::new("doesNotContain")),
+            Ok(Some(StringOp::DoesNotContain))
+        );
+        assert_eq!(
+            string_op(&mut Scanner::new("derivedfrom")),
+            Ok(Some(StringOp::DerivedFrom))
+        );
+    }
+
+    #[test]
+    fn test_exists_op() {
+        assert_eq!(
+            exists_op(&mut Scanner::new("exists")),
+            Ok(Some(ExistsOp::Exists))
+        );
+    }
+
+    #[test]
+    fn test_bool_val() {
+        assert_eq!(bool_val(&mut Scanner::new("true")), Ok(Some(BoolVal::True)));
+        assert_eq!(
+            bool_val(&mut Scanner::new("false")),
+            Ok(Some(BoolVal::False))
+        );
+    }
+
+    #[test]
+    fn test_quoted_val() {
+        assert_eq!(
+            quoted_val(&mut Scanner::new("\"this is the quoted value\"")),
+            Ok(Some(QuotedVal::String(
+                "this is the quoted value".to_string()
+            )))
+        );
+        assert_eq!(quoted_val(&mut Scanner::new("somethingelse")), Ok(None));
+        assert_eq!(
+            quoted_val(&mut Scanner::new("\"this is bad")),
+            Err(Error::EndOfSymbol)
+        );
+    }
+
+    #[test]
+    fn test_search_crit() {
+        assert_eq!(
+            search_crit(&mut Scanner::new(r#"*"#)),
+            Ok(Some(SearchCrit::All))
+        );
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class derivedfrom "object.container.album""#
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Rel(RelExp::BinOp(
+                "upnp:class".to_string(),
+                BinOp::StringOp(StringOp::DerivedFrom),
+                QuotedVal::String("object.container.album".to_string())
+            )))))
+        );
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class = "object.item.imageItem.photo" and (dc:date >= "2001-10-01" and dc:date <= "2001-10-31" )"#
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "upnp:class".to_string(),
+                    BinOp::RelOp(RelOp::Equal),
+                    QuotedVal::String("object.item.imageItem.photo".to_string())
+                ))),
+                LogOp::And,
+                Box::new(SearchExp::Brackets(Box::new(SearchExp::Log(
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "dc:date".to_string(),
+                        BinOp::RelOp(RelOp::GreaterEqual),
+                        QuotedVal::String("2001-10-01".to_string())
+                    ))),
+                    LogOp::And,
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "dc:date".to_string(),
+                        BinOp::RelOp(RelOp::LessEqual),
+                        QuotedVal::String("2001-10-31".to_string())
+                    )))
+                ))))
+            ))))
+        );
+
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class = "object.container.album.musicAlbum" and dc:title contains "lo" and dc:date >= "2001-10-01""#
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
+                Box::new(SearchExp::Log(
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "upnp:class".to_string(),
+                        BinOp::RelOp(RelOp::Equal),
+                        QuotedVal::String("object.container.album.musicAlbum".to_string())
+                    ))),
+                    LogOp::And,
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "dc:title".to_string(),
+                        BinOp::StringOp(StringOp::Contains),
+                        QuotedVal::String("lo".to_string())
+                    )))
+                )),
+                LogOp::And,
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "dc:date".to_string(),
+                    BinOp::RelOp(RelOp::GreaterEqual),
+                    QuotedVal::String("2001-10-01".to_string())
+                ))),
+            ))))
+        );
+
+        // here follows actual searches i've seen
+
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class = "object.container.person.musicArtist" and (upnp:artist contains "lo" or dc:title contains "lo")"#
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "upnp:class".to_string(),
+                    BinOp::RelOp(RelOp::Equal),
+                    QuotedVal::String("object.container.person.musicArtist".to_string())
+                ))),
+                LogOp::And,
+                Box::new(SearchExp::Brackets(Box::new(SearchExp::Log(
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "upnp:artist".to_string(),
+                        BinOp::StringOp(StringOp::Contains),
+                        QuotedVal::String("lo".to_string())
+                    ))),
+                    LogOp::Or,
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "dc:title".to_string(),
+                        BinOp::StringOp(StringOp::Contains),
+                        QuotedVal::String("lo".to_string())
+                    )))
+                ))))
+            ))))
+        );
+
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class = "object.container.album.musicAlbum" and (upnp:album contains "lo" or dc:title contains "lo" or upnp:artist contains "lo")"#,
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "upnp:class".to_string(),
+                    BinOp::RelOp(RelOp::Equal),
+                    QuotedVal::String("object.container.album.musicAlbum".to_string()),
+                ))),
+                LogOp::And,
+                Box::new(SearchExp::Brackets(Box::new(SearchExp::Log(
+                    Box::new(SearchExp::Log(
+                        Box::new(SearchExp::Rel(RelExp::BinOp(
+                            "upnp:album".to_string(),
+                            BinOp::StringOp(StringOp::Contains),
+                            QuotedVal::String("lo".to_string()),
+                        ))),
+                        LogOp::Or,
+                        Box::new(SearchExp::Rel(RelExp::BinOp(
+                            "dc:title".to_string(),
+                            BinOp::StringOp(StringOp::Contains),
+                            QuotedVal::String("lo".to_string()),
+                        ))),
+                    )),
+                    LogOp::Or,
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "upnp:artist".to_string(),
+                        BinOp::StringOp(StringOp::Contains),
+                        QuotedVal::String("lo".to_string()),
+                    ))),
+                )))),
+            ))))
+        );
+
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class derivedfrom "object.item.audioItem" and (dc:title contains "lo" or upnp:artist contains "lo" or dc:creator contains "lo")"#,
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "upnp:class".to_string(),
+                    BinOp::StringOp(StringOp::DerivedFrom),
+                    QuotedVal::String("object.item.audioItem".to_string()),
+                ))),
+                LogOp::And,
+                Box::new(SearchExp::Brackets(Box::new(SearchExp::Log(
+                    Box::new(SearchExp::Log(
+                        Box::new(SearchExp::Rel(RelExp::BinOp(
+                            "dc:title".to_string(),
+                            BinOp::StringOp(StringOp::Contains),
+                            QuotedVal::String("lo".to_string()),
+                        ))),
+                        LogOp::Or,
+                        Box::new(SearchExp::Rel(RelExp::BinOp(
+                            "upnp:artist".to_string(),
+                            BinOp::StringOp(StringOp::Contains),
+                            QuotedVal::String("lo".to_string()),
+                        ))),
+                    )),
+                    LogOp::Or,
+                    Box::new(SearchExp::Rel(RelExp::BinOp(
+                        "dc:creator".to_string(),
+                        BinOp::StringOp(StringOp::Contains),
+                        QuotedVal::String("lo".to_string()),
+                    ))),
+                )))),
+            ))))
+        );
+
+        assert_eq!(
+            search_crit(&mut Scanner::new(
+                r#"upnp:class = "object.container.playlistContainer" and dc:title contains "lo""#
+            )),
+            Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "upnp:class".to_string(),
+                    BinOp::RelOp(RelOp::Equal),
+                    QuotedVal::String("object.container.playlistContainer".to_string())
+                ))),
+                LogOp::And,
+                Box::new(SearchExp::Rel(RelExp::BinOp(
+                    "dc:title".to_string(),
+                    BinOp::StringOp(StringOp::Contains),
+                    QuotedVal::String("lo".to_string())
+                )))
+            ))))
+        );
+    }
+}
+
+/// based on "ContentDirectory:1 Service Template" section 2.5.5 Search Criteria
+fn parse_search_criteria(input: &str) -> std::result::Result<Option<SearchCrit>, Error> {
+    let mut scanner = Scanner::new(input);
+    search_crit(&mut scanner)
+}
+
+fn generate_search_response(
+    collection: &Collection,
+    container_id: &[String],
+    search_criteria: Option<&SearchCrit>,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    addr: &str,
+) -> (String, &'static str) {
+    let search_response = match container_id {
+        [root] if root == "0" => {
+            let starting_index = starting_index.unwrap().into();
+            let requested_count: usize = requested_count.unwrap().into();
+            let mut total_matches = 0;
+            let mut number_returned = 0;
+            let mut result = String::new();
+            let mut album_id = 0;
+            for (i, artist) in collection.get_artists().enumerate() {
+                let artist_id = i + 1; // WTF
+                let artist_name = xml::escape::escape_str_attribute(&artist.name);
+                let include =
+                    include_this(search_criteria, &SearchWhat::Artist, None, None, artist);
+                if include {
+                    if total_matches >= starting_index && number_returned < requested_count {
+                        write!(
+                            result,
+                            r#"<container id="0$=Artist${artist_id}" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>{artist_name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
+                        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+
+                        number_returned += 1;
+                    }
+                    total_matches += 1;
+                }
+
+                for album in artist.get_albums() {
+                    let album_title = xml::escape::escape_str_attribute(&album.title);
+                    let include = include_this(
+                        search_criteria,
+                        &SearchWhat::Album,
+                        None,
+                        Some(album),
+                        artist,
+                    );
+                    if include {
+                        if total_matches >= starting_index && number_returned < requested_count {
+                            // let track_count = album.get_tracks().count();
+                            // let date = create_date_element(album.date);
+                            // let cover = create_album_art_element(addr, &album.cover);
+
+                            write!(
+                                result,
+                                // childCount="{track_count}"
+                                // {date}<upnp:artist>{artist_name}</upnp:artist><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}
+                                r#"<container id="0$albums$*a{album_id}" parentID="0$albums" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:creator>{artist_name}</dc:creator><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+                            ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+
+                            number_returned += 1;
+                        }
+                        total_matches += 1;
+                    }
+
+                    for (j, track) in album.get_tracks().enumerate() {
+                        let track_id = j + 1; // WTF
+
+                        let include = include_this(
+                            search_criteria,
+                            &SearchWhat::Track,
+                            Some(track),
+                            Some(album),
+                            artist,
+                        );
+                        if include {
+                            if total_matches >= starting_index && number_returned < requested_count
+                            {
+                                // let date = create_date_element(album.date);
+                                // let cover = create_album_art_element(addr, &album.cover);
+
+                                let track_title = xml::escape::escape_str_attribute(&track.title);
+                                let track_number = track.number;
+                                let duration = format_time_nice(track.duration);
+                                let size = track.size;
+                                let bits_per_sample = track.bits_per_sample;
+                                let sample_frequency = track.sample_frequency;
+                                let channels = track.channels;
+                                let file = format!("{}/{}", addr, track.file);
+                                let file = xml::escape::escape_str_attribute(&file);
+                                write!(
+                                    result,
+                                    // id="0$=Artist${artist_id}$albums${album_id}${track_id}" parentID="0$=Artist${artist_id}$albums${album_id}"
+                                    // {date}{cover}
+                                    r#"<item id="0$albums$*a{album_id}$*i{track_id}" parentID="0$albums$*a{album_id}" restricted="1"><dc:title>{track_title}</dc:title><upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+                                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+
+                                number_returned += 1;
+                            }
+                            total_matches += 1;
+                        }
+                    }
+
+                    album_id += 1;
+                }
+            }
+
+            Some(format_response(&result, number_returned, total_matches))
+        }
+        _ => {
+            error!("control: unexpected container ID: {container_id:?}");
+            None
+        }
+    };
+    search_response.map_or_else(
+        || (String::new(), "400 BAD REQUEST"),
+        |search_response| {
+            let body = format!(
+                r#"
+        <u:SearchResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{search_response}
+        </u:SearchResponse>"#
+            );
+            (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
+        },
+    )
+}
+
+enum SearchWhat {
+    Artist,
+    Album,
+    Track,
+}
+
+fn include_this(
+    search_criteria: Option<&SearchCrit>,
+    what: &SearchWhat,
+    track: Option<&Track>,
+    album: Option<&Album>,
+    artist: &Artist,
+) -> bool {
+    // if search_criteria is None then treat as All
+    match search_criteria {
+        Some(SearchCrit::All) | None => true,
+        Some(search_criteria) => match search_criteria {
+            SearchCrit::All => true,
+            SearchCrit::SearchExp(search_exp) => {
+                include_by_search_exp(search_exp, what, track, album, artist)
+            }
+        },
+    }
+}
+
+fn include_by_search_exp(
+    search_exp: &SearchExp,
+    what: &SearchWhat,
+    track: Option<&Track>,
+    album: Option<&Album>,
+    artist: &Artist,
+) -> bool {
+    match search_exp {
+        SearchExp::Rel(rel_exp) => {
+            match rel_exp {
+                RelExp::BinOp(s, bin_op, quoted_val) => {
+                    let QuotedVal::String(quoted_val) = quoted_val;
+                    match bin_op {
+                        BinOp::RelOp(rel_op) => {
+                            todo!("BinOp::RelOp: {rel_op:?}")
+                        }
+                        BinOp::StringOp(string_op) => match string_op {
+                            StringOp::Contains => {
+                                if s.as_str() == "dc:title" {
+                                    let title = match what {
+                                        SearchWhat::Artist => artist.name.clone(),
+                                        SearchWhat::Album => album.unwrap().title.clone(),
+                                        SearchWhat::Track => track.unwrap().title.clone(),
+                                    };
+                                    title.to_ascii_lowercase().contains(quoted_val)
+                                } else {
+                                    warn!("unsupported property {s}");
+                                    false
+                                }
+                            }
+                            StringOp::DoesNotContain => {
+                                todo!("doesn't contain")
+                            }
+                            StringOp::DerivedFrom => {
+                                todo!("derived from")
+                            }
+                        },
+                    }
+                }
+                RelExp::ExistsOp(s, exists_op, bool_val) => {
+                    let bool_val = match bool_val {
+                        BoolVal::True => true,
+                        BoolVal::False => false,
+                    };
+                    if s.as_str() == "@refID" {
+                        // i don't do ref IDs (yet anyway)
+                        match exists_op {
+                            ExistsOp::Exists => !bool_val,
+                        }
+                    } else {
+                        warn!("unsupported property {s} for {exists_op:?}");
+                        false
+                    }
+                }
+            }
+        }
+        SearchExp::Log(search_exp1, log_op, search_exp2) => match log_op {
+            LogOp::And => {
+                include_by_search_exp(search_exp1, what, track, album, artist)
+                    && include_by_search_exp(search_exp2, what, track, album, artist)
+            }
+            LogOp::Or => todo!("or"),
+        },
+        SearchExp::Brackets(search_exp) => {
+            todo!("SearchExp::Brackets: {search_exp:?}")
+        }
+    }
+}
+
 pub fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
@@ -832,7 +1994,7 @@ fn handle_content_directory_actions<'a>(
                 || {
                     panic!("no body");
                 },
-                |body| parse_soap_request(&body),
+                |body| parse_soap_browse_request(&body),
             );
 
             object_id.map_or_else(
@@ -850,8 +2012,44 @@ fn handle_content_directory_actions<'a>(
                 },
             )
         }
-        CDS_SEARCH_ACTION
-        | CDS_CREATE_OBJECT_ACTION
+        CDS_SEARCH_ACTION => {
+            let (container_id, search_criteria, starting_index, requested_count) = body
+                .map_or_else(
+                    || {
+                        panic!("no body");
+                    },
+                    |body| parse_soap_search_request(&body),
+                );
+
+            let search_criteria = search_criteria.unwrap_or_default();
+            info!(
+                "search:\n\tcontainer_id: {container_id:?}\n\tsearch_criteria: {search_criteria:?}\n\tstarting_index: {starting_index:?}\n\trequested_count: {requested_count:?}"
+            );
+
+            let search_criteria = match parse_search_criteria(&search_criteria) {
+                Ok(search_criteria) => search_criteria,
+                Err(err) => {
+                    warn!("could not parse {search_criteria}: {err:?}");
+                    return soap_upnp_error(708, "Invalid search criteria");
+                }
+            };
+            trace!("search criteria: {search_criteria:?}");
+
+            let container_id = container_id.unwrap_or_else(|| {
+                warn!("no container id, assuming 0");
+                vec!["0".to_string()]
+            });
+
+            generate_search_response(
+                collection,
+                &container_id,
+                search_criteria.as_ref(),
+                starting_index,
+                requested_count,
+                addr,
+            )
+        }
+        CDS_CREATE_OBJECT_ACTION
         | CDS_DESTROY_OBJECT_ACTION
         | CDS_UPDATE_OBJECT_ACTION
         | CDS_IMPORT_RESOURCE_ACTION
@@ -2225,6 +3423,168 @@ mod tests {
     </s:Body>
 </s:Envelope>"#,
         );
+    }
+
+    fn generate_search_request(
+        search_str: &str,
+        starting_index: u16,
+        requested_count: u16,
+    ) -> String {
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Search""#;
+        // TOOD assuming ContainerID is always 0?
+        let body = format!(
+            r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:Search xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <ContainerID>0</ContainerID>
+            <SearchCriteria>dc:title contains "{search_str}" and @refID exists false</SearchCriteria>
+            <Filter>*</Filter>
+            <StartingIndex>{starting_index}</StartingIndex>
+            <RequestedCount>{requested_count}</RequestedCount>
+            <SortCriteria></SortCriteria>
+        </u:Search>
+    </s:Body>
+</s:Envelope>"#
+        );
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + &body
+    }
+
+    fn extract_search_response(body: &str) -> (String, u16, u16, String) {
+        debug!("about to parse {body}");
+        let envelope = Element::parse(body.as_bytes()).unwrap();
+        let body = envelope.get_child("Body").unwrap();
+        let search_response = body.get_child("SearchResponse").unwrap();
+
+        let result = search_response
+            .get_child("Result")
+            .unwrap()
+            .get_text()
+            .unwrap();
+
+        let number_returned: u16 = search_response
+            .get_child("NumberReturned")
+            .unwrap()
+            .get_text()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        let total_matches: u16 = search_response
+            .get_child("TotalMatches")
+            .unwrap()
+            .get_text()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        let update_id = search_response
+            .get_child("UpdateID")
+            .unwrap()
+            .get_text()
+            .unwrap();
+
+        (
+            result.into(),
+            number_returned,
+            total_matches,
+            update_id.into(),
+        )
+    }
+
+    #[test]
+    fn test_handle_search() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_search_request("g", 0, 5);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_search_response(&body);
+
+        // what do i expect? maybe one artist (ghi), one album (g1), and three tracks (g<11, g12,
+        // and g13)?
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+    <container id="0$=Artist$3" parentID="0$=Artist" restricted="1" searchable="1">
+        <dc:title>ghi</dc:title>
+        <upnp:class>object.container.person.musicArtist</upnp:class>
+    </container>
+    <container id="0$albums$*a2" parentID="0$albums" restricted="1" searchable="1">
+        <dc:title>g1</dc:title>
+        <dc:creator>ghi</dc:creator>
+        <upnp:class>object.container.album.musicAlbum</upnp:class>
+    </container>
+    <item id="0$albums$*a2$*i1" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g&lt;11</dc:title>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a2$*i2" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g12</dc:title>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+    <item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1">
+        <dc:title>g13</dc:title>
+        <upnp:album>g1</upnp:album>
+        <upnp:artist>ghi</upnp:artist>
+        <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
+        <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
+        <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
+        <upnp:class>object.item.audioItem.musicTrack</upnp:class>
+    </item>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 5);
+        assert_eq!(total_matches, 5);
+        assert_eq!(update_id, "25");
     }
 
     #[test]

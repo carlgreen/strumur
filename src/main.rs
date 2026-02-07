@@ -27,7 +27,6 @@ use crate::advertise::SSDP_IPV4_MULTICAST_ADDRESS;
 use crate::advertise::advertise_discovery_messages;
 use crate::advertise::handle_search_error;
 use crate::advertise::handle_search_message;
-use crate::collection::Collection;
 use crate::collection::populate_collection;
 use crate::media_server::handle_device_connection;
 
