@@ -963,19 +963,24 @@ mod tests {
     use x_diff_rs::diff::diff;
     use x_diff_rs::tree::XTree;
 
-    use crate::{Album, Artist, Track};
+    use crate::collection::{Album, Artist, Track};
 
     use super::*;
 
-    fn make_album(artist_name: &str, album_title: &str, release_date: &str) -> Album {
+    fn make_album(
+        artist_name: &str,
+        album_title: &str,
+        release_date: &str,
+        tracks: Vec<Track>,
+    ) -> Album {
         let date = release_date.parse::<NaiveDate>().unwrap();
-        Album {
-            title: album_title.to_string(),
-            // date: NaiveDate::from_ymd_opt(1996, 2, 12).expect("invalid or out-of-range date"),
-            date: Some(date),
-            tracks: vec![],
-            cover: format!("Music/{artist_name}/{album_title}/cover.jpg"),
-        }
+        Album::new(
+            album_title.to_string(),
+            //  NaiveDate::from_ymd_opt(1996, 2, 12).expect("invalid or out-of-range date"),
+            Some(date),
+            tracks,
+            format!("Music/{artist_name}/{album_title}/cover.jpg"),
+        )
     }
 
     fn make_track(
@@ -999,85 +1004,74 @@ mod tests {
     }
 
     fn generate_test_collection() -> Collection {
-        let mut a1 = make_album("a<bc", "a1", "1996-02-12");
-        a1.tracks = vec![
-            make_track("a<bc", "a1", 1, "a11"),
-            make_track("a<bc", "a1", 2, "a12"),
-            make_track("a<bc", "a1", 3, "a13"),
-            make_track("a<bc", "a1", 4, "a14"),
-        ];
-        let mut g1 = make_album("ghi", "g1", "1996-02-12");
-        g1.tracks = vec![
-            make_track("ghi", "g1", 1, "g<11"),
-            make_track("ghi", "g1", 2, "g12"),
-            make_track("ghi", "g1", 3, "g13"),
-        ];
-        let mut h2 = make_album("ghi", "h2", "2002-07-30");
-        h2.tracks = vec![
-            make_track("ghi", "h2", 1, "h21"),
-            make_track("ghi", "h2", 2, "h22"),
-            make_track("ghi", "h2", 3, "h23"),
-            make_track("ghi", "h2", 4, "h24"),
-        ];
-        let mut i3 = make_album("ghi", "i3", "2011-11-11");
-        i3.tracks = vec![
-            make_track("ghi", "i3", 1, "i31"),
-            make_track("ghi", "i3", 2, "i32"),
-        ];
-        let j1 = make_album("jk", "j1", "1980-01-01");
-        let l1 = make_album("lm", "l1", "1982-02-02");
-        let n1 = make_album("nop", "n1", "1984-04-01");
-        let q1 = make_album("qrs", "q1", "1986-06-06");
-        let t1 = make_album("tuv", "t1", "1988-08-08");
-        let w1 = make_album("w", "w1", "1990-10-10");
-        let x1 = make_album("xyz", "x1", "1992-12-12");
-
-        Collection {
-            system_update_id: 7, // fun number for testing
-            base: PathBuf::from("./"),
-            artists: vec![
-                Artist {
-                    name: "a<bc".to_string(),
-                    albums: vec![a1],
-                },
-                Artist {
-                    name: "def".to_string(),
-                    albums: vec![make_album("def", "d<1", "2005-07-02")],
-                },
-                Artist {
-                    name: "ghi".to_string(),
-                    albums: vec![g1, h2, i3],
-                },
-                Artist {
-                    name: "jk".to_string(),
-                    albums: vec![j1],
-                },
-                Artist {
-                    name: "lm".to_string(),
-                    albums: vec![l1],
-                },
-                Artist {
-                    name: "nop".to_string(),
-                    albums: vec![n1],
-                },
-                Artist {
-                    name: "qrs".to_string(),
-                    albums: vec![q1],
-                },
-                Artist {
-                    name: "tuv".to_string(),
-                    albums: vec![t1],
-                },
-                Artist {
-                    name: "w".to_string(),
-                    albums: vec![w1],
-                },
-                Artist {
-                    name: "xyz".to_string(),
-                    albums: vec![x1],
-                },
+        let a1 = make_album(
+            "a<bc",
+            "a1",
+            "1996-02-12",
+            vec![
+                make_track("a<bc", "a1", 1, "a11"),
+                make_track("a<bc", "a1", 2, "a12"),
+                make_track("a<bc", "a1", 3, "a13"),
+                make_track("a<bc", "a1", 4, "a14"),
             ],
-        }
+        );
+        let g1 = make_album(
+            "ghi",
+            "g1",
+            "1996-02-12",
+            vec![
+                make_track("ghi", "g1", 1, "g<11"),
+                make_track("ghi", "g1", 2, "g12"),
+                make_track("ghi", "g1", 3, "g13"),
+            ],
+        );
+        let h2 = make_album(
+            "ghi",
+            "h2",
+            "2002-07-30",
+            vec![
+                make_track("ghi", "h2", 1, "h21"),
+                make_track("ghi", "h2", 2, "h22"),
+                make_track("ghi", "h2", 3, "h23"),
+                make_track("ghi", "h2", 4, "h24"),
+            ],
+        );
+        let i3 = make_album(
+            "ghi",
+            "i3",
+            "2011-11-11",
+            vec![
+                make_track("ghi", "i3", 1, "i31"),
+                make_track("ghi", "i3", 2, "i32"),
+            ],
+        );
+        let j1 = make_album("jk", "j1", "1980-01-01", vec![]);
+        let l1 = make_album("lm", "l1", "1982-02-02", vec![]);
+        let n1 = make_album("nop", "n1", "1984-04-01", vec![]);
+        let q1 = make_album("qrs", "q1", "1986-06-06", vec![]);
+        let t1 = make_album("tuv", "t1", "1988-08-08", vec![]);
+        let w1 = make_album("w", "w1", "1990-10-10", vec![]);
+        let x1 = make_album("xyz", "x1", "1992-12-12", vec![]);
+
+        Collection::new(
+            7, // fun number for testing
+            PathBuf::from("./"),
+            vec![
+                Artist::new("a<bc".to_string(), vec![a1]),
+                Artist::new(
+                    "def".to_string(),
+                    vec![make_album("def", "d<1", "2005-07-02", vec![])],
+                ),
+                Artist::new("ghi".to_string(), vec![g1, h2, i3]),
+                Artist::new("jk".to_string(), vec![j1]),
+                Artist::new("lm".to_string(), vec![l1]),
+                Artist::new("nop".to_string(), vec![n1]),
+                Artist::new("qrs".to_string(), vec![q1]),
+                Artist::new("tuv".to_string(), vec![t1]),
+                Artist::new("w".to_string(), vec![w1]),
+                Artist::new("xyz".to_string(), vec![x1]),
+            ],
+        )
     }
 
     #[test]
