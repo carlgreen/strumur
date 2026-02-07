@@ -2629,7 +2629,13 @@ fn handle_content_directory_actions<'a>(
                 "search:\n\tcontainer_id: {container_id:?}\n\tsearch_criteria: {search_criteria:?}\n\tstarting_index: {starting_index:?}\n\trequested_count: {requested_count:?}"
             );
 
-            let real_search_criteria = parse_search_criteria(&search_criteria);
+            let real_search_criteria = match parse_search_criteria(&search_criteria) {
+                Ok(search_criteria) => search_criteria,
+                Err(err) => {
+                    warn!("could not parse {search_criteria}: {err:?}");
+                    return soap_upnp_error(708, "Invalid search criteria");
+                }
+            };
             info!("somehow search this: {real_search_criteria:#?}");
 
             let search_criteria = parse_search_criteria_basic(&search_criteria);
