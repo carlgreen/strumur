@@ -241,6 +241,12 @@ impl std::fmt::Display for DeviceUuidError {
     }
 }
 
+impl From<std::io::Error> for DeviceUuidError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IoError(e)
+    }
+}
+
 impl std::error::Error for DeviceUuidError {}
 
 // TODO this file should probably be somewhere appropriate
@@ -257,9 +263,8 @@ fn get_device_uuid() -> std::result::Result<Uuid, DeviceUuidError> {
             if e.kind() == ErrorKind::NotFound {
                 // let device_uuid = Uuid::now_v6();
                 let device_uuid = Uuid::new_v4();
-                let mut file = File::create(DEVICEID_FILE).map_err(DeviceUuidError::IoError)?;
-                file.write_all(device_uuid.to_string().as_bytes())
-                    .map_err(DeviceUuidError::IoError)?;
+                let mut file = File::create(DEVICEID_FILE)?;
+                file.write_all(device_uuid.to_string().as_bytes())?;
                 info!("generated new device UUID {device_uuid}");
                 Ok(device_uuid)
             } else {
