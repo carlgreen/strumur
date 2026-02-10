@@ -289,7 +289,7 @@ fn send_advertisement(usn: &str, advertisement: &str, socket: &mut dyn SocketToM
 
 #[derive(Debug)]
 pub enum HandleSearchMessageError {
-    InvalidSSDPMessage(String),
+    InvalidSSDPMessage(InvalidSSDPMessage),
     UnhandledRequestLine(String),
     NoIPv4(Box<SockAddr>),
     MissingHostHeader,
@@ -346,7 +346,7 @@ impl std::error::Error for HandleSearchMessageError {}
 
 impl From<InvalidSSDPMessage> for HandleSearchMessageError {
     fn from(e: InvalidSSDPMessage) -> Self {
-        Self::InvalidSSDPMessage(e.msg)
+        Self::InvalidSSDPMessage(e)
     }
 }
 
@@ -532,28 +532,28 @@ struct SSDPMessage {
 }
 
 #[derive(Debug)]
-struct InvalidSSDPMessage {
-    msg: String,
+pub enum InvalidSSDPMessage {
+    RequestLine,
+    Key,
+    Value(String),
 }
 
-impl From<&str> for InvalidSSDPMessage {
-    fn from(msg: &str) -> Self {
-        Self {
-            msg: msg.to_string(),
+impl std::error::Error for InvalidSSDPMessage {}
+
+impl std::fmt::Display for InvalidSSDPMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::RequestLine => write!(f, "failed to get request line"),
+            Self::Key => write!(f, "failed to get key"),
+            Self::Value(key) => write!(f, "failed to get value for key {key}"),
         }
-    }
-}
-
-impl From<String> for InvalidSSDPMessage {
-    fn from(msg: String) -> Self {
-        Self { msg }
     }
 }
 
 fn parse_ssdp_message(data: &[u8]) -> std::result::Result<SSDPMessage, InvalidSSDPMessage> {
     let data = String::from_utf8(data.to_vec()).unwrap();
     let mut iter = data.lines();
-    let request_line = iter.next().ok_or("failed to get request line")?;
+    let request_line = iter.next().ok_or(InvalidSSDPMessage::RequestLine)?;
 
     let mut headers = HashMap::new();
     for line in iter {
@@ -561,10 +561,14 @@ fn parse_ssdp_message(data: &[u8]) -> std::result::Result<SSDPMessage, InvalidSS
             break;
         }
         let mut parts = line.splitn(2, HTTP_HEADER_SEP);
-        let key = parts.next().ok_or("failed to get key")?.trim().to_string();
+        let key = parts
+            .next()
+            .ok_or(InvalidSSDPMessage::Key)?
+            .trim()
+            .to_string();
         let value = parts
             .next()
-            .ok_or_else(|| format!("failed to get value for key {key}"))?
+            .ok_or_else(|| InvalidSSDPMessage::Value(key.clone()))?
             .trim()
             .to_string();
         headers.insert(key, value);
