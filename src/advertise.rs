@@ -344,6 +344,12 @@ impl std::fmt::Display for HandleSearchMessageError {
 
 impl std::error::Error for HandleSearchMessageError {}
 
+impl From<InvalidSSDPMessage> for HandleSearchMessageError {
+    fn from(e: InvalidSSDPMessage) -> Self {
+        Self::InvalidSSDPMessage(e.msg)
+    }
+}
+
 pub fn handle_search_message(
     sys_info: &SysInfo,
     location: &str,
@@ -365,8 +371,7 @@ pub fn handle_search_message(
     // of their root devices, embedded devices or services matches the search criteria in the
     // discovery message.
 
-    let ssdp_message =
-        parse_ssdp_message(data).map_err(HandleSearchMessageError::InvalidSSDPMessage)?;
+    let ssdp_message = parse_ssdp_message(data)?;
 
     if ssdp_message.request_line
         == format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}")
@@ -526,7 +531,26 @@ struct SSDPMessage {
     headers: HashMap<String, String>,
 }
 
-fn parse_ssdp_message(data: &[u8]) -> std::result::Result<SSDPMessage, String> {
+#[derive(Debug)]
+struct InvalidSSDPMessage {
+    msg: String,
+}
+
+impl From<&str> for InvalidSSDPMessage {
+    fn from(msg: &str) -> Self {
+        Self {
+            msg: msg.to_string(),
+        }
+    }
+}
+
+impl From<String> for InvalidSSDPMessage {
+    fn from(msg: String) -> Self {
+        Self { msg }
+    }
+}
+
+fn parse_ssdp_message(data: &[u8]) -> std::result::Result<SSDPMessage, InvalidSSDPMessage> {
     let data = String::from_utf8(data.to_vec()).unwrap();
     let mut iter = data.lines();
     let request_line = iter.next().ok_or("failed to get request line")?;
