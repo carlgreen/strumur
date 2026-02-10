@@ -94,6 +94,47 @@ impl Collection {
         }
     }
 
+    pub fn populate(location: &str) -> Self {
+        info!("populating collection from {location:?}");
+        let mut collection = Self {
+            system_update_id: 0,
+            base: Path::new(location).to_path_buf(),
+            artists: vec![],
+        };
+
+        let start = Instant::now();
+
+        read_dir(location, location, &mut collection);
+
+        info!("Populated collection in {:.2?}", start.elapsed());
+
+        collection.artists.sort_by_key(|artist| artist.name.clone());
+        for artist in &mut collection.artists {
+            artist.albums.sort_by(|a1, a2| {
+                let date_ordering = a1.date.cmp(&a2.date);
+                if date_ordering.is_eq() {
+                    a1.title.cmp(&a2.title)
+                } else {
+                    date_ordering
+                }
+            });
+            for album in &mut artist.albums {
+                album.tracks.sort_by(|t1, t2| {
+                    let disc_ordering = t1.disc.cmp(&t2.disc);
+                    if disc_ordering.is_eq() {
+                        t1.number.cmp(&t2.number)
+                    } else {
+                        disc_ordering
+                    }
+                });
+            }
+        }
+
+        info!("Collection sorted");
+
+        collection
+    }
+
     pub const fn get_system_update_id(&self) -> u16 {
         self.system_update_id
     }
@@ -111,47 +152,6 @@ impl Collection {
             .iter()
             .flat_map(|artist| artist.get_albums().flat_map(Album::get_tracks))
     }
-}
-
-pub fn populate_collection(location: &str) -> Collection {
-    info!("populating collection from {location:?}");
-    let mut collection = Collection {
-        system_update_id: 0,
-        base: Path::new(location).to_path_buf(),
-        artists: vec![],
-    };
-
-    let start = Instant::now();
-
-    read_dir(location, location, &mut collection);
-
-    info!("Populated collection in {:.2?}", start.elapsed());
-
-    collection.artists.sort_by_key(|artist| artist.name.clone());
-    for artist in &mut collection.artists {
-        artist.albums.sort_by(|a1, a2| {
-            let date_ordering = a1.date.cmp(&a2.date);
-            if date_ordering.is_eq() {
-                a1.title.cmp(&a2.title)
-            } else {
-                date_ordering
-            }
-        });
-        for album in &mut artist.albums {
-            album.tracks.sort_by(|t1, t2| {
-                let disc_ordering = t1.disc.cmp(&t2.disc);
-                if disc_ordering.is_eq() {
-                    t1.number.cmp(&t2.number)
-                } else {
-                    disc_ordering
-                }
-            });
-        }
-    }
-
-    info!("Collection sorted");
-
-    collection
 }
 
 fn read_dir(location: &str, path: &str, collection: &mut Collection) {
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_populate_collection() {
         let location = "./testdata/collection/";
-        let collection = populate_collection(location);
+        let collection = Collection::populate(location);
         assert_eq!(
             collection.artists,
             vec![Artist {

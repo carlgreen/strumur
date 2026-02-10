@@ -28,7 +28,7 @@ use crate::advertise::SSDP_IPV4_MULTICAST_ADDRESS;
 use crate::advertise::advertise_discovery_messages;
 use crate::advertise::handle_search_error;
 use crate::advertise::handle_search_message;
-use crate::collection::populate_collection;
+use crate::collection::Collection;
 use crate::media_server::handle_device_connection;
 
 const NAME: &str = env!("CARGO_PKG_NAME");
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
         Err(err) => panic!("{err}"),
     };
 
-    let collection = populate_collection(location);
+    let collection = Collection::populate(location);
 
     let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
     thread::spawn(move || {
