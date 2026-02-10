@@ -17,4 +17,5 @@ xmltree = "0.12"
 
 [dev-dependencies]
 libc = "0.2"
+tempfile = "3.25"
 x-diff-rs = "0.4.1"

@@ -91,7 +91,7 @@ fn main() -> Result<()> {
 
     let mut rng = rand::rng();
 
-    let device_uuid = match get_device_uuid() {
+    let device_uuid = match get_device_uuid(DEVICEID_FILE) {
         Ok(device_uuid) => device_uuid,
         Err(err) => panic!("{err}"),
     };
@@ -250,8 +250,8 @@ impl From<std::io::Error> for DeviceUuidError {
 impl std::error::Error for DeviceUuidError {}
 
 // TODO this file should probably be somewhere appropriate
-fn get_device_uuid() -> std::result::Result<Uuid, DeviceUuidError> {
-    match read_to_string(DEVICEID_FILE) {
+fn get_device_uuid(deviceid_file: &str) -> std::result::Result<Uuid, DeviceUuidError> {
+    match read_to_string(deviceid_file) {
         Ok(contents) => match Uuid::parse_str(&contents) {
             Ok(device_uuid) => {
                 info!("starting with device UUID {device_uuid}");
@@ -263,13 +263,55 @@ fn get_device_uuid() -> std::result::Result<Uuid, DeviceUuidError> {
             if e.kind() == ErrorKind::NotFound {
                 // let device_uuid = Uuid::now_v6();
                 let device_uuid = Uuid::new_v4();
-                let mut file = File::create(DEVICEID_FILE)?;
+                let mut file = File::create(deviceid_file)?;
                 file.write_all(device_uuid.to_string().as_bytes())?;
                 info!("generated new device UUID {device_uuid}");
                 Ok(device_uuid)
             } else {
                 Err(DeviceUuidError::IoError(e))
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::NamedTempFile;
+
+    use super::*;
+
+    #[test]
+    fn test_get_device_uuid() {
+        let deviceid_file = NamedTempFile::new().expect("could not create a temporary file");
+        fs::remove_file(deviceid_file.path()).expect("could not remove temp file");
+
+        // first run it shouldn't be there but should create something
+        let uuid = get_device_uuid(deviceid_file.path().to_str().unwrap())
+            .expect("should create a new uuid");
+
+        // second run it should be the same by loading it, not by chance. i'll take my chances
+        let repeat_uuid = get_device_uuid(deviceid_file.path().to_str().unwrap())
+            .expect("should return the uuid");
+
+        assert_eq!(uuid, repeat_uuid);
+    }
+
+    #[test]
+    fn test_get_device_uuid_corrupted() {
+        let mut deviceid_file = NamedTempFile::new().expect("could not create a temporary file");
+
+        let bad_uuid = "19fbe566-fadf-4e49-bd26-534e67e7ef2x".to_string();
+
+        write!(deviceid_file, "{bad_uuid}").expect("could not write test data");
+
+        let err = get_device_uuid(deviceid_file.path().to_str().unwrap())
+            .expect_err("should fail to parse");
+        if let DeviceUuidError::InvalidDeviceId(s, _) = err {
+            assert_eq!(s, bad_uuid);
+        } else {
+            panic!("Expected DeviceUuidError");
         }
     }
 }
