@@ -136,8 +136,8 @@ pub fn search_crit(scanner: &mut Scanner) -> std::result::Result<Option<SearchCr
 #[derive(Debug, PartialEq, Eq)]
 pub enum SearchExp {
     Rel(RelExp),
-    Log(Box<SearchExp>, LogOp, Box<SearchExp>),
-    Brackets(Box<SearchExp>),
+    Log(Box<Self>, LogOp, Box<Self>),
+    Brackets(Box<Self>),
 }
 
 /// searchExp = relExp | searchExp wChar+ logOp wChar+ searchExp | ‘(’ wChar* searchExp wChar* ‘)’
