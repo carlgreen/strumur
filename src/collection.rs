@@ -37,6 +37,7 @@ impl Artist {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Album {
+    pub id: u128,
     pub title: String,
     pub date: Option<NaiveDate>,
     tracks: Vec<Track>,
@@ -46,12 +47,14 @@ pub struct Album {
 impl Album {
     #[cfg(test)]
     pub const fn new(
+        id: u128,
         title: String,
         date: Option<NaiveDate>,
         tracks: Vec<Track>,
         cover: String,
     ) -> Self {
         Self {
+            id,
             title,
             date,
             tracks,
@@ -104,7 +107,9 @@ impl Collection {
 
         let start = Instant::now();
 
-        read_dir(location, location, &mut collection);
+        let mut last_id = 0;
+
+        read_dir(location, location, &mut collection, &mut last_id);
 
         info!("Populated collection in {:.2?}", start.elapsed());
 
@@ -154,12 +159,17 @@ impl Collection {
     }
 }
 
-fn read_dir(location: &str, path: &str, collection: &mut Collection) {
+fn read_dir(location: &str, path: &str, collection: &mut Collection, last_id: &mut u128) {
     let entries = fs::read_dir(path).expect("no Music folder location in home directory");
     for entry in entries.flatten() {
         if let Ok(file_type) = entry.file_type() {
             if file_type.is_dir() {
-                read_dir(location, entry.path().to_str().unwrap(), collection);
+                read_dir(
+                    location,
+                    entry.path().to_str().unwrap(),
+                    collection,
+                    last_id,
+                );
             }
             if file_type.is_file() {
                 let display_file_name = entry.path().display().to_string();
@@ -248,6 +258,7 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
 
                         add_track_to_collection(
                             collection,
+                            last_id,
                             location,
                             &entry,
                             artist_name,
@@ -266,6 +277,7 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
 
 fn add_track_to_collection(
     collection: &mut Collection,
+    last_id: &mut u128,
     location: &str,
     entry: &DirEntry,
     artist_name: String,
@@ -284,7 +296,10 @@ fn add_track_to_collection(
         } else {
             let cover_url = find_album_artwork(location, entry, &album_title);
 
+            *last_id += 1;
+
             let album = Album {
+                id: *last_id,
                 title: album_title,
                 date: release_date,
                 tracks: vec![track],
@@ -295,7 +310,10 @@ fn add_track_to_collection(
     } else {
         let cover_url = find_album_artwork(location, entry, &album_title);
 
+        *last_id += 1;
+
         let album = Album {
+            id: *last_id,
             title: album_title,
             date: release_date,
             tracks: vec![track],
@@ -435,6 +453,7 @@ mod tests {
             vec![Artist {
                 name: "carl".to_string(),
                 albums: vec![Album {
+                    id: 1,
                     title: "none".to_string(),
                     date: None,
                     tracks: vec![Track {

@@ -274,7 +274,6 @@ fn generate_browse_albums_response(
     let requested_count: usize = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    let mut some_id = 0;
     let mut skipped = 0;
     'artists: for artist in collection.get_artists() {
         // move on quickly if we're not up to the starting index
@@ -289,6 +288,7 @@ fn generate_browse_albums_response(
             .take(requested_count - number_returned)
         {
             number_returned += 1;
+            let album_id = album.id;
             let album_title = xml::escape::escape_str_attribute(&album.title);
             let date = create_date_element(album.date);
             let track_count = album.get_tracks().len();
@@ -296,9 +296,8 @@ fn generate_browse_albums_response(
             // TODO album art details
             write!(
                 result,
-                r#"<container id="0$albums$*a{some_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+                r#"<container id="0$albums$*a{album_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
             ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-            some_id += 1;
             if number_returned >= requested_count {
                 break 'artists;
             }
@@ -314,16 +313,13 @@ fn generate_browse_an_album_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> String {
-    // dont' worry about this
-    let mut some_id = 0;
     let mut found = None;
     'artists: for artist in collection.get_artists() {
         for album in artist.get_albums() {
-            if format!("*a{some_id}") == album_id {
+            if format!("*a{}", album.id) == album_id {
                 found = Some((artist, album));
                 break 'artists;
             }
-            some_id += 1;
         }
     }
     let (artist, album) = found.unwrap_or_else(|| panic!("album {album_id} not found"));
@@ -821,7 +817,6 @@ fn generate_search_response(
             let mut total_matches = 0;
             let mut number_returned = 0;
             let mut result = String::new();
-            let mut album_id = 0;
             for (i, artist) in collection.get_artists().enumerate() {
                 let artist_id = i + 1; // WTF
                 let artist_name = xml::escape::escape_str_attribute(&artist.name);
@@ -840,6 +835,7 @@ fn generate_search_response(
                 }
 
                 for album in artist.get_albums() {
+                    let album_id = album.id;
                     let album_title = xml::escape::escape_str_attribute(&album.title);
                     let include = include_this(
                         search_criteria,
@@ -903,8 +899,6 @@ fn generate_search_response(
                             total_matches += 1;
                         }
                     }
-
-                    album_id += 1;
                 }
             }
 
@@ -1321,13 +1315,16 @@ mod tests {
     use super::*;
 
     fn make_album(
+        id: &mut u128,
         artist_name: &str,
         album_title: &str,
         release_date: &str,
         tracks: Vec<Track>,
     ) -> Album {
         let date = release_date.parse::<NaiveDate>().unwrap();
+        *id += 1;
         Album::new(
+            *id,
             album_title.to_string(),
             //  NaiveDate::from_ymd_opt(1996, 2, 12).expect("invalid or out-of-range date"),
             Some(date),
@@ -1357,7 +1354,9 @@ mod tests {
     }
 
     fn generate_test_collection() -> Collection {
+        let mut last_id = 0;
         let a1 = make_album(
+            &mut last_id,
             "a<bc",
             "a1",
             "1996-02-12",
@@ -1369,6 +1368,7 @@ mod tests {
             ],
         );
         let g1 = make_album(
+            &mut last_id,
             "ghi",
             "g1",
             "1996-02-12",
@@ -1379,6 +1379,7 @@ mod tests {
             ],
         );
         let h2 = make_album(
+            &mut last_id,
             "ghi",
             "h2",
             "2002-07-30",
@@ -1390,6 +1391,7 @@ mod tests {
             ],
         );
         let i3 = make_album(
+            &mut last_id,
             "ghi",
             "i3",
             "2011-11-11",
@@ -1398,13 +1400,13 @@ mod tests {
                 make_track("ghi", "i3", 2, "i32"),
             ],
         );
-        let j1 = make_album("jk", "j1", "1980-01-01", vec![]);
-        let l1 = make_album("lm", "l1", "1982-02-02", vec![]);
-        let n1 = make_album("nop", "n1", "1984-04-01", vec![]);
-        let q1 = make_album("qrs", "q1", "1986-06-06", vec![]);
-        let t1 = make_album("tuv", "t1", "1988-08-08", vec![]);
-        let w1 = make_album("w", "w1", "1990-10-10", vec![]);
-        let x1 = make_album("xyz", "x1", "1992-12-12", vec![]);
+        let j1 = make_album(&mut last_id, "jk", "j1", "1980-01-01", vec![]);
+        let l1 = make_album(&mut last_id, "lm", "l1", "1982-02-02", vec![]);
+        let n1 = make_album(&mut last_id, "nop", "n1", "1984-04-01", vec![]);
+        let q1 = make_album(&mut last_id, "qrs", "q1", "1986-06-06", vec![]);
+        let t1 = make_album(&mut last_id, "tuv", "t1", "1988-08-08", vec![]);
+        let w1 = make_album(&mut last_id, "w", "w1", "1990-10-10", vec![]);
+        let x1 = make_album(&mut last_id, "xyz", "x1", "1992-12-12", vec![]);
 
         Collection::new(
             7, // fun number for testing
@@ -1413,7 +1415,7 @@ mod tests {
                 Artist::new("a<bc".to_string(), vec![a1]),
                 Artist::new(
                     "def".to_string(),
-                    vec![make_album("def", "d<1", "2005-07-02", vec![])],
+                    vec![make_album(&mut last_id, "def", "d<1", "2005-07-02", vec![])],
                 ),
                 Artist::new("ghi".to_string(), vec![g1, h2, i3]),
                 Artist::new("jk".to_string(), vec![j1]),
@@ -1922,7 +1924,7 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$albums$*a0" parentID="0$albums" childCount="4" restricted="1" searchable="1">
+    <container id="0$albums$*a1" parentID="0$albums" childCount="4" restricted="1" searchable="1">
         <dc:title>a1</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:artist>a&lt;bc</upnp:artist>
@@ -1931,7 +1933,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/a&lt;bc/a1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$albums$*a1" parentID="0$albums" childCount="0" restricted="1" searchable="1">
+    <container id="0$albums$*a12" parentID="0$albums" childCount="0" restricted="1" searchable="1">
         <dc:title>d&lt;1</dc:title>
         <dc:date>2005-07-02</dc:date>
         <upnp:artist>def</upnp:artist>
