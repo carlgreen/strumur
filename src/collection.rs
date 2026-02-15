@@ -16,14 +16,15 @@ use crate::flac::is_flac;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Artist {
+    pub id: u128,
     pub name: String,
     albums: Vec<Album>,
 }
 
 impl Artist {
     #[cfg(test)]
-    pub const fn new(name: String, albums: Vec<Album>) -> Self {
-        Self { name, albums }
+    pub const fn new(id: u128, name: String, albums: Vec<Album>) -> Self {
+        Self { id, name, albums }
     }
 
     pub fn get_albums(&self) -> impl ExactSizeIterator<Item = &Album> {
@@ -301,7 +302,6 @@ fn add_track_to_collection(
             let cover_url = find_album_artwork(location, entry, &album_title);
 
             *last_id += 1;
-
             let album = Album {
                 id: *last_id,
                 title: album_title,
@@ -315,7 +315,6 @@ fn add_track_to_collection(
         let cover_url = find_album_artwork(location, entry, &album_title);
 
         *last_id += 1;
-
         let album = Album {
             id: *last_id,
             title: album_title,
@@ -323,7 +322,10 @@ fn add_track_to_collection(
             tracks: vec![track],
             cover: cover_url.unwrap_or_default(),
         };
+
+        *last_id += 1;
         let artist = Artist {
+            id: *last_id,
             name: artist_name,
             albums: vec![album],
         };
@@ -455,6 +457,7 @@ mod tests {
         assert_eq!(
             collection.artists,
             vec![Artist {
+                id: 3,
                 name: "carl".to_string(),
                 albums: vec![Album {
                     id: 2,

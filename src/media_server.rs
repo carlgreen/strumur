@@ -364,13 +364,9 @@ fn generate_browse_artists_response(
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    for (i, artist) in artists
-        .skip(starting_index)
-        .take(requested_count)
-        .enumerate()
-    {
+    for artist in artists.skip(starting_index).take(requested_count) {
         number_returned += 1;
-        let id = starting_index + i + 1; // WTF
+        let id = artist.id;
         let name = xml::escape::escape_str_attribute(&artist.name);
         write!(
             result,
@@ -393,9 +389,7 @@ fn generate_browse_an_artist_response(
     let total_matches = things.len();
     let artist = collection
         .get_artists()
-        .skip(artist_id.parse::<usize>().unwrap() - 1)
-        .take(1)
-        .next()
+        .find(|a| a.id.to_string() == artist_id)
         .unwrap();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -438,24 +432,19 @@ fn generate_browse_an_artist_albums_response(
 ) -> String {
     let artist = collection
         .get_artists()
-        .skip(artist_id.parse::<usize>().unwrap() - 1)
-        .take(1)
-        .next()
+        .find(|a| a.id.to_string() == artist_id)
         .unwrap();
     let albums = artist.get_albums();
     let total_matches = albums.len();
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
+    let artist_id = artist.id;
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
     let mut result = String::new();
-    for (i, album) in albums
-        .skip(starting_index)
-        .take(requested_count)
-        .enumerate()
-    {
+    for album in albums.skip(starting_index).take(requested_count) {
         number_returned += 1;
-        let id = starting_index + i + 1; // WTF
+        let id = album.id;
         let title = xml::escape::escape_str_attribute(&album.title);
         let date = create_date_element(album.date);
         let track_count = album.get_tracks().len();
@@ -478,15 +467,11 @@ fn generate_browse_an_artist_album_response(
 ) -> String {
     let artist = collection
         .get_artists()
-        .skip(artist_id.parse::<usize>().unwrap() - 1)
-        .take(1)
-        .next()
+        .find(|a| a.id.to_string() == artist_id)
         .unwrap();
     let album = artist
         .get_albums()
-        .skip(album_id.parse::<usize>().unwrap() - 1)
-        .take(1)
-        .next()
+        .find(|a| a.id.to_string() == album_id)
         .unwrap();
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
@@ -498,13 +483,9 @@ fn generate_browse_an_artist_album_response(
     let date = create_date_element(album.date);
     let cover = create_album_art_element(addr, &album.cover);
     let mut result = String::new();
-    for (i, track) in tracks
-        .skip(starting_index)
-        .take(requested_count)
-        .enumerate()
-    {
+    for track in tracks.skip(starting_index).take(requested_count) {
         number_returned += 1;
-        let id = starting_index + i + 1; // WTF
+        let id = track.id;
         let track_title = xml::escape::escape_str_attribute(&track.title);
         let track_number = track.number;
         let duration = format_time_nice(track.duration);
@@ -533,13 +514,9 @@ fn generate_browse_all_artists_response(
     let requested_count = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    for (i, artist) in artists
-        .skip(starting_index)
-        .take(requested_count)
-        .enumerate()
-    {
+    for artist in artists.skip(starting_index).take(requested_count) {
         number_returned += 1;
-        let id = starting_index + i + 1; // WTF
+        let id = artist.id;
         let name = xml::escape::escape_str_attribute(&artist.name);
         write!(
             result,
@@ -813,8 +790,8 @@ fn generate_search_response(
             let mut total_matches = 0;
             let mut number_returned = 0;
             let mut result = String::new();
-            for (i, artist) in collection.get_artists().enumerate() {
-                let artist_id = i + 1; // WTF
+            for artist in collection.get_artists() {
+                let artist_id = artist.id;
                 let artist_name = xml::escape::escape_str_attribute(&artist.name);
                 let include =
                     include_this(search_criteria, &SearchWhat::Artist, None, None, artist);
@@ -1412,19 +1389,20 @@ mod tests {
             7, // fun number for testing
             PathBuf::from("./"),
             vec![
-                Artist::new("a<bc".to_string(), vec![a1]),
+                Artist::new(last_id + 1, "a<bc".to_string(), vec![a1]),
                 Artist::new(
+                    last_id + 2,
                     "def".to_string(),
                     vec![make_album(&mut last_id, "def", "d<1", "2005-07-02", vec![])],
                 ),
-                Artist::new("ghi".to_string(), vec![g1, h2, i3]),
-                Artist::new("jk".to_string(), vec![j1]),
-                Artist::new("lm".to_string(), vec![l1]),
-                Artist::new("nop".to_string(), vec![n1]),
-                Artist::new("qrs".to_string(), vec![q1]),
-                Artist::new("tuv".to_string(), vec![t1]),
-                Artist::new("w".to_string(), vec![w1]),
-                Artist::new("xyz".to_string(), vec![x1]),
+                Artist::new(last_id + 3, "ghi".to_string(), vec![g1, h2, i3]),
+                Artist::new(last_id + 4, "jk".to_string(), vec![j1]),
+                Artist::new(last_id + 5, "lm".to_string(), vec![l1]),
+                Artist::new(last_id + 6, "nop".to_string(), vec![n1]),
+                Artist::new(last_id + 7, "qrs".to_string(), vec![q1]),
+                Artist::new(last_id + 8, "tuv".to_string(), vec![t1]),
+                Artist::new(last_id + 9, "w".to_string(), vec![w1]),
+                Artist::new(last_id + 10, "xyz".to_string(), vec![x1]),
             ],
         )
     }
@@ -2094,23 +2072,23 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=Artist$1" parentID="0$=Artist" restricted="1" searchable="1">
+    <container id="0$=Artist$25" parentID="0$=Artist" restricted="1" searchable="1">
         <dc:title>a&lt;bc</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$2" parentID="0$=Artist" restricted="1" searchable="1">
+    <container id="0$=Artist$26" parentID="0$=Artist" restricted="1" searchable="1">
         <dc:title>def</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$3" parentID="0$=Artist" restricted="1" searchable="1">
+    <container id="0$=Artist$28" parentID="0$=Artist" restricted="1" searchable="1">
         <dc:title>ghi</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$4" parentID="0$=Artist" restricted="1" searchable="1">
+    <container id="0$=Artist$29" parentID="0$=Artist" restricted="1" searchable="1">
         <dc:title>jk</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=Artist$5" parentID="0$=Artist" restricted="1" searchable="1">
+    <container id="0$=Artist$30" parentID="0$=Artist" restricted="1" searchable="1">
         <dc:title>lm</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
@@ -2126,7 +2104,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = generate_browse_request("0$=Artist$3", 0, 500);
+        let input = generate_browse_request("0$=Artist$28", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -2158,15 +2136,15 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=Artist$3$albums" parentID="0$=Artist$3" restricted="1" searchable="1">
+    <container id="0$=Artist$28$albums" parentID="0$=Artist$28" restricted="1" searchable="1">
         <dc:title>3 albums</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
-    <container id="0$=Artist$3$items" parentID="0$=Artist$3" restricted="1" searchable="1">
+    <container id="0$=Artist$28$items" parentID="0$=Artist$28" restricted="1" searchable="1">
         <dc:title>9 items</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
-    <container id="0$=Artist$3$=Date" parentID="0$=Artist$3" restricted="1" searchable="1">
+    <container id="0$=Artist$28$=Date" parentID="0$=Artist$28" restricted="1" searchable="1">
         <dc:title>Date</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
@@ -2182,7 +2160,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = generate_browse_request("0$=Artist$3$albums", 0, 500);
+        let input = generate_browse_request("0$=Artist$28$albums", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -2214,7 +2192,7 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=Artist$3$albums$1" parentID="0$=Artist$3$albums" childCount="3" restricted="1" searchable="1">
+    <container id="0$=Artist$28$albums$9" parentID="0$=Artist$28$albums" childCount="3" restricted="1" searchable="1">
         <dc:title>g1</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -2223,7 +2201,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=Artist$3$albums$2" parentID="0$=Artist$3$albums" childCount="4" restricted="1" searchable="1">
+    <container id="0$=Artist$28$albums$14" parentID="0$=Artist$28$albums" childCount="4" restricted="1" searchable="1">
         <dc:title>h2</dc:title>
         <dc:date>2002-07-30</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -2232,7 +2210,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=Artist$3$albums$3" parentID="0$=Artist$3$albums" childCount="2" restricted="1" searchable="1">
+    <container id="0$=Artist$28$albums$17" parentID="0$=Artist$28$albums" childCount="2" restricted="1" searchable="1">
         <dc:title>i3</dc:title>
         <dc:date>2011-11-11</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -2253,7 +2231,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = generate_browse_request("0$=Artist$3$albums$1", 0, 500);
+        let input = generate_browse_request("0$=Artist$28$albums$9", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -2285,7 +2263,7 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <item id="0$=Artist$3$albums$1$1" parentID="0$=Artist$3$albums$1" restricted="1">
+    <item id="0$=Artist$28$albums$9$6" parentID="0$=Artist$28$albums$9" restricted="1">
         <dc:title>g&lt;11</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -2297,7 +2275,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$=Artist$3$albums$1$2" parentID="0$=Artist$3$albums$1" restricted="1">
+    <item id="0$=Artist$28$albums$9$7" parentID="0$=Artist$28$albums$9" restricted="1">
         <dc:title>g12</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -2309,7 +2287,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$=Artist$3$albums$1$3" parentID="0$=Artist$3$albums$1" restricted="1">
+    <item id="0$=Artist$28$albums$9$8" parentID="0$=Artist$28$albums$9" restricted="1">
         <dc:title>g13</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -2365,23 +2343,23 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=All Artists$1" parentID="0$=All Artists" restricted="1" searchable="1">
+    <container id="0$=All Artists$25" parentID="0$=All Artists" restricted="1" searchable="1">
         <dc:title>a&lt;bc</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$2" parentID="0$=All Artists" restricted="1" searchable="1">
+    <container id="0$=All Artists$26" parentID="0$=All Artists" restricted="1" searchable="1">
         <dc:title>def</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$3" parentID="0$=All Artists" restricted="1" searchable="1">
+    <container id="0$=All Artists$28" parentID="0$=All Artists" restricted="1" searchable="1">
         <dc:title>ghi</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$4" parentID="0$=All Artists" restricted="1" searchable="1">
+    <container id="0$=All Artists$29" parentID="0$=All Artists" restricted="1" searchable="1">
         <dc:title>jk</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$=All Artists$5" parentID="0$=All Artists" restricted="1" searchable="1">
+    <container id="0$=All Artists$30" parentID="0$=All Artists" restricted="1" searchable="1">
         <dc:title>lm</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
@@ -2698,7 +2676,7 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$=Artist$3" parentID="0$=Artist" restricted="1" searchable="1">
+    <container id="0$=Artist$28" parentID="0$=Artist" restricted="1" searchable="1">
         <dc:title>ghi</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
