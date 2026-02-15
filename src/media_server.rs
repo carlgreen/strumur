@@ -25,6 +25,8 @@ const HTTP_PROTOCOL_VERSION: &str = "1.1";
 
 const HTTP_RESPONSE_OK: &str = "200 OK";
 
+const HTTP_RESPONSE_INTERNAL_SERVER_ERROR: &str = "500 Internal Server Error";
+
 const CONTENT_DIRECTORY_SERVICE_TYPE: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
 
 const CDS_GET_SYSTEM_UPDATE_ID_ACTION: &str = "GetSystemUpdateID";
@@ -239,6 +241,17 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
     (object_id, starting_index, requested_count)
 }
 
+enum UPNPError {
+    NoSuchObject,
+}
+impl UPNPError {
+    const fn describe(&self) -> (u16, &str) {
+        match self {
+            Self::NoSuchObject => (701, "No such object"),
+        }
+    }
+}
+
 fn generate_browse_root_response(collection: &Collection) -> String {
     let album_count = collection.get_albums().count();
     let albums = format!(
@@ -312,7 +325,7 @@ fn generate_browse_an_album_response(
     starting_index: Option<u16>,
     requested_count: Option<u16>,
     addr: &str,
-) -> String {
+) -> std::result::Result<String, UPNPError> {
     let mut found = None;
     'artists: for artist in collection.get_artists() {
         for album in artist.get_albums() {
@@ -322,7 +335,9 @@ fn generate_browse_an_album_response(
             }
         }
     }
-    let (artist, album) = found.unwrap_or_else(|| panic!("album {album_id} not found"));
+    let Some((artist, album)) = found else {
+        return Err(UPNPError::NoSuchObject);
+    };
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
     let starting_index = starting_index.unwrap().into();
@@ -350,7 +365,7 @@ fn generate_browse_an_album_response(
             r#"<item id="0$albums${album_id}$*i{track_id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_browse_artists_response(
@@ -382,15 +397,17 @@ fn generate_browse_an_artist_response(
     artist_id: &str,
     starting_index: Option<u16>,
     requested_count: Option<u16>,
-) -> String {
+) -> std::result::Result<String, UPNPError> {
     let things = ["albums", "items", "Date"];
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let total_matches = things.len();
-    let artist = collection
+    let Some(artist) = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-        .unwrap();
+    else {
+        return Err(UPNPError::NoSuchObject);
+    };
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -420,7 +437,7 @@ fn generate_browse_an_artist_response(
             r#"<container id="0$=Artist${artist_id}${sub_id}" parentID="0$=Artist${artist_id}" restricted="1" searchable="1"><dc:title>{title}</dc:title><upnp:class>object.container</upnp:class></container>"#
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_browse_an_artist_albums_response(
@@ -429,11 +446,13 @@ fn generate_browse_an_artist_albums_response(
     starting_index: Option<u16>,
     requested_count: Option<u16>,
     addr: &str,
-) -> String {
-    let artist = collection
+) -> std::result::Result<String, UPNPError> {
+    let Some(artist) = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-        .unwrap();
+    else {
+        return Err(UPNPError::NoSuchObject);
+    };
     let albums = artist.get_albums();
     let total_matches = albums.len();
     let starting_index = starting_index.unwrap().into();
@@ -454,7 +473,7 @@ fn generate_browse_an_artist_albums_response(
             r#"<container id="0$=Artist${artist_id}$albums${id}" parentID="0$=Artist${artist_id}$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_browse_an_artist_album_response(
@@ -464,15 +483,16 @@ fn generate_browse_an_artist_album_response(
     starting_index: Option<u16>,
     requested_count: Option<u16>,
     addr: &str,
-) -> String {
-    let artist = collection
+) -> std::result::Result<String, UPNPError> {
+    let Some(artist) = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-        .unwrap();
-    let album = artist
-        .get_albums()
-        .find(|a| a.id.to_string() == album_id)
-        .unwrap();
+    else {
+        return Err(UPNPError::NoSuchObject);
+    };
+    let Some(album) = artist.get_albums().find(|a| a.id.to_string() == album_id) else {
+        return Err(UPNPError::NoSuchObject);
+    };
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
     let starting_index = starting_index.unwrap().into();
@@ -500,7 +520,7 @@ fn generate_browse_an_artist_album_response(
             r#"<item id="0$=Artist${artist_id}$albums${album_id}${id}" parentID="0$=Artist${artist_id}$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_browse_all_artists_response(
@@ -612,70 +632,76 @@ fn generate_browse_response(
 ) -> (String, &'static str) {
     let browse_response =
         match object_id {
-            [root] if root == "0" => Some(generate_browse_root_response(collection)),
-            [root, next] if root == "0" && next == "albums" => Some(
-                generate_browse_albums_response(collection, starting_index, requested_count, addr),
-            ),
+            [root] if root == "0" => Ok(generate_browse_root_response(collection)),
+            [root, next] if root == "0" && next == "albums" => Ok(generate_browse_albums_response(
+                collection,
+                starting_index,
+                requested_count,
+                addr,
+            )),
             [root, next, album_id] if root == "0" && next == "albums" => {
-                Some(generate_browse_an_album_response(
+                generate_browse_an_album_response(
                     collection,
                     album_id,
                     starting_index,
                     requested_count,
                     addr,
-                ))
+                )
             }
-            [root, next] if root == "0" && next == "=Artist" => Some(
+            [root, next] if root == "0" && next == "=Artist" => Ok(
                 generate_browse_artists_response(collection, starting_index, requested_count),
             ),
             [root, next, artist_id] if root == "0" && next == "=Artist" => {
-                Some(generate_browse_an_artist_response(
+                generate_browse_an_artist_response(
                     collection,
                     artist_id,
                     starting_index,
                     requested_count,
-                ))
+                )
             }
             [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
-                Some(generate_browse_an_artist_albums_response(
+                generate_browse_an_artist_albums_response(
                     collection,
                     artist_id,
                     starting_index,
                     requested_count,
                     addr,
-                ))
+                )
             }
             [root, next, artist_id, artist_what, album_id]
                 if root == "0" && next == "=Artist" && artist_what == "albums" =>
             {
-                Some(generate_browse_an_artist_album_response(
+                generate_browse_an_artist_album_response(
                     collection,
                     artist_id,
                     album_id,
                     starting_index,
                     requested_count,
                     addr,
-                ))
+                )
             }
-            [root, next] if root == "0" && next == "=All Artists" => Some(
+            [root, next] if root == "0" && next == "=All Artists" => Ok(
                 generate_browse_all_artists_response(collection, starting_index, requested_count),
             ),
             _ => {
                 error!("control: unexpected object ID: {object_id:?}");
-                None
+                Err(UPNPError::NoSuchObject)
             }
         };
-    browse_response.map_or_else(
-        || (String::new(), "400 BAD REQUEST"),
-        |browse_response| {
+    match browse_response {
+        Ok(browse_response) => {
             let body = format!(
                 r#"
         <u:BrowseResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{browse_response}
         </u:BrowseResponse>"#
             );
             (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
-        },
-    )
+        }
+        Err(e) => {
+            let (code, description) = e.describe();
+            soap_upnp_error(code, description)
+        }
+    }
 }
 
 fn parse_soap_search_request(
@@ -1186,9 +1212,8 @@ fn handle_content_directory_actions<'a>(
     }
 }
 
-fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &str) {
-    // it seems based on the example in the docs that its always 500?
-    let http_error_string = "500 Internal Server Error";
+// it seems based on the example in the docs that its always 500?
+fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &'static str) {
     let content = format!(
         r#"
         <s:Fault>
@@ -1202,7 +1227,10 @@ fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &str) {
             </detail>
         </s:Fault>"#
     );
-    (wrap_with_envelope_body(&content), http_error_string)
+    (
+        wrap_with_envelope_body(&content),
+        HTTP_RESPONSE_INTERNAL_SERVER_ERROR,
+    )
 }
 
 fn write_response(
@@ -1773,6 +1801,35 @@ mod tests {
         )
     }
 
+    fn extract_error_response(body: &str) -> (u16, String) {
+        let envelope = Element::parse(body.as_bytes()).unwrap();
+        let body = envelope.get_child("Body").unwrap();
+        let fault = body.get_child("Fault").unwrap();
+
+        let upnp_error = fault
+            .get_child("detail")
+            .unwrap()
+            .get_child("UPnPError")
+            .unwrap();
+
+        let error_code = upnp_error
+            .get_child("errorCode")
+            .unwrap()
+            .get_text()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        let error_description = upnp_error
+            .get_child("errorDescription")
+            .unwrap()
+            .get_text()
+            .unwrap()
+            .into();
+
+        (error_code, error_description)
+    }
+
     fn compare_xml(a: &str, b: &str) {
         let tree1 = XTree::parse(a).unwrap();
         let tree2 = XTree::parse(b).unwrap();
@@ -2036,6 +2093,46 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_browse_an_incorrect_album_content() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$albums$*a200", 0, 500);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "HTTP/1.1 500 Internal Server Error".to_string()
+        );
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (error_code, error_description) = extract_error_response(&body);
+        assert_eq!(error_code, 701);
+        assert_eq!(error_description, "No such object");
+    }
+
+    #[test]
     fn test_handle_browse_artists_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
@@ -2156,6 +2253,46 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_browse_an_incorrect_artist_content() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist$280", 0, 500);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "HTTP/1.1 500 Internal Server Error".to_string()
+        );
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (error_code, error_description) = extract_error_response(&body);
+        assert_eq!(error_code, 701);
+        assert_eq!(error_description, "No such object");
+    }
+
+    #[test]
     fn test_handle_browse_an_artist_albums_content() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
@@ -2224,6 +2361,46 @@ mod tests {
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
         assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_incorrect_artist_albums_content() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist$280$albums", 0, 500);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "HTTP/1.1 500 Internal Server Error".to_string()
+        );
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (error_code, error_description) = extract_error_response(&body);
+        assert_eq!(error_code, 701);
+        assert_eq!(error_description, "No such object");
     }
 
     #[test]
@@ -2304,6 +2481,86 @@ mod tests {
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
         assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_incorrect_artist_album_content() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist$280$albums$9", 0, 500);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "HTTP/1.1 500 Internal Server Error".to_string()
+        );
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (error_code, error_description) = extract_error_response(&body);
+        assert_eq!(error_code, 701);
+        assert_eq!(error_description, "No such object");
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_incorrect_album_content() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_request("0$=Artist$3$albums$90", 0, 500);
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(
+            lines.next().unwrap(),
+            "HTTP/1.1 500 Internal Server Error".to_string()
+        );
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (error_code, error_description) = extract_error_response(&body);
+        assert_eq!(error_code, 701);
+        assert_eq!(error_description, "No such object");
     }
 
     #[test]
