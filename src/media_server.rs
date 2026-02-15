@@ -666,94 +666,76 @@ fn generate_browse_response(
 ) -> (String, &'static str) {
     let browse_response =
         match object_id {
-            [root] if root == "0" => Some(generate_browse_root_response(collection)),
-            [root, next] if root == "0" && next == "albums" => Some(
-                generate_browse_albums_response(collection, starting_index, requested_count, addr),
-            ),
+            [root] if root == "0" => Ok(generate_browse_root_response(collection)),
+            [root, next] if root == "0" && next == "albums" => Ok(generate_browse_albums_response(
+                collection,
+                starting_index,
+                requested_count,
+                addr,
+            )),
             [root, next, album_id] if root == "0" && next == "albums" => {
-                match generate_browse_an_album_response(
+                generate_browse_an_album_response(
                     collection,
                     album_id,
                     starting_index,
                     requested_count,
                     addr,
-                ) {
-                    Ok(response) => Some(response),
-                    Err(e) => {
-                        let (code, description) = e.describe();
-                        return soap_upnp_error(code, description);
-                    }
-                }
+                )
             }
-            [root, next] if root == "0" && next == "=Artist" => Some(
+            [root, next] if root == "0" && next == "=Artist" => Ok(
                 generate_browse_artists_response(collection, starting_index, requested_count),
             ),
             [root, next, artist_id] if root == "0" && next == "=Artist" => {
-                match generate_browse_an_artist_response(
+                generate_browse_an_artist_response(
                     collection,
                     artist_id,
                     starting_index,
                     requested_count,
-                ) {
-                    Ok(response) => Some(response),
-                    Err(e) => {
-                        let (code, description) = e.describe();
-                        return soap_upnp_error(code, description);
-                    }
-                }
+                )
             }
             [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
-                match generate_browse_an_artist_albums_response(
+                generate_browse_an_artist_albums_response(
                     collection,
                     artist_id,
                     starting_index,
                     requested_count,
                     addr,
-                ) {
-                    Ok(response) => Some(response),
-                    Err(e) => {
-                        let (code, description) = e.describe();
-                        return soap_upnp_error(code, description);
-                    }
-                }
+                )
             }
             [root, next, artist_id, artist_what, album_id]
                 if root == "0" && next == "=Artist" && artist_what == "albums" =>
             {
-                match generate_browse_an_artist_album_response(
+                generate_browse_an_artist_album_response(
                     collection,
                     artist_id,
                     album_id,
                     starting_index,
                     requested_count,
                     addr,
-                ) {
-                    Ok(response) => Some(response),
-                    Err(e) => {
-                        let (code, description) = e.describe();
-                        return soap_upnp_error(code, description);
-                    }
-                }
+                )
             }
-            [root, next] if root == "0" && next == "=All Artists" => Some(
+            [root, next] if root == "0" && next == "=All Artists" => Ok(
                 generate_browse_all_artists_response(collection, starting_index, requested_count),
             ),
             _ => {
                 error!("control: unexpected object ID: {object_id:?}");
-                None
+                Err(UPNPError::NoSuchObject)
             }
         };
-    browse_response.map_or_else(
-        || (String::new(), "400 BAD REQUEST"),
-        |browse_response| {
+    match browse_response {
+        Ok(browse_response) => {
             let body = format!(
                 r#"
         <u:BrowseResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{browse_response}
         </u:BrowseResponse>"#
             );
             (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
-        },
-    )
+        }
+        Err(e) => {
+            let (code, description) = e.describe();
+            soap_upnp_error(code, description)
+        }
+    }
 }
 
 fn parse_soap_search_request(
