@@ -69,6 +69,7 @@ impl Album {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Track {
+    pub id: u128,
     pub disc: u8,
     pub number: u8,
     pub title: String,
@@ -239,7 +240,10 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection, last_id: &m
                             },
                         );
 
+                        *last_id += 1;
+
                         let track = Track {
+                            id: *last_id,
                             disc: disc_number,
                             number: track_number,
                             title: track_title,
@@ -453,10 +457,11 @@ mod tests {
             vec![Artist {
                 name: "carl".to_string(),
                 albums: vec![Album {
-                    id: 1,
+                    id: 2,
                     title: "none".to_string(),
                     date: None,
                     tracks: vec![Track {
+                        id: 1,
                         disc: 0,
                         number: 0,
                         title: "riff".to_string(),

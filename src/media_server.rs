@@ -333,13 +333,9 @@ fn generate_browse_an_album_response(
     let date = create_date_element(album.date);
     let cover = create_album_art_element(addr, &album.cover);
     let mut result = String::new();
-    for (i, track) in tracks
-        .skip(starting_index)
-        .take(requested_count)
-        .enumerate()
-    {
+    for track in tracks.skip(starting_index).take(requested_count) {
         number_returned += 1;
-        let id = starting_index + i + 1; // WTF
+        let track_id = track.id;
         let track_title = xml::escape::escape_str_attribute(&track.title);
         let track_number = track.number;
         let duration = format_time_nice(track.duration);
@@ -351,7 +347,7 @@ fn generate_browse_an_album_response(
         let file = xml::escape::escape_str_attribute(&file);
         write!(
             result,
-            r#"<item id="0$albums${album_id}$*i{id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$albums${album_id}$*i{track_id}" parentID="0$albums${album_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
@@ -862,9 +858,7 @@ fn generate_search_response(
                         total_matches += 1;
                     }
 
-                    for (j, track) in album.get_tracks().enumerate() {
-                        let track_id = j + 1; // WTF
-
+                    for track in album.get_tracks() {
                         let include = include_this(
                             search_criteria,
                             &SearchWhat::Track,
@@ -878,6 +872,7 @@ fn generate_search_response(
                                 // let date = create_date_element(album.date);
                                 // let cover = create_album_art_element(addr, &album.cover);
 
+                                let track_id = track.id;
                                 let track_title = xml::escape::escape_str_attribute(&track.title);
                                 let track_number = track.number;
                                 let duration = format_time_nice(track.duration);
@@ -1319,9 +1314,13 @@ mod tests {
         artist_name: &str,
         album_title: &str,
         release_date: &str,
-        tracks: Vec<Track>,
+        mut tracks: Vec<Track>,
     ) -> Album {
         let date = release_date.parse::<NaiveDate>().unwrap();
+        tracks.iter_mut().for_each(|t| {
+            *id += 1;
+            t.id = *id;
+        });
         *id += 1;
         Album::new(
             *id,
@@ -1340,6 +1339,7 @@ mod tests {
         track_title: &str,
     ) -> Track {
         Track {
+            id: 0, // placeholder
             disc: 0,
             number: track_number,
             title: track_title.to_string(),
@@ -1924,7 +1924,7 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <container id="0$albums$*a1" parentID="0$albums" childCount="4" restricted="1" searchable="1">
+    <container id="0$albums$*a5" parentID="0$albums" childCount="4" restricted="1" searchable="1">
         <dc:title>a1</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:artist>a&lt;bc</upnp:artist>
@@ -1933,7 +1933,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/a&lt;bc/a1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$albums$*a12" parentID="0$albums" childCount="0" restricted="1" searchable="1">
+    <container id="0$albums$*a25" parentID="0$albums" childCount="0" restricted="1" searchable="1">
         <dc:title>d&lt;1</dc:title>
         <dc:date>2005-07-02</dc:date>
         <upnp:artist>def</upnp:artist>
@@ -1942,7 +1942,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/def/d&lt;1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$albums$*a2" parentID="0$albums" childCount="3" restricted="1" searchable="1">
+    <container id="0$albums$*a9" parentID="0$albums" childCount="3" restricted="1" searchable="1">
         <dc:title>g1</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -1951,7 +1951,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$albums$*a3" parentID="0$albums" childCount="4" restricted="1" searchable="1">
+    <container id="0$albums$*a14" parentID="0$albums" childCount="4" restricted="1" searchable="1">
         <dc:title>h2</dc:title>
         <dc:date>2002-07-30</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -1960,7 +1960,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$albums$*a4" parentID="0$albums" childCount="2" restricted="1" searchable="1">
+    <container id="0$albums$*a17" parentID="0$albums" childCount="2" restricted="1" searchable="1">
         <dc:title>i3</dc:title>
         <dc:date>2011-11-11</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -1981,7 +1981,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = generate_browse_request("0$albums$*a2", 0, 500);
+        let input = generate_browse_request("0$albums$*a9", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -2014,7 +2014,7 @@ mod tests {
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
-    <item id="0$albums$*a2$*i1" parentID="0$albums$*a2" restricted="1">
+    <item id="0$albums$*a9$*i6" parentID="0$albums$*a9" restricted="1">
         <dc:title>g&lt;11</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -2026,7 +2026,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$albums$*a2$*i2" parentID="0$albums$*a2" restricted="1">
+    <item id="0$albums$*a9$*i7" parentID="0$albums$*a9" restricted="1">
         <dc:title>g12</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -2038,7 +2038,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1">
+    <item id="0$albums$*a9$*i8" parentID="0$albums$*a9" restricted="1">
         <dc:title>g13</dc:title>
         <dc:date>1996-02-12</dc:date>
         <upnp:album>g1</upnp:album>
@@ -2702,12 +2702,12 @@ mod tests {
         <dc:title>ghi</dc:title>
         <upnp:class>object.container.person.musicArtist</upnp:class>
     </container>
-    <container id="0$albums$*a2" parentID="0$albums" restricted="1" searchable="1">
+    <container id="0$albums$*a9" parentID="0$albums" restricted="1" searchable="1">
         <dc:title>g1</dc:title>
         <dc:creator>ghi</dc:creator>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <item id="0$albums$*a2$*i1" parentID="0$albums$*a2" restricted="1">
+    <item id="0$albums$*a9$*i6" parentID="0$albums$*a9" restricted="1">
         <dc:title>g&lt;11</dc:title>
         <upnp:album>g1</upnp:album>
         <upnp:artist>ghi</upnp:artist>
@@ -2717,7 +2717,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$albums$*a2$*i2" parentID="0$albums$*a2" restricted="1">
+    <item id="0$albums$*a9$*i7" parentID="0$albums$*a9" restricted="1">
         <dc:title>g12</dc:title>
         <upnp:album>g1</upnp:album>
         <upnp:artist>ghi</upnp:artist>
@@ -2727,7 +2727,7 @@ mod tests {
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
-    <item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1">
+    <item id="0$albums$*a9$*i8" parentID="0$albums$*a9" restricted="1">
         <dc:title>g13</dc:title>
         <upnp:album>g1</upnp:album>
         <upnp:artist>ghi</upnp:artist>
