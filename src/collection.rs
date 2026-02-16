@@ -76,6 +76,7 @@ pub struct Track {
     pub disc: u8,
     pub number: u8,
     pub title: String,
+    pub artist: String,
     pub file: String,
     pub duration: NaiveTime,
     pub size: u64,
@@ -226,11 +227,23 @@ fn process_flac(
     };
     // info!("field_names: {field_names:#?}");
 
-    let Some(artist_name) = metadata.get_field("ARTIST") else {
-        warn!("no artist name found in {display_file_name}");
-        debug!("fields in {display_file_name}: {field_names:?}");
+    let mut album_artist = metadata.get_field("ALBUMARTIST");
+    let mut artist = metadata.get_field("ARTIST");
+    if artist.is_none() && album_artist.is_none() {
+        warn!("no artist or album artist found in {display_file_name}");
         return;
-    };
+    }
+    if album_artist.is_none() && artist.is_some() {
+        warn!("no album artist on {display_file_name}, using artist {artist:?}");
+        album_artist.clone_from(&artist);
+    }
+    if artist.is_none() && album_artist.is_some() {
+        warn!("no artist on {display_file_name}, using album artist {album_artist:?}");
+        artist.clone_from(&album_artist);
+    }
+
+    let album_artist_name = album_artist.expect("album artist should be populated");
+    let artist_name = artist.expect("artist should be populated");
     let Some(album_title) = metadata.get_field("ALBUM") else {
         warn!("no album title found in {display_file_name}");
         debug!("fields in {display_file_name}: {field_names:?}");
@@ -277,6 +290,7 @@ fn process_flac(
         disc: disc_number,
         number: track_number,
         title: track_title,
+        artist: artist_name,
         file: entry
             .path()
             .as_os_str()
@@ -294,7 +308,7 @@ fn process_flac(
         collection,
         location,
         entry,
-        artist_name,
+        album_artist_name,
         album_title,
         release_date,
         track,
@@ -320,7 +334,7 @@ fn add_track_to_collection(
     collection: &mut Collection,
     location: &str,
     entry: &DirEntry,
-    artist_name: String,
+    album_artist_name: String,
     album_title: String,
     release_date: Option<NaiveDate>,
     track: Track,
@@ -328,7 +342,7 @@ fn add_track_to_collection(
     let artist: Option<&mut Artist> = collection
         .artists
         .iter_mut()
-        .find(|a| a.name == artist_name);
+        .find(|a| a.name == album_artist_name);
     if let Some(artist) = artist {
         let album = artist.albums.iter_mut().find(|a| a.title == album_title);
         if let Some(album) = album {
@@ -362,7 +376,7 @@ fn add_track_to_collection(
 
         let artist = Artist {
             id: collection.next_id(),
-            name: artist_name,
+            name: album_artist_name,
             albums: vec![album],
         };
         collection.artists.push(artist);
@@ -504,6 +518,7 @@ mod tests {
                         disc: 0,
                         number: 0,
                         title: "riff".to_string(),
+                        artist: "carl".to_string(),
                         file: "./testdata/collection/riff.flac".to_string(),
                         duration: NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap(),
                         size: 664150,
