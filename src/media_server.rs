@@ -404,19 +404,18 @@ fn generate_browse_items_response(
     addr: &str,
 ) -> String {
     let total_matches = collection.get_tracks().count();
-    let starting_index: usize = starting_index.unwrap().into();
+    let mut starting_index: usize = starting_index.unwrap().into();
     let requested_count: usize = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    let mut past = 0;
     'artists: for artist in collection.get_artists() {
         let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
         for album in artist.get_albums() {
             let tracks = album.get_tracks();
             let tracks_len = tracks.len();
             // move on quickly if we're not up to the starting index
-            if tracks.len() <= starting_index.saturating_sub(past) {
-                past += tracks.len();
+            if tracks_len <= starting_index {
+                starting_index = starting_index.saturating_sub(tracks_len);
                 continue;
             }
             let album_title = xml::escape::escape_str_attribute(&album.title);
@@ -424,7 +423,7 @@ fn generate_browse_items_response(
             let cover = create_album_art_element(addr, &album.cover);
             // TODO album art details
             for track in tracks
-                .skip(starting_index.saturating_sub(past))
+                .skip(starting_index)
                 .take(requested_count - number_returned)
             {
                 number_returned += 1;
@@ -444,7 +443,7 @@ fn generate_browse_items_response(
                     r#"<item id="0$items${id}" parentID="0$items" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            past += tracks_len;
+            starting_index = starting_index.saturating_sub(tracks_len);
             if number_returned >= requested_count {
                 break 'artists;
             }
