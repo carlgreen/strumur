@@ -293,15 +293,9 @@ fn generate_browse_root_response(collection: &Collection) -> String {
     // how much of this do i even care about?
     let result = albums
         + &items
-        + r#"<container id="0$playlists" parentID="0" restricted="1" searchable="1"><dc:title>0 playlists</dc:title><upnp:class>object.container</upnp:class></container>"#
         + r#"<container id="0$=Artist" parentID="0" restricted="1" searchable="1"><dc:title>Artist</dc:title><upnp:class>object.container</upnp:class></container>"#
-        + r#"<container id="0$=Date" parentID="0" restricted="1" searchable="1"><dc:title>Date</dc:title><upnp:class>object.container</upnp:class></container>"#
-        + r#"<container id="0$=Genre" parentID="0" restricted="1" searchable="1"><dc:title>Genre</dc:title><upnp:class>object.container</upnp:class></container>"#
-        + r#"<container id="0$=All Artists" parentID="0" restricted="1" searchable="1"><dc:title>All Artists</dc:title><upnp:class>object.container</upnp:class></container>"#
-        + r#"<container id="0$=Composer" parentID="0" restricted="1" searchable="1"><dc:title>Composer</dc:title><upnp:class>object.container</upnp:class></container>"#
-        + r#"<container id="0$untagged" parentID="0" restricted="1" searchable="1"><dc:title>[untagged]</dc:title><upnp:class>object.container</upnp:class></container>"#
-        + r#"<container id="0$folders" parentID="0" restricted="1" searchable="1"><dc:title>[folder view]</dc:title><upnp:class>object.container.storageFolder</upnp:class></container>"#;
-    format_response(&result, 10, 10)
+        + r#"<container id="0$=All Artists" parentID="0" restricted="1" searchable="1"><dc:title>All Artists</dc:title><upnp:class>object.container</upnp:class></container>"#;
+    format_response(&result, 4, 4)
 }
 
 fn generate_browse_albums_response(
@@ -482,7 +476,7 @@ fn generate_browse_an_artist_response(
     starting_index: Option<u16>,
     requested_count: Option<u16>,
 ) -> std::result::Result<String, UPNPError> {
-    let things = ["albums", "items", "Date"];
+    let things = ["albums", "items"];
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let total_matches = things.len();
@@ -2052,42 +2046,18 @@ mod tests {
         <dc:title>13 items</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
-    <container id="0$playlists" parentID="0" restricted="1" searchable="1">
-        <dc:title>0 playlists</dc:title>
-        <upnp:class>object.container</upnp:class>
-    </container>
     <container id="0$=Artist" parentID="0" restricted="1" searchable="1">
         <dc:title>Artist</dc:title>
-        <upnp:class>object.container</upnp:class>
-    </container>
-    <container id="0$=Date" parentID="0" restricted="1" searchable="1">
-        <dc:title>Date</dc:title>
-        <upnp:class>object.container</upnp:class>
-    </container>
-    <container id="0$=Genre" parentID="0" restricted="1" searchable="1">
-        <dc:title>Genre</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
     <container id="0$=All Artists" parentID="0" restricted="1" searchable="1">
         <dc:title>All Artists</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
-    <container id="0$=Composer" parentID="0" restricted="1" searchable="1">
-        <dc:title>Composer</dc:title>
-        <upnp:class>object.container</upnp:class>
-    </container>
-    <container id="0$untagged" parentID="0" restricted="1" searchable="1">
-        <dc:title>[untagged]</dc:title>
-        <upnp:class>object.container</upnp:class>
-    </container>
-    <container id="0$folders" parentID="0" restricted="1" searchable="1">
-        <dc:title>[folder view]</dc:title>
-        <upnp:class>object.container.storageFolder</upnp:class>
-    </container>
 </DIDL-Lite>"#,
         );
-        assert_eq!(number_returned, 10);
-        assert_eq!(total_matches, 10);
+        assert_eq!(number_returned, 4);
+        assert_eq!(total_matches, 4);
         assert_eq!(update_id, "25");
     }
 
@@ -2516,14 +2486,10 @@ mod tests {
         <dc:title>9 items</dc:title>
         <upnp:class>object.container</upnp:class>
     </container>
-    <container id="0$=Artist$28$=Date" parentID="0$=Artist$28" restricted="1" searchable="1">
-        <dc:title>Date</dc:title>
-        <upnp:class>object.container</upnp:class>
-    </container>
 </DIDL-Lite>"#,
         );
-        assert_eq!(number_returned, 3);
-        assert_eq!(total_matches, 3);
+        assert_eq!(number_returned, 2);
+        assert_eq!(total_matches, 2);
         assert_eq!(update_id, "25");
     }
 
