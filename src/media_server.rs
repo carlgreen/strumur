@@ -880,8 +880,8 @@ fn generate_search_response(
                             write!(
                                 result,
                                 // childCount="{track_count}"
-                                // {date}<upnp:artist>{artist_name}</upnp:artist><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}
-                                r#"<container id="0$albums$*a{album_id}" parentID="0$albums" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:creator>{artist_name}</dc:creator><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+                                // {date}<upnp:artist>{artist_name}</upnp:artist>{cover}
+                                r#"<container id="0$albums$*a{album_id}" parentID="0$albums" restricted="1" searchable="1"><dc:title>{album_title}</dc:title><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
                             ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
 
                             number_returned += 1;
@@ -2968,6 +2968,7 @@ mod tests {
     <container id="0$albums$*a9" parentID="0$albums" restricted="1" searchable="1">
         <dc:title>g1</dc:title>
         <dc:creator>ghi</dc:creator>
+        <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
     <item id="0$albums$*a9$*i6" parentID="0$albums$*a9" restricted="1">
