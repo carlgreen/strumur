@@ -84,6 +84,7 @@ pub struct Track {
 
 #[derive(Clone, Debug)]
 pub struct Collection {
+    last_id: u128,
     system_update_id: u16, // TODO maintain this value
     pub base: PathBuf,
     artists: Vec<Artist>,
@@ -93,15 +94,23 @@ impl Collection {
     #[cfg(test)]
     pub const fn new(system_update_id: u16, base: PathBuf, artists: Vec<Artist>) -> Self {
         Self {
+            last_id: 0,
             system_update_id,
             base,
             artists,
         }
     }
 
+    #[inline]
+    const fn next_id(&mut self) -> u128 {
+        self.last_id += 1;
+        self.last_id
+    }
+
     pub fn populate(location: &str) -> Self {
         info!("populating collection from {location:?}");
         let mut collection = Self {
+            last_id: 0,
             system_update_id: 0,
             base: Path::new(location).to_path_buf(),
             artists: vec![],
@@ -109,9 +118,7 @@ impl Collection {
 
         let start = Instant::now();
 
-        let mut last_id = 0;
-
-        read_dir(location, location, &mut collection, &mut last_id);
+        read_dir(location, location, &mut collection);
 
         info!("Populated collection in {:.2?}", start.elapsed());
 
@@ -161,17 +168,12 @@ impl Collection {
     }
 }
 
-fn read_dir(location: &str, path: &str, collection: &mut Collection, last_id: &mut u128) {
+fn read_dir(location: &str, path: &str, collection: &mut Collection) {
     let entries = fs::read_dir(path).expect("no Music folder location in home directory");
     for entry in entries.flatten() {
         if let Ok(file_type) = entry.file_type() {
             if file_type.is_dir() {
-                read_dir(
-                    location,
-                    entry.path().to_str().unwrap(),
-                    collection,
-                    last_id,
-                );
+                read_dir(location, entry.path().to_str().unwrap(), collection);
             }
             if file_type.is_file() {
                 let display_file_name = entry.path().display().to_string();
@@ -241,10 +243,8 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection, last_id: &m
                             },
                         );
 
-                        *last_id += 1;
-
                         let track = Track {
-                            id: *last_id,
+                            id: collection.next_id(),
                             disc: disc_number,
                             number: track_number,
                             title: track_title,
@@ -263,7 +263,6 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection, last_id: &m
 
                         add_track_to_collection(
                             collection,
-                            last_id,
                             location,
                             &entry,
                             artist_name,
@@ -282,7 +281,6 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection, last_id: &m
 
 fn add_track_to_collection(
     collection: &mut Collection,
-    last_id: &mut u128,
     location: &str,
     entry: &DirEntry,
     artist_name: String,
@@ -301,9 +299,12 @@ fn add_track_to_collection(
         } else {
             let cover_url = find_album_artwork(location, entry, &album_title);
 
-            *last_id += 1;
+            // can't borrow mutable collection again by method, but can modify the same bits directly?
+            // collection.next_id();
+            collection.last_id += 1;
+            let album_id = collection.last_id;
             let album = Album {
-                id: *last_id,
+                id: album_id,
                 title: album_title,
                 date: release_date,
                 tracks: vec![track],
@@ -314,18 +315,16 @@ fn add_track_to_collection(
     } else {
         let cover_url = find_album_artwork(location, entry, &album_title);
 
-        *last_id += 1;
         let album = Album {
-            id: *last_id,
+            id: collection.next_id(),
             title: album_title,
             date: release_date,
             tracks: vec![track],
             cover: cover_url.unwrap_or_default(),
         };
 
-        *last_id += 1;
         let artist = Artist {
-            id: *last_id,
+            id: collection.next_id(),
             name: artist_name,
             albums: vec![album],
         };
