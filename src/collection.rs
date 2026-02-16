@@ -101,7 +101,6 @@ impl Collection {
         }
     }
 
-    #[inline]
     const fn next_id(&mut self) -> u128 {
         self.last_id += 1;
         self.last_id
