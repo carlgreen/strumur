@@ -443,10 +443,10 @@ fn generate_browse_items_response(
                     r#"<item id="0$items${id}" parentID="0$items" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
                 ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
             }
-            starting_index = starting_index.saturating_sub(tracks_len);
             if number_returned >= requested_count {
                 break 'artists;
             }
+            starting_index = starting_index.saturating_sub(tracks_len);
         }
     }
     format_response(&result, number_returned, total_matches)
