@@ -1,6 +1,7 @@
 use std::fs;
 use std::fs::DirEntry;
 use std::fs::File;
+use std::fs::Metadata;
 use std::io::BufReader;
 use std::io::Seek;
 use std::path::Path;
@@ -184,91 +185,14 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                     if is_flac(&mut br) {
                         br.rewind()
                             .expect("could not return to start of FLAC reader");
-                        let metadata = extract_flac_metadata(&mut br);
 
-                        let duration = metadata.duration();
-                        let size = file_metadata.len();
-                        let bits_per_sample = metadata.bits;
-                        let sample_frequency = metadata.sample_rate;
-                        let channels = metadata.channels;
-
-                        let field_names = {
-                            let mut names = metadata.get_field_names().collect::<Vec<&str>>();
-                            names.sort_unstable();
-                            names
-                        };
-                        // info!("field_names: {field_names:#?}");
-
-                        let Some(artist_name) = metadata.get_field("ARTIST") else {
-                            warn!("no artist name found in {display_file_name}");
-                            debug!("fields in {display_file_name}: {field_names:?}");
-                            continue;
-                        };
-                        let Some(album_title) = metadata.get_field("ALBUM") else {
-                            warn!("no album title found in {display_file_name}");
-                            debug!("fields in {display_file_name}: {field_names:?}");
-                            continue;
-                        };
-                        let disc_number = metadata.get_field("DISCNUMBER").map_or_else(
-                            || {
-                                // no disc number is probably the norm
-                                0
-                            },
-                            |number| parse_number(&number, 0),
-                        );
-                        let track_number = metadata.get_field("TRACKNUMBER").map_or_else(
-                            || {
-                                warn!("no track number found in {display_file_name}");
-                                debug!("fields in {display_file_name}: {field_names:?}",);
-                                0
-                            },
-                            |number| parse_number(&number, 0),
-                        );
-                        let Some(track_title) = metadata.get_field("TITLE") else {
-                            warn!("no track title found in {display_file_name}");
-                            debug!("fields in {display_file_name}: {field_names:?}");
-                            continue;
-                        };
-                        let release_date = metadata.get_field("DATE").map_or_else(
-                            || {
-                                warn!("no release date found in {display_file_name}");
-                                debug!("fields in {display_file_name}: {field_names:?}");
-                                None
-                            },
-                            |mut datestr| {
-                                fill_in_missing_date_parts(&mut datestr);
-                                Some(datestr.parse::<NaiveDate>().unwrap_or_else(|err| {
-                                    panic!("{err}. expected valid date not {datestr}")
-                                }))
-                            },
-                        );
-
-                        let track = Track {
-                            id: collection.next_id(),
-                            disc: disc_number,
-                            number: track_number,
-                            title: track_title,
-                            file: entry
-                                .path()
-                                .as_os_str()
-                                .to_str()
-                                .expect("can only handle utf8 for now") // maybe just store as Path?
-                                .to_owned(),
-                            duration,
-                            size,
-                            bits_per_sample,
-                            sample_frequency,
-                            channels,
-                        };
-
-                        add_track_to_collection(
-                            collection,
+                        process_flac(
                             location,
                             &entry,
-                            artist_name,
-                            album_title,
-                            release_date,
-                            track,
+                            &mut br,
+                            &display_file_name,
+                            &file_metadata,
+                            collection,
                         );
                     } else {
                         trace!("{display_file_name} is not supported");
@@ -277,6 +201,104 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
             }
         }
     }
+}
+
+fn process_flac(
+    location: &str,
+    entry: &DirEntry,
+    br: &mut BufReader<File>,
+    display_file_name: &str,
+    file_metadata: &Metadata,
+    collection: &mut Collection,
+) {
+    let metadata = extract_flac_metadata(br);
+
+    let duration = metadata.duration();
+    let size = file_metadata.len();
+    let bits_per_sample = metadata.bits;
+    let sample_frequency = metadata.sample_rate;
+    let channels = metadata.channels;
+
+    let field_names = {
+        let mut names = metadata.get_field_names().collect::<Vec<&str>>();
+        names.sort_unstable();
+        names
+    };
+    // info!("field_names: {field_names:#?}");
+
+    let Some(artist_name) = metadata.get_field("ARTIST") else {
+        warn!("no artist name found in {display_file_name}");
+        debug!("fields in {display_file_name}: {field_names:?}");
+        return;
+    };
+    let Some(album_title) = metadata.get_field("ALBUM") else {
+        warn!("no album title found in {display_file_name}");
+        debug!("fields in {display_file_name}: {field_names:?}");
+        return;
+    };
+    let disc_number = metadata.get_field("DISCNUMBER").map_or_else(
+        || {
+            // no disc number is probably the norm
+            0
+        },
+        |number| parse_number(&number, 0),
+    );
+    let track_number = metadata.get_field("TRACKNUMBER").map_or_else(
+        || {
+            warn!("no track number found in {display_file_name}");
+            debug!("fields in {display_file_name}: {field_names:?}",);
+            0
+        },
+        |number| parse_number(&number, 0),
+    );
+    let Some(track_title) = metadata.get_field("TITLE") else {
+        warn!("no track title found in {display_file_name}");
+        debug!("fields in {display_file_name}: {field_names:?}");
+        return;
+    };
+    let release_date = metadata.get_field("DATE").map_or_else(
+        || {
+            warn!("no release date found in {display_file_name}");
+            debug!("fields in {display_file_name}: {field_names:?}");
+            None
+        },
+        |mut datestr| {
+            fill_in_missing_date_parts(&mut datestr);
+            Some(
+                datestr
+                    .parse::<NaiveDate>()
+                    .unwrap_or_else(|err| panic!("{err}. expected valid date not {datestr}")),
+            )
+        },
+    );
+
+    let track = Track {
+        id: collection.next_id(),
+        disc: disc_number,
+        number: track_number,
+        title: track_title,
+        file: entry
+            .path()
+            .as_os_str()
+            .to_str()
+            .expect("can only handle utf8 for now") // maybe just store as Path?
+            .to_owned(),
+        duration,
+        size,
+        bits_per_sample,
+        sample_frequency,
+        channels,
+    };
+
+    add_track_to_collection(
+        collection,
+        location,
+        entry,
+        artist_name,
+        album_title,
+        release_date,
+        track,
+    );
 }
 
 fn parse_number(n: &str, default: u8) -> u8 {
