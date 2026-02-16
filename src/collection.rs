@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use chrono::NaiveDate;
 use chrono::NaiveTime;
+use log::error;
 use log::{debug, info, trace, warn};
 
 use crate::flac::extract_flac_metadata;
@@ -213,7 +214,7 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                                 // no disc number is probably the norm
                                 0
                             },
-                            |number| number.parse::<u8>().expect("number"),
+                            |number| parse_number(&number, 0),
                         );
                         let track_number = metadata.get_field("TRACKNUMBER").map_or_else(
                             || {
@@ -221,7 +222,7 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                                 debug!("fields in {display_file_name}: {field_names:?}",);
                                 0
                             },
-                            |number| number.parse::<u8>().expect("number"),
+                            |number| parse_number(&number, 0),
                         );
                         let Some(track_title) = metadata.get_field("TITLE") else {
                             warn!("no track title found in {display_file_name}");
@@ -274,6 +275,21 @@ fn read_dir(location: &str, path: &str, collection: &mut Collection) {
                     }
                 }
             }
+        }
+    }
+}
+
+fn parse_number(n: &str, default: u8) -> u8 {
+    if n.is_empty() {
+        warn!("empty number field");
+        return default;
+    }
+
+    match n.parse::<u8>() {
+        Ok(n) => n,
+        Err(err) => {
+            error!("could not parse '{n}' as u8: {err}");
+            default
         }
     }
 }
