@@ -6,6 +6,8 @@ use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
+use std::net::TcpListener;
+use std::thread;
 
 use chrono::NaiveDate;
 use chrono::NaiveTime;
@@ -56,6 +58,32 @@ const CDS_GET_TRANSFER_PROGRESS_ACTION: &str = "GetTransferProfress";
 const CDS_DELETE_RESOURCE_ACTION: &str = "DeleteResource";
 
 const CDS_CREATE_REFERENCE_ACTION: &str = "CreateReference";
+
+pub fn listen(device_uuid: Uuid, collection: Collection) {
+    let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
+    thread::spawn(move || {
+        info!(
+            "listening on {}",
+            listener.local_addr().expect("could not get local address")
+        );
+        for stream in listener.incoming() {
+            let stream = stream.expect("could not get TCP stream");
+            let addr = format!(
+                "http://{}/Content",
+                stream.local_addr().expect("could not get stream address")
+            );
+            let peer_addr = stream
+                .peer_addr()
+                .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
+            trace!("incoming request from {peer_addr}");
+            let collection = collection.clone(); // TODO i don't want to clone this.
+
+            thread::spawn(move || {
+                handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
+            });
+        }
+    });
+}
 
 #[derive(Debug)]
 enum ParseRequestError {
@@ -1014,7 +1042,7 @@ fn include_by_search_exp(
     }
 }
 
-pub fn handle_device_connection(
+fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
     collection: &Collection,

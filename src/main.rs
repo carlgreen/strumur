@@ -10,15 +10,12 @@ use std::fs::read_to_string;
 use std::io::ErrorKind;
 use std::io::Result;
 use std::io::Write as _;
-use std::net::TcpListener;
-use std::thread;
 
-use log::{Level, info, trace};
+use log::{Level, info};
 use stderrlog::Timestamp;
 use uuid::Uuid;
 
 use crate::collection::Collection;
-use crate::media_server::handle_device_connection;
 
 const DEVICEID_FILE: &str = ".deviceid";
 
@@ -43,29 +40,7 @@ fn main() -> Result<()> {
 
     let collection = Collection::populate(location);
 
-    let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
-    thread::spawn(move || {
-        info!(
-            "listening on {}",
-            listener.local_addr().expect("could not get local address")
-        );
-        for stream in listener.incoming() {
-            let stream = stream.expect("could not get TCP stream");
-            let addr = format!(
-                "http://{}/Content",
-                stream.local_addr().expect("could not get stream address")
-            );
-            let peer_addr = stream
-                .peer_addr()
-                .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
-            trace!("incoming request from {peer_addr}");
-            let collection = collection.clone(); // TODO i don't want to clone this.
-
-            thread::spawn(move || {
-                handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
-            });
-        }
-    });
+    media_server::listen(device_uuid, collection);
 
     advertise::advertisement_loop(device_uuid)
 }
