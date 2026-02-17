@@ -33,8 +33,10 @@ impl Artist {
         self.albums.iter()
     }
 
-    pub fn get_tracks(&self) -> impl Iterator<Item = &Track> {
-        self.albums.iter().flat_map(Album::get_tracks)
+    pub fn get_tracks(&self) -> impl Iterator<Item = (&Album, &Track)> {
+        self.albums
+            .iter()
+            .flat_map(|album| album.get_tracks().map(move |track| (album, track)))
     }
 }
 
