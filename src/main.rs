@@ -38,10 +38,10 @@ fn main() -> Result<()> {
         .init()
         .unwrap();
 
-    let device_uuid = match get_device_uuid(DEVICEID_FILE) {
-        Ok(device_uuid) => device_uuid,
-        Err(err) => panic!("{err}"),
-    };
+    let device_uuid = get_device_uuid(DEVICEID_FILE).unwrap_or_else(|err| {
+        println!("Problem with device ID: {err}");
+        process::exit(1);
+    });
 
     let collection = Collection::populate(&config.location);
 
