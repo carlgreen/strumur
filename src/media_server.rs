@@ -890,9 +890,18 @@ impl SearchOptionsBuilder {
         self
     }
 
-    fn search_criteria(&mut self, search_criteria: String) -> &Self {
-        self.0.search_criteria = Some(search_criteria);
-        self
+    fn search_criteria(&mut self, search_criteria: &str) -> Result<&Self, Error> {
+        match parse_search_criteria(search_criteria) {
+            Ok(crit) => {
+                // already an option so just hope it is not overwriting something useful
+                self.0.search_criteria = crit;
+                Ok(self)
+            }
+            Err(err) => {
+                warn!("could not parse {search_criteria}: {err:?}");
+                Err(err)
+            }
+        }
     }
 
     fn filter(&mut self, filter: String) -> &Self {
@@ -920,17 +929,17 @@ impl SearchOptionsBuilder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct SearchOptions {
     container_id: Option<Vec<String>>,
-    search_criteria: Option<String>,
+    search_criteria: Option<SearchCrit>,
     filter: Option<Filter>,
     starting_index: Option<u16>,
     requested_count: Option<u16>,
     sort_criteria: Option<String>,
 }
 
-fn parse_soap_search_request(body: &str) -> SearchOptions {
+fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
     let mut builder = SearchOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
@@ -953,7 +962,7 @@ fn parse_soap_search_request(body: &str) -> SearchOptions {
                     "SearchCriteria" => {
                         let search_criteria = child.as_element().unwrap().get_text();
                         if let Some(search_criteria) = search_criteria {
-                            builder.search_criteria(search_criteria.to_string());
+                            builder.search_criteria(search_criteria.as_ref())?;
                         }
                     }
                     "Filter" => {
@@ -999,7 +1008,7 @@ fn parse_soap_search_request(body: &str) -> SearchOptions {
     debug!("browse options: {options:?}");
 
     if let Some(search_criteria) = &options.search_criteria {
-        warn!("search criteria: {search_criteria}. what's up");
+        warn!("search criteria: {search_criteria:?}. what's up");
     } else {
         warn!("no search criteria. why are we here?");
     }
@@ -1015,7 +1024,7 @@ fn parse_soap_search_request(body: &str) -> SearchOptions {
         warn!("no sort criteria. do i just make this up?");
     }
 
-    options
+    Ok(options)
 }
 
 /// based on "ContentDirectory:1 Service Template" section 2.5.5 Search Criteria
@@ -1027,7 +1036,6 @@ fn parse_search_criteria(input: &str) -> std::result::Result<Option<SearchCrit>,
 fn generate_search_response(
     collection: &Collection,
     container_id: &[String],
-    search_criteria: Option<&SearchCrit>,
     options: &SearchOptions,
     addr: &str,
 ) -> (String, &'static str) {
@@ -1041,8 +1049,13 @@ fn generate_search_response(
             for artist in collection.get_artists() {
                 let artist_id = artist.id;
                 let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
-                let include =
-                    include_this(search_criteria, &SearchWhat::Artist, None, None, artist);
+                let include = include_this(
+                    options.search_criteria.as_ref(),
+                    &SearchWhat::Artist,
+                    None,
+                    None,
+                    artist,
+                );
                 if include {
                     if total_matches >= starting_index && number_returned < requested_count {
                         write!(
@@ -1059,7 +1072,7 @@ fn generate_search_response(
                     let album_id = album.id;
                     let album_title = xml::escape::escape_str_attribute(&album.title);
                     let include = include_this(
-                        search_criteria,
+                        options.search_criteria.as_ref(),
                         &SearchWhat::Album,
                         None,
                         Some(album),
@@ -1085,7 +1098,7 @@ fn generate_search_response(
 
                     for track in album.get_tracks() {
                         let include = include_this(
-                            search_criteria,
+                            options.search_criteria.as_ref(),
                             &SearchWhat::Track,
                             Some(track),
                             Some(album),
@@ -1379,43 +1392,23 @@ fn handle_content_directory_actions<'a>(
             )
         }
         CDS_SEARCH_ACTION => {
-            let options = body.map_or_else(
+            let Ok(options) = body.map_or_else(
                 || {
                     panic!("no body");
                 },
                 |body| parse_soap_search_request(&body),
-            );
-
-            let search_criteria = options.search_criteria.clone().unwrap_or_default();
-            info!(
-                "search:\n\tcontainer_id: {:?}\n\tsearch_criteria: {:?}\n\tstarting_index: {:?}\n\trequested_count: {:?}",
-                options.container_id,
-                search_criteria,
-                options.starting_index,
-                options.requested_count
-            );
-
-            let search_criteria = match parse_search_criteria(&search_criteria) {
-                Ok(search_criteria) => search_criteria,
-                Err(err) => {
-                    warn!("could not parse {search_criteria}: {err:?}");
-                    return soap_upnp_error(708, "Invalid search criteria");
-                }
+            ) else {
+                // big assumption that this is the only error coming
+                return soap_upnp_error(708, "Invalid search criteria");
             };
-            trace!("search criteria: {search_criteria:?}");
+            trace!("search criteria: {:?}", options.search_criteria);
 
             let container_id = &options.container_id.clone().unwrap_or_else(|| {
                 warn!("no container id, assuming 0");
                 vec!["0".to_string()]
             });
 
-            generate_search_response(
-                collection,
-                container_id,
-                search_criteria.as_ref(),
-                &options,
-                addr,
-            )
+            generate_search_response(collection, container_id, &options, addr)
         }
         CDS_CREATE_OBJECT_ACTION
         | CDS_DESTROY_OBJECT_ACTION
