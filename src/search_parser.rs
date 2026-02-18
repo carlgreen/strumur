@@ -1,7 +1,7 @@
 use log::trace;
 
 #[derive(Clone)]
-pub struct Scanner {
+struct Scanner {
     cursor: usize,
     characters: Vec<char>,
 }
@@ -95,6 +95,12 @@ impl Scanner {
     }
 }
 
+/// based on "ContentDirectory:1 Service Template" section 2.5.5 Search Criteria
+pub fn parse_search_criteria(input: &str) -> std::result::Result<Option<SearchCrit>, Error> {
+    let mut scanner = Scanner::new(input);
+    search_crit(&mut scanner)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     Character(usize),
@@ -118,7 +124,7 @@ pub enum SearchCrit {
 ///
 /// The special value ‘*’ means “find everything”, or “return all objects that exist beneath the
 /// selected starting container”.
-pub fn search_crit(scanner: &mut Scanner) -> std::result::Result<Option<SearchCrit>, Error> {
+fn search_crit(scanner: &mut Scanner) -> std::result::Result<Option<SearchCrit>, Error> {
     match scanner.peek() {
         Some('*') => {
             scanner.pop();
@@ -728,13 +734,14 @@ mod parse_tests {
                 ))),
             ))))
         );
+    }
 
-        // here follows actual searches i've seen
-
+    #[test]
+    fn test_real_searches() {
         assert_eq!(
-            search_crit(&mut Scanner::new(
+            parse_search_criteria(
                 r#"upnp:class = "object.container.person.musicArtist" and (upnp:artist contains "lo" or dc:title contains "lo")"#
-            )),
+            ),
             Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
                 Box::new(SearchExp::Rel(RelExp::BinOp(
                     "upnp:class".to_string(),
@@ -759,9 +766,9 @@ mod parse_tests {
         );
 
         assert_eq!(
-            search_crit(&mut Scanner::new(
+            parse_search_criteria(
                 r#"upnp:class = "object.container.album.musicAlbum" and (upnp:album contains "lo" or dc:title contains "lo" or upnp:artist contains "lo")"#,
-            )),
+            ),
             Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
                 Box::new(SearchExp::Rel(RelExp::BinOp(
                     "upnp:class".to_string(),
@@ -794,9 +801,9 @@ mod parse_tests {
         );
 
         assert_eq!(
-            search_crit(&mut Scanner::new(
+            parse_search_criteria(
                 r#"upnp:class derivedfrom "object.item.audioItem" and (dc:title contains "lo" or upnp:artist contains "lo" or dc:creator contains "lo")"#,
-            )),
+            ),
             Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
                 Box::new(SearchExp::Rel(RelExp::BinOp(
                     "upnp:class".to_string(),
@@ -829,9 +836,9 @@ mod parse_tests {
         );
 
         assert_eq!(
-            search_crit(&mut Scanner::new(
+            parse_search_criteria(
                 r#"upnp:class = "object.container.playlistContainer" and dc:title contains "lo""#
-            )),
+            ),
             Ok(Some(SearchCrit::SearchExp(SearchExp::Log(
                 Box::new(SearchExp::Rel(RelExp::BinOp(
                     "upnp:class".to_string(),

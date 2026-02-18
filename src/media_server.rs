@@ -18,8 +18,8 @@ use xmltree::Element;
 
 use crate::collection::{Album, Artist, Collection, Track};
 use crate::search_parser::{
-    BinOp, BoolVal, Error, ExistsOp, LogOp, QuotedVal, RelExp, Scanner, SearchCrit, SearchExp,
-    StringOp, search_crit,
+    BinOp, BoolVal, ExistsOp, LogOp, QuotedVal, RelExp, SearchCrit, SearchExp, StringOp,
+    parse_search_criteria,
 };
 
 const HTTP_PROTOCOL_NAME: &str = "HTTP";
@@ -1025,12 +1025,6 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
     }
 
     Ok(options)
-}
-
-/// based on "ContentDirectory:1 Service Template" section 2.5.5 Search Criteria
-fn parse_search_criteria(input: &str) -> std::result::Result<Option<SearchCrit>, Error> {
-    let mut scanner = Scanner::new(input);
-    search_crit(&mut scanner)
 }
 
 fn generate_search_response(
