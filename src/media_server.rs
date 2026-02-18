@@ -944,8 +944,8 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
     match body.get_child("Search") {
-        Some(browse) => {
-            for child in &browse.children {
+        Some(search) => {
+            for child in &search.children {
                 match child.as_element().unwrap().name.as_str() {
                     "ContainerID" => {
                         builder.container_id(
@@ -1000,12 +1000,12 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
                 }
             }
         }
-        None => panic!("no Browse child"),
+        None => panic!("no Search child"),
     }
 
     let options = builder.build();
 
-    debug!("browse options: {options:?}");
+    debug!("search options: {options:?}");
 
     if let Some(search_criteria) = &options.search_criteria {
         warn!("search criteria: {search_criteria:?}. what's up");
