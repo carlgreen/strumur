@@ -5,13 +5,14 @@ mod media_server;
 mod search_parser;
 
 use std::env;
+use std::error::Error;
 use std::fs::File;
 use std::fs::read_to_string;
 use std::io::ErrorKind;
-use std::io::Result;
 use std::io::Write as _;
 use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
+use std::process;
 
 use get_if_addrs::IfAddr;
 use log::{Level, info};
@@ -22,12 +23,13 @@ use crate::collection::Collection;
 
 const DEVICEID_FILE: &str = ".deviceid";
 
-fn main() -> Result<()> {
+fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let location = args
-        .get(1)
-        .expect("required argument missing: collection location");
+    let config = Config::build(&args).unwrap_or_else(|err| {
+        eprintln!("Configuration problem: {err}");
+        process::exit(1);
+    });
 
     stderrlog::new()
         .module(module_path!())
@@ -36,37 +38,66 @@ fn main() -> Result<()> {
         .init()
         .unwrap();
 
-    let device_uuid = match get_device_uuid(DEVICEID_FILE) {
-        Ok(device_uuid) => device_uuid,
-        Err(err) => panic!("{err}"),
-    };
+    if let Err(e) = run(&config) {
+        eprintln!("Application error: {e}");
+        process::exit(1);
+    }
+}
 
-    let collection = Collection::populate(location);
+fn run(config: &Config) -> Result<(), Box<dyn Error>> {
+    let collection = Collection::populate(&config.location);
 
-    let server_ip = {
-        // start with localhost to use if nothing else is found
-        let mut ip = Ipv4Addr::LOCALHOST;
-        for iface in get_if_addrs::get_if_addrs().expect("could not get network interfaces") {
-            match iface.addr {
-                IfAddr::V4(addr) => {
-                    if !addr.is_loopback() {
-                        // this will do
-                        ip = addr.ip;
-                        break;
+    media_server::listen(config.device_uuid, config.server, collection);
+
+    advertise::advertisement_loop(config.device_uuid, config.server)?;
+
+    Ok(())
+}
+
+struct Config {
+    device_uuid: Uuid,
+    location: String,
+    server: SocketAddrV4,
+}
+
+impl Config {
+    fn build(args: &[String]) -> Result<Self, String> {
+        let location = args
+            .get(1)
+            .ok_or("required argument missing: collection location")?
+            .clone();
+
+        let device_uuid = get_device_uuid(DEVICEID_FILE).map_err(|err| format!("{err}"))?;
+
+        let server_ip = {
+            // start with localhost to use if nothing else is found
+            let mut ip = Ipv4Addr::LOCALHOST;
+            for iface in get_if_addrs::get_if_addrs()
+                .map_err(|err| format!("could not get network interfaces: {err}"))?
+            {
+                match iface.addr {
+                    IfAddr::V4(addr) => {
+                        if !addr.is_loopback() {
+                            // this will do
+                            ip = addr.ip;
+                            break;
+                        }
+                    }
+                    IfAddr::V6(_) => {
+                        // ignore IPv6 for now
                     }
                 }
-                IfAddr::V6(_) => {
-                    // ignore IPv6 for now
-                }
             }
-        }
-        ip
-    };
-    let server = SocketAddrV4::new(server_ip, 7878);
+            ip
+        };
+        let server = SocketAddrV4::new(server_ip, 7878);
 
-    media_server::listen(device_uuid, server, collection);
-
-    advertise::advertisement_loop(device_uuid, server)
+        Ok(Self {
+            device_uuid,
+            location,
+            server,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -82,7 +113,7 @@ impl std::fmt::Display for DeviceUuidError {
                 write!(f, "invalid device ID {contents}: {err}")
             }
             Self::IoError(err) => {
-                panic!("could not read device id: {err}");
+                write!(f, "could not read device id: {err}")
             }
         }
     }
@@ -97,7 +128,7 @@ impl From<std::io::Error> for DeviceUuidError {
 impl std::error::Error for DeviceUuidError {}
 
 // TODO this file should probably be somewhere appropriate
-fn get_device_uuid(deviceid_file: &str) -> std::result::Result<Uuid, DeviceUuidError> {
+fn get_device_uuid(deviceid_file: &str) -> Result<Uuid, DeviceUuidError> {
     match read_to_string(deviceid_file) {
         Ok(contents) => match Uuid::parse_str(&contents) {
             Ok(device_uuid) => {
