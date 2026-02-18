@@ -10,7 +10,10 @@ use std::fs::read_to_string;
 use std::io::ErrorKind;
 use std::io::Result;
 use std::io::Write as _;
+use std::net::Ipv4Addr;
+use std::net::SocketAddrV4;
 
+use get_if_addrs::IfAddr;
 use log::{Level, info};
 use stderrlog::Timestamp;
 use uuid::Uuid;
@@ -40,9 +43,30 @@ fn main() -> Result<()> {
 
     let collection = Collection::populate(location);
 
-    media_server::listen(device_uuid, collection);
+    let server_ip = {
+        // start with localhost to use if nothing else is found
+        let mut ip = Ipv4Addr::LOCALHOST;
+        for iface in get_if_addrs::get_if_addrs().expect("could not get network interfaces") {
+            match iface.addr {
+                IfAddr::V4(addr) => {
+                    if !addr.is_loopback() {
+                        // this will do
+                        ip = addr.ip;
+                        break;
+                    }
+                }
+                IfAddr::V6(_) => {
+                    // ignore IPv6 for now
+                }
+            }
+        }
+        ip
+    };
+    let server = SocketAddrV4::new(server_ip, 7878);
 
-    advertise::advertisement_loop(device_uuid)
+    media_server::listen(device_uuid, server, collection);
+
+    advertise::advertisement_loop(device_uuid, server)
 }
 
 #[derive(Debug)]

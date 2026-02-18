@@ -3,6 +3,7 @@ extern crate socket2;
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::io::Result;
+use std::net::SocketAddrV4;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread;
 use std::time::Duration;
@@ -134,7 +135,7 @@ fn handle_search_error(err: &HandleSearchMessageError) {
     }
 }
 
-pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
+pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()> {
     let mut rng = rand::rng();
 
     let addr: SocketAddr = SSDP_IPV4_MULTICAST_ADDRESS
@@ -178,7 +179,7 @@ pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
     // packet. There is no guarantee that the above 3+2d+k messages will arrive in a particular
     // order.
 
-    let location = "http://192.168.1.34:7878/Device.xml"; // TODO get this IP address properly
+    let location = format!("http://{server}/Device.xml");
     let max_age = Duration::from_secs(1800);
 
     let info = os_info::get();
@@ -194,7 +195,7 @@ pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
 
     let sys_info = SysInfo::new(device_uuid, &os_version, boot_id);
 
-    advertise_discovery_messages(&sys_info, location, max_age, addr, &socket);
+    advertise_discovery_messages(&sys_info, &location, max_age, addr, &socket);
 
     loop {
         let mut buffer = Vec::with_capacity(1024);
@@ -208,12 +209,13 @@ pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
                 // let os_version = os_version.clone();
                 let mut socket =
                     ReallySocketToMe::new(socket.try_clone().expect("could not clone socket"));
+                let location = location.clone();
                 thread::spawn(move || {
                     let mut rng = rand::rng();
 
                     if let Err(err) = handle_search_message(
                         &sys_info,
-                        location,
+                        &location,
                         max_age,
                         &mut rng,
                         &buffer,
