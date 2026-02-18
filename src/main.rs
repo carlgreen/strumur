@@ -23,7 +23,7 @@ use crate::collection::Collection;
 
 const DEVICEID_FILE: &str = ".deviceid";
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     let args: Vec<String> = env::args().collect();
 
     let config = Config::build(&args).unwrap_or_else(|err| {
@@ -38,6 +38,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         .init()
         .unwrap();
 
+    if let Err(e) = run(&config) {
+        println!("Application error: {e}");
+        process::exit(1);
+    }
+}
+
+fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     let collection = Collection::populate(&config.location);
 
     media_server::listen(config.device_uuid, config.server, collection);
