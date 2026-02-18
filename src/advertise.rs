@@ -3,6 +3,7 @@ extern crate socket2;
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::io::Result;
+use std::net::SocketAddrV4;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread;
 use std::time::Duration;
@@ -134,7 +135,7 @@ fn handle_search_error(err: &HandleSearchMessageError) {
     }
 }
 
-pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
+pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()> {
     let mut rng = rand::rng();
 
     let addr: SocketAddr = SSDP_IPV4_MULTICAST_ADDRESS
@@ -178,27 +179,7 @@ pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
     // packet. There is no guarantee that the above 3+2d+k messages will arrive in a particular
     // order.
 
-    let server_ip = {
-        // start with localhost to use if nothing else is found
-        let mut ip = Ipv4Addr::LOCALHOST;
-        for iface in get_if_addrs::get_if_addrs().expect("could not get network interfaces") {
-            match iface.addr {
-                get_if_addrs::IfAddr::V4(addr) => {
-                    if !addr.is_loopback() {
-                        // this will do
-                        ip = addr.ip;
-                        break;
-                    }
-                }
-                get_if_addrs::IfAddr::V6(_) => {
-                    // ignore IPv6 for now
-                }
-            }
-        }
-        ip
-    };
-    info!("advertising services for {server_ip}:7878");
-    let location = format!("http://{server_ip}:7878/Device.xml");
+    let location = format!("http://{server}/Device.xml");
     let max_age = Duration::from_secs(1800);
 
     let info = os_info::get();

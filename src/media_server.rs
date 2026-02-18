@@ -6,6 +6,7 @@ use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
+use std::net::SocketAddrV4;
 use std::net::TcpListener;
 use std::thread;
 
@@ -59,8 +60,8 @@ const CDS_DELETE_RESOURCE_ACTION: &str = "DeleteResource";
 
 const CDS_CREATE_REFERENCE_ACTION: &str = "CreateReference";
 
-pub fn listen(device_uuid: Uuid, collection: Collection) {
-    let listener = TcpListener::bind("0.0.0.0:7878").unwrap();
+pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
+    let listener = TcpListener::bind(server).unwrap();
     thread::spawn(move || {
         info!(
             "listening on {}",
