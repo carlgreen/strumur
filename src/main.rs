@@ -5,10 +5,10 @@ mod media_server;
 mod search_parser;
 
 use std::env;
+use std::error::Error;
 use std::fs::File;
 use std::fs::read_to_string;
 use std::io::ErrorKind;
-use std::io::Result;
 use std::io::Write as _;
 use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
@@ -23,7 +23,7 @@ use crate::collection::Collection;
 
 const DEVICEID_FILE: &str = ".deviceid";
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
     let config = Config::build(&args).unwrap_or_else(|err| {
@@ -42,7 +42,9 @@ fn main() -> Result<()> {
 
     media_server::listen(config.device_uuid, config.server, collection);
 
-    advertise::advertisement_loop(config.device_uuid, config.server)
+    advertise::advertisement_loop(config.device_uuid, config.server)?;
+
+    Ok(())
 }
 
 struct Config {
@@ -52,7 +54,7 @@ struct Config {
 }
 
 impl Config {
-    fn build(args: &[String]) -> std::result::Result<Self, String> {
+    fn build(args: &[String]) -> Result<Self, String> {
         let location = args
             .get(1)
             .ok_or("required argument missing: collection location")?
@@ -119,7 +121,7 @@ impl From<std::io::Error> for DeviceUuidError {
 impl std::error::Error for DeviceUuidError {}
 
 // TODO this file should probably be somewhere appropriate
-fn get_device_uuid(deviceid_file: &str) -> std::result::Result<Uuid, DeviceUuidError> {
+fn get_device_uuid(deviceid_file: &str) -> Result<Uuid, DeviceUuidError> {
     match read_to_string(deviceid_file) {
         Ok(contents) => match Uuid::parse_str(&contents) {
             Ok(device_uuid) => {
