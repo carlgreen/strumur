@@ -1039,6 +1039,18 @@ fn generate_search_response(
     options: &SearchOptions,
     addr: &str,
 ) -> (String, &'static str) {
+    // TODO do this stuff
+    if options.search_criteria.is_none() {
+        warn!("no search criteria. why are we here?");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let search_response = match container_id {
         [root] if root == "0" => {
             let starting_index = options.starting_index.unwrap().into();
