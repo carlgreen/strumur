@@ -192,10 +192,44 @@ fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> O
     }
 }
 
+struct BrowseOptionsBuilder(BrowseOptions);
+impl BrowseOptionsBuilder {
+    const fn new() -> Self {
+        Self(BrowseOptions {
+            object_id: None,
+            starting_index: None,
+            requested_count: None,
+        })
+    }
+
+    fn object_id(&mut self, object_id: Vec<String>) -> &Self {
+        self.0.object_id = Some(object_id);
+        self
+    }
+
+    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+        self.0.starting_index = Some(starting_index);
+        self
+    }
+
+    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+        self.0.requested_count = Some(requested_count);
+        self
+    }
+
+    fn build(self) -> BrowseOptions {
+        self.0
+    }
+}
+
+struct BrowseOptions {
+    object_id: Option<Vec<String>>,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+}
+
 fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
-    let mut object_id = None;
-    let mut starting_index: Option<u16> = None;
-    let mut requested_count: Option<u16> = None;
+    let mut builder = BrowseOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
     match body.get_child("Browse") {
@@ -203,7 +237,7 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
             for child in &browse.children {
                 match child.as_element().unwrap().name.as_str() {
                     "ObjectID" => {
-                        object_id = Some(
+                        builder.object_id(
                             child
                                 .as_element()
                                 .unwrap()
@@ -231,7 +265,7 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
                         }
                     }
                     "StartingIndex" => {
-                        starting_index = Some(
+                        builder.starting_index(
                             child
                                 .as_element()
                                 .unwrap()
@@ -242,7 +276,7 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
                         );
                     }
                     "RequestedCount" => {
-                        requested_count = Some(
+                        builder.requested_count(
                             child
                                 .as_element()
                                 .unwrap()
@@ -267,7 +301,12 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
         None => panic!("no Browse child"),
     }
 
-    (object_id, starting_index, requested_count)
+    let options = builder.build();
+    (
+        options.object_id,
+        options.starting_index,
+        options.requested_count,
+    )
 }
 
 enum UPNPError {
