@@ -211,12 +211,12 @@ impl BrowseOptionsBuilder {
     }
 
     fn browse_flag(&mut self, browse_flag: String) -> &Self {
-        self.0.browse_flag = Some(browse_flag);
+        self.0.browse_flag = Some(browse_flag.into());
         self
     }
 
     fn filter(&mut self, filter: String) -> &Self {
-        self.0.filter = Some(filter);
+        self.0.filter = Some(filter.into());
         self
     }
 
@@ -243,11 +243,41 @@ impl BrowseOptionsBuilder {
 #[derive(Debug, Clone)]
 struct BrowseOptions {
     object_id: Option<Vec<String>>,
-    browse_flag: Option<String>,
-    filter: Option<String>,
+    browse_flag: Option<BrowseFlag>,
+    filter: Option<Filter>,
     starting_index: Option<u16>,
     requested_count: Option<u16>,
     sort_criteria: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum BrowseFlag {
+    DirectChildren,
+    Flag(String),
+}
+
+impl From<String> for BrowseFlag {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "BrowseDirectChildren" => Self::DirectChildren,
+            _ => Self::Flag(s),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum Filter {
+    All,
+    Criteria(String),
+}
+
+impl From<String> for Filter {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "*" => Self::All,
+            _ => Self::Criteria(s),
+        }
+    }
 }
 
 fn parse_soap_browse_request(body: &str) -> BrowseOptions {
@@ -318,17 +348,15 @@ fn parse_soap_browse_request(body: &str) -> BrowseOptions {
     debug!("browse options: {options:?}");
 
     if let Some(browse_flag) = &options.browse_flag {
-        if browse_flag == "BrowseDirectChildren" {
-            info!("direct children. simple.");
-        } else {
-            warn!("browse flag: {browse_flag}. what's up");
+        match browse_flag {
+            BrowseFlag::DirectChildren => info!("direct children. simple."),
+            BrowseFlag::Flag(flag) => warn!("browse flag: {flag}. what's up"),
         }
     }
     if let Some(filter) = &options.filter {
-        if filter == "*" {
-            info!("no filter. simple.");
-        } else {
-            warn!("some filter: {filter}. what's up");
+        match filter {
+            Filter::All => info!("no filter. simple."),
+            Filter::Criteria(criteria) => warn!("some filter: {criteria}. what's up"),
         }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
