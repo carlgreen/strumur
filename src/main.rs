@@ -26,8 +26,8 @@ const DEVICEID_FILE: &str = ".deviceid";
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    let config = Config::parse(&args).unwrap_or_else(|err| {
-        println!("Problem parsing arguments: {err}");
+    let config = Config::build(&args).unwrap_or_else(|err| {
+        println!("Configuration problem: {err}");
         process::exit(1);
     });
 
@@ -37,11 +37,6 @@ fn main() -> Result<()> {
         .timestamp(Timestamp::Second)
         .init()
         .unwrap();
-
-    let device_uuid = get_device_uuid(DEVICEID_FILE).unwrap_or_else(|err| {
-        println!("Problem with device ID: {err}");
-        process::exit(1);
-    });
 
     let collection = Collection::populate(&config.location);
 
@@ -66,23 +61,29 @@ fn main() -> Result<()> {
     };
     let server = SocketAddrV4::new(server_ip, 7878);
 
-    media_server::listen(device_uuid, server, collection);
+    media_server::listen(config.device_uuid, server, collection);
 
-    advertise::advertisement_loop(device_uuid, server)
+    advertise::advertisement_loop(config.device_uuid, server)
 }
 
 struct Config {
+    device_uuid: Uuid,
     location: String,
 }
 
 impl Config {
-    fn parse(args: &[String]) -> std::result::Result<Self, &'static str> {
+    fn build(args: &[String]) -> std::result::Result<Self, String> {
         let location = args
             .get(1)
             .ok_or("required argument missing: collection location")?
             .clone();
 
-        Ok(Self { location })
+        let device_uuid = get_device_uuid(DEVICEID_FILE).map_err(|err| format!("{err}"))?;
+
+        Ok(Self {
+            device_uuid,
+            location,
+        })
     }
 }
 
