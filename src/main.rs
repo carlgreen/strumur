@@ -12,6 +12,7 @@ use std::io::Result;
 use std::io::Write as _;
 use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
+use std::process;
 
 use get_if_addrs::IfAddr;
 use log::{Level, info};
@@ -25,9 +26,10 @@ const DEVICEID_FILE: &str = ".deviceid";
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    let location = args
-        .get(1)
-        .expect("required argument missing: collection location");
+    let config = Config::parse(&args).unwrap_or_else(|err| {
+        println!("Problem parsing arguments: {err}");
+        process::exit(1);
+    });
 
     stderrlog::new()
         .module(module_path!())
@@ -41,7 +43,7 @@ fn main() -> Result<()> {
         Err(err) => panic!("{err}"),
     };
 
-    let collection = Collection::populate(location);
+    let collection = Collection::populate(&config.location);
 
     let server_ip = {
         // start with localhost to use if nothing else is found
@@ -67,6 +69,21 @@ fn main() -> Result<()> {
     media_server::listen(device_uuid, server, collection);
 
     advertise::advertisement_loop(device_uuid, server)
+}
+
+struct Config {
+    location: String,
+}
+
+impl Config {
+    fn parse(args: &[String]) -> std::result::Result<Self, &'static str> {
+        let location = args
+            .get(1)
+            .ok_or("required argument missing: collection location")?
+            .clone();
+
+        Ok(Self { location })
+    }
 }
 
 #[derive(Debug)]
