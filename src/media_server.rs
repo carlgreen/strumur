@@ -240,7 +240,7 @@ impl BrowseOptionsBuilder {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct BrowseOptions {
     object_id: Option<Vec<String>>,
     browse_flag: Option<String>,
@@ -250,7 +250,7 @@ struct BrowseOptions {
     sort_criteria: Option<String>,
 }
 
-fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
+fn parse_soap_browse_request(body: &str) -> BrowseOptions {
     let mut builder = BrowseOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
@@ -317,31 +317,27 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
 
     debug!("browse options: {options:?}");
 
-    if let Some(browse_flag) = options.browse_flag {
+    if let Some(browse_flag) = &options.browse_flag {
         if browse_flag == "BrowseDirectChildren" {
             info!("direct children. simple.");
         } else {
             warn!("browse flag: {browse_flag}. what's up");
         }
     }
-    if let Some(filter) = options.filter {
+    if let Some(filter) = &options.filter {
         if filter == "*" {
             info!("no filter. simple.");
         } else {
             warn!("some filter: {filter}. what's up");
         }
     }
-    if let Some(sort_criteria) = options.sort_criteria {
+    if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
 
-    (
-        options.object_id,
-        options.starting_index,
-        options.requested_count,
-    )
+    options
 }
 
 enum UPNPError {
@@ -375,13 +371,12 @@ fn generate_browse_root_response(collection: &Collection) -> String {
 
 fn generate_browse_albums_response(
     collection: &Collection,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &BrowseOptions,
     addr: &str,
 ) -> String {
     let total_matches = collection.get_albums().count();
-    let starting_index = starting_index.unwrap().into();
-    let requested_count: usize = requested_count.unwrap().into();
+    let starting_index = options.starting_index.unwrap().into();
+    let requested_count: usize = options.requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
     let mut skipped = 0;
@@ -419,8 +414,7 @@ fn generate_browse_albums_response(
 fn generate_browse_an_album_response(
     collection: &Collection,
     album_id: &str,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     let mut found = None;
@@ -437,8 +431,8 @@ fn generate_browse_an_album_response(
     };
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
-    let starting_index = starting_index.unwrap().into();
-    let requested_count = requested_count.unwrap().into();
+    let starting_index = options.starting_index.unwrap().into();
+    let requested_count = options.requested_count.unwrap().into();
     let mut number_returned = 0;
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = &album.title;
@@ -466,15 +460,11 @@ fn generate_browse_an_album_response(
     Ok(format_response(&result, number_returned, total_matches))
 }
 
-fn generate_browse_artists_response(
-    collection: &Collection,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
-) -> String {
+fn generate_browse_artists_response(collection: &Collection, options: &BrowseOptions) -> String {
     let artists = collection.get_artists();
     let total_matches = artists.len();
-    let starting_index = starting_index.unwrap().into();
-    let requested_count = requested_count.unwrap().into();
+    let starting_index = options.starting_index.unwrap().into();
+    let requested_count = options.requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -493,12 +483,11 @@ fn generate_browse_artists_response(
 fn generate_browse_an_artist_response(
     collection: &Collection,
     artist_id: &str,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
     let things = ["albums", "items"];
-    let starting_index = starting_index.unwrap().into();
-    let requested_count = requested_count.unwrap().into();
+    let starting_index = options.starting_index.unwrap().into();
+    let requested_count = options.requested_count.unwrap().into();
     let total_matches = things.len();
     let Some(artist) = collection
         .get_artists()
@@ -541,8 +530,7 @@ fn generate_browse_an_artist_response(
 fn generate_browse_an_artist_albums_response(
     collection: &Collection,
     artist_id: &str,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     let Some(artist) = collection
@@ -553,8 +541,8 @@ fn generate_browse_an_artist_albums_response(
     };
     let albums = artist.get_albums();
     let total_matches = albums.len();
-    let starting_index = starting_index.unwrap().into();
-    let requested_count = requested_count.unwrap().into();
+    let starting_index = options.starting_index.unwrap().into();
+    let requested_count = options.requested_count.unwrap().into();
     let mut number_returned = 0;
     let artist_id = artist.id;
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
@@ -578,8 +566,7 @@ fn generate_browse_an_artist_album_response(
     collection: &Collection,
     artist_id: &str,
     album_id: &str,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     let Some(artist) = collection
@@ -593,8 +580,8 @@ fn generate_browse_an_artist_album_response(
     };
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
-    let starting_index = starting_index.unwrap().into();
-    let requested_count = requested_count.unwrap().into();
+    let starting_index = options.starting_index.unwrap().into();
+    let requested_count = options.requested_count.unwrap().into();
     let mut number_returned = 0;
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = xml::escape::escape_str_attribute(&album.title);
@@ -624,13 +611,12 @@ fn generate_browse_an_artist_album_response(
 
 fn generate_browse_all_artists_response(
     collection: &Collection,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &BrowseOptions,
 ) -> String {
     let artists = collection.get_artists();
     let total_matches = artists.len();
-    let starting_index = starting_index.unwrap().into();
-    let requested_count = requested_count.unwrap().into();
+    let starting_index = options.starting_index.unwrap().into();
+    let requested_count = options.requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -725,68 +711,39 @@ fn wrap_with_envelope_body(body: &str) -> String {
 fn generate_browse_response(
     collection: &Collection,
     object_id: &[String],
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
-    let browse_response =
-        match object_id {
-            [root] if root == "0" => Ok(generate_browse_root_response(collection)),
-            [root, next] if root == "0" && next == "albums" => Ok(generate_browse_albums_response(
-                collection,
-                starting_index,
-                requested_count,
-                addr,
-            )),
-            [root, next, album_id] if root == "0" && next == "albums" => {
-                generate_browse_an_album_response(
-                    collection,
-                    album_id,
-                    starting_index,
-                    requested_count,
-                    addr,
-                )
-            }
-            [root, next] if root == "0" && next == "=Artist" => Ok(
-                generate_browse_artists_response(collection, starting_index, requested_count),
-            ),
-            [root, next, artist_id] if root == "0" && next == "=Artist" => {
-                generate_browse_an_artist_response(
-                    collection,
-                    artist_id,
-                    starting_index,
-                    requested_count,
-                )
-            }
-            [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
-                generate_browse_an_artist_albums_response(
-                    collection,
-                    artist_id,
-                    starting_index,
-                    requested_count,
-                    addr,
-                )
-            }
-            [root, next, artist_id, artist_what, album_id]
-                if root == "0" && next == "=Artist" && artist_what == "albums" =>
-            {
-                generate_browse_an_artist_album_response(
-                    collection,
-                    artist_id,
-                    album_id,
-                    starting_index,
-                    requested_count,
-                    addr,
-                )
-            }
-            [root, next] if root == "0" && next == "=All Artists" => Ok(
-                generate_browse_all_artists_response(collection, starting_index, requested_count),
-            ),
-            _ => {
-                error!("control: unexpected object ID: {object_id:?}");
-                Err(UPNPError::NoSuchObject)
-            }
-        };
+    let browse_response = match object_id {
+        [root] if root == "0" => Ok(generate_browse_root_response(collection)),
+        [root, next] if root == "0" && next == "albums" => {
+            Ok(generate_browse_albums_response(collection, options, addr))
+        }
+        [root, next, album_id] if root == "0" && next == "albums" => {
+            generate_browse_an_album_response(collection, album_id, options, addr)
+        }
+        [root, next] if root == "0" && next == "=Artist" => {
+            Ok(generate_browse_artists_response(collection, options))
+        }
+        [root, next, artist_id] if root == "0" && next == "=Artist" => {
+            generate_browse_an_artist_response(collection, artist_id, options)
+        }
+        [root, next, artist_id, _artist_what] if root == "0" && next == "=Artist" => {
+            generate_browse_an_artist_albums_response(collection, artist_id, options, addr)
+        }
+        [root, next, artist_id, artist_what, album_id]
+            if root == "0" && next == "=Artist" && artist_what == "albums" =>
+        {
+            generate_browse_an_artist_album_response(collection, artist_id, album_id, options, addr)
+        }
+        [root, next] if root == "0" && next == "=All Artists" => {
+            Ok(generate_browse_all_artists_response(collection, options))
+        }
+        _ => {
+            error!("control: unexpected object ID: {object_id:?}");
+            Err(UPNPError::NoSuchObject)
+        }
+    };
     match browse_response {
         Ok(browse_response) => {
             let body = format!(
@@ -1239,25 +1196,19 @@ fn handle_content_directory_actions<'a>(
         CDS_GET_SEARCH_CAPABILITIES_ACTION => generate_get_search_capabilities_response(),
         CDS_GET_SORT_CAPABILITIES_ACTION => generate_get_sort_capabilities_response(),
         CDS_BROWSE_ACTION => {
-            let (object_id, starting_index, requested_count) = body.map_or_else(
+            let options = body.map_or_else(
                 || {
                     panic!("no body");
                 },
                 |body| parse_soap_browse_request(&body),
             );
 
-            object_id.map_or_else(
+            options.object_id.as_ref().map_or_else(
                 || {
                     panic!("no object id");
                 },
-                |object_id| {
-                    generate_browse_response(
-                        collection,
-                        &object_id,
-                        starting_index,
-                        requested_count,
-                        addr,
-                    )
+                |object_id: &Vec<String>| {
+                    generate_browse_response(collection, object_id, &options, addr)
                 },
             )
         }
