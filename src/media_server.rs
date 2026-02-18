@@ -197,13 +197,26 @@ impl BrowseOptionsBuilder {
     const fn new() -> Self {
         Self(BrowseOptions {
             object_id: None,
+            browse_flag: None,
+            filter: None,
             starting_index: None,
             requested_count: None,
+            sort_criteria: None,
         })
     }
 
     fn object_id(&mut self, object_id: Vec<String>) -> &Self {
         self.0.object_id = Some(object_id);
+        self
+    }
+
+    fn browse_flag(&mut self, browse_flag: String) -> &Self {
+        self.0.browse_flag = Some(browse_flag);
+        self
+    }
+
+    fn filter(&mut self, filter: String) -> &Self {
+        self.0.filter = Some(filter);
         self
     }
 
@@ -217,15 +230,24 @@ impl BrowseOptionsBuilder {
         self
     }
 
+    fn sort_criteria(&mut self, sort_criteria: String) -> &Self {
+        self.0.sort_criteria = Some(sort_criteria);
+        self
+    }
+
     fn build(self) -> BrowseOptions {
         self.0
     }
 }
 
+#[derive(Debug)]
 struct BrowseOptions {
     object_id: Option<Vec<String>>,
+    browse_flag: Option<String>,
+    filter: Option<String>,
     starting_index: Option<u16>,
     requested_count: Option<u16>,
+    sort_criteria: Option<String>,
 }
 
 fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, Option<u16>) {
@@ -249,20 +271,12 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
                         );
                     }
                     "BrowseFlag" => {
-                        let browse_flag = child.as_element().unwrap().get_text().unwrap();
-                        if browse_flag == "BrowseDirectChildren" {
-                            info!("direct children. simple.");
-                        } else {
-                            warn!("browse flag: {browse_flag}. what's up");
-                        }
+                        builder.browse_flag(
+                            child.as_element().unwrap().get_text().unwrap().to_string(),
+                        );
                     }
                     "Filter" => {
-                        let filter = child.as_element().unwrap().get_text().unwrap();
-                        if filter == "*" {
-                            info!("no filter. simple.");
-                        } else {
-                            warn!("some filter: {filter}. what's up");
-                        }
+                        builder.filter(child.as_element().unwrap().get_text().unwrap().to_string());
                     }
                     "StartingIndex" => {
                         builder.starting_index(
@@ -289,9 +303,7 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
                     "SortCriteria" => {
                         let sort_criteria = child.as_element().unwrap().get_text();
                         if let Some(sort_criteria) = sort_criteria {
-                            warn!("sort criteria: {sort_criteria}. what's up");
-                        } else {
-                            warn!("no sort criteria. do i just make this up?");
+                            builder.sort_criteria(sort_criteria.to_string());
                         }
                     }
                     anything => warn!("what is {anything:?}"),
@@ -302,6 +314,29 @@ fn parse_soap_browse_request(body: &str) -> (Option<Vec<String>>, Option<u16>, O
     }
 
     let options = builder.build();
+
+    debug!("browse options: {options:?}");
+
+    if let Some(browse_flag) = options.browse_flag {
+        if browse_flag == "BrowseDirectChildren" {
+            info!("direct children. simple.");
+        } else {
+            warn!("browse flag: {browse_flag}. what's up");
+        }
+    }
+    if let Some(filter) = options.filter {
+        if filter == "*" {
+            info!("no filter. simple.");
+        } else {
+            warn!("some filter: {filter}. what's up");
+        }
+    }
+    if let Some(sort_criteria) = options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
+
     (
         options.object_id,
         options.starting_index,
