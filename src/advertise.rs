@@ -178,7 +178,27 @@ pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
     // packet. There is no guarantee that the above 3+2d+k messages will arrive in a particular
     // order.
 
-    let location = "http://192.168.1.34:7878/Device.xml"; // TODO get this IP address properly
+    let server_ip = {
+        // start with localhost to use if nothing else is found
+        let mut ip = Ipv4Addr::LOCALHOST;
+        for iface in get_if_addrs::get_if_addrs().expect("could not get network interfaces") {
+            match iface.addr {
+                get_if_addrs::IfAddr::V4(addr) => {
+                    if !addr.is_loopback() {
+                        // this will do
+                        ip = addr.ip;
+                        break;
+                    }
+                }
+                get_if_addrs::IfAddr::V6(_) => {
+                    // ignore IPv6 for now
+                }
+            }
+        }
+        ip
+    };
+    info!("advertising services for {server_ip}:7878");
+    let location = format!("http://{server_ip}:7878/Device.xml");
     let max_age = Duration::from_secs(1800);
 
     let info = os_info::get();
@@ -194,7 +214,7 @@ pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
 
     let sys_info = SysInfo::new(device_uuid, &os_version, boot_id);
 
-    advertise_discovery_messages(&sys_info, location, max_age, addr, &socket);
+    advertise_discovery_messages(&sys_info, &location, max_age, addr, &socket);
 
     loop {
         let mut buffer = Vec::with_capacity(1024);
@@ -208,12 +228,13 @@ pub fn advertisement_loop(device_uuid: Uuid) -> Result<()> {
                 // let os_version = os_version.clone();
                 let mut socket =
                     ReallySocketToMe::new(socket.try_clone().expect("could not clone socket"));
+                let location = location.clone();
                 thread::spawn(move || {
                     let mut rng = rand::rng();
 
                     if let Err(err) = handle_search_message(
                         &sys_info,
-                        location,
+                        &location,
                         max_age,
                         &mut rng,
                         &buffer,
