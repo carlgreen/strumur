@@ -99,7 +99,7 @@ impl std::fmt::Display for DeviceUuidError {
                 write!(f, "invalid device ID {contents}: {err}")
             }
             Self::IoError(err) => {
-                panic!("could not read device id: {err}");
+                write!(f, "could not read device id: {err}")
             }
         }
     }
