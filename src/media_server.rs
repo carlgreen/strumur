@@ -402,6 +402,18 @@ fn generate_browse_albums_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> String {
+    // TODO do this stuff
+    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
+        warn!("browse flag: {flag}. what's up");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let total_matches = collection.get_albums().count();
     let starting_index = options.starting_index.unwrap().into();
     let requested_count: usize = options.requested_count.unwrap().into();
@@ -445,6 +457,18 @@ fn generate_browse_an_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
+    // TODO do this stuff
+    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
+        warn!("browse flag: {flag}. what's up");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let mut found = None;
     'artists: for artist in collection.get_artists() {
         for album in artist.get_albums() {
@@ -489,6 +513,18 @@ fn generate_browse_an_album_response(
 }
 
 fn generate_browse_artists_response(collection: &Collection, options: &BrowseOptions) -> String {
+    // TODO do this stuff
+    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
+        warn!("browse flag: {flag}. what's up");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let artists = collection.get_artists();
     let total_matches = artists.len();
     let starting_index = options.starting_index.unwrap().into();
@@ -513,6 +549,18 @@ fn generate_browse_an_artist_response(
     artist_id: &str,
     options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
+    // TODO do this stuff
+    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
+        warn!("browse flag: {flag}. what's up");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let things = ["albums", "items"];
     let starting_index = options.starting_index.unwrap().into();
     let requested_count = options.requested_count.unwrap().into();
@@ -561,6 +609,18 @@ fn generate_browse_an_artist_albums_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
+    // TODO do this stuff
+    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
+        warn!("browse flag: {flag}. what's up");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let Some(artist) = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -597,6 +657,18 @@ fn generate_browse_an_artist_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
+    // TODO do this stuff
+    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
+        warn!("browse flag: {flag}. what's up");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let Some(artist) = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -641,6 +713,18 @@ fn generate_browse_all_artists_response(
     collection: &Collection,
     options: &BrowseOptions,
 ) -> String {
+    // TODO do this stuff
+    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
+        warn!("browse flag: {flag}. what's up");
+    }
+    if let Some(Filter::Criteria(criteria)) = &options.filter {
+        warn!("some filter: {criteria}. what's up");
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
     let artists = collection.get_artists();
     let total_matches = artists.len();
     let starting_index = options.starting_index.unwrap().into();
