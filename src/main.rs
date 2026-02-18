@@ -40,35 +40,15 @@ fn main() -> Result<()> {
 
     let collection = Collection::populate(&config.location);
 
-    let server_ip = {
-        // start with localhost to use if nothing else is found
-        let mut ip = Ipv4Addr::LOCALHOST;
-        for iface in get_if_addrs::get_if_addrs().expect("could not get network interfaces") {
-            match iface.addr {
-                IfAddr::V4(addr) => {
-                    if !addr.is_loopback() {
-                        // this will do
-                        ip = addr.ip;
-                        break;
-                    }
-                }
-                IfAddr::V6(_) => {
-                    // ignore IPv6 for now
-                }
-            }
-        }
-        ip
-    };
-    let server = SocketAddrV4::new(server_ip, 7878);
+    media_server::listen(config.device_uuid, config.server, collection);
 
-    media_server::listen(config.device_uuid, server, collection);
-
-    advertise::advertisement_loop(config.device_uuid, server)
+    advertise::advertisement_loop(config.device_uuid, config.server)
 }
 
 struct Config {
     device_uuid: Uuid,
     location: String,
+    server: SocketAddrV4,
 }
 
 impl Config {
@@ -80,9 +60,33 @@ impl Config {
 
         let device_uuid = get_device_uuid(DEVICEID_FILE).map_err(|err| format!("{err}"))?;
 
+        let server_ip = {
+            // start with localhost to use if nothing else is found
+            let mut ip = Ipv4Addr::LOCALHOST;
+            for iface in get_if_addrs::get_if_addrs()
+                .map_err(|err| format!("could not get network interfaces: {err}"))?
+            {
+                match iface.addr {
+                    IfAddr::V4(addr) => {
+                        if !addr.is_loopback() {
+                            // this will do
+                            ip = addr.ip;
+                            break;
+                        }
+                    }
+                    IfAddr::V6(_) => {
+                        // ignore IPv6 for now
+                    }
+                }
+            }
+            ip
+        };
+        let server = SocketAddrV4::new(server_ip, 7878);
+
         Ok(Self {
             device_uuid,
             location,
+            server,
         })
     }
 }
