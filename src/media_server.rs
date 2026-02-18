@@ -872,18 +872,66 @@ fn generate_browse_response(
     }
 }
 
-fn parse_soap_search_request(
-    body: &str,
-) -> (
-    Option<Vec<String>>,
-    Option<String>,
-    Option<u16>,
-    Option<u16>,
-) {
-    let mut container_id = None;
-    let mut search_criteria = None;
-    let mut starting_index: Option<u16> = None;
-    let mut requested_count: Option<u16> = None;
+struct SearchOptionsBuilder(SearchOptions);
+impl SearchOptionsBuilder {
+    const fn new() -> Self {
+        Self(SearchOptions {
+            container_id: None,
+            search_criteria: None,
+            filter: None,
+            starting_index: None,
+            requested_count: None,
+            sort_criteria: None,
+        })
+    }
+
+    fn container_id(&mut self, container_id: Vec<String>) -> &Self {
+        self.0.container_id = Some(container_id);
+        self
+    }
+
+    fn search_criteria(&mut self, search_criteria: String) -> &Self {
+        self.0.search_criteria = Some(search_criteria);
+        self
+    }
+
+    fn filter(&mut self, filter: String) -> &Self {
+        self.0.filter = Some(filter.into());
+        self
+    }
+
+    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+        self.0.starting_index = Some(starting_index);
+        self
+    }
+
+    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+        self.0.requested_count = Some(requested_count);
+        self
+    }
+
+    fn sort_criteria(&mut self, sort_criteria: String) -> &Self {
+        self.0.sort_criteria = Some(sort_criteria);
+        self
+    }
+
+    fn build(self) -> SearchOptions {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SearchOptions {
+    container_id: Option<Vec<String>>,
+    search_criteria: Option<String>,
+    filter: Option<Filter>,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    sort_criteria: Option<String>,
+}
+
+fn parse_soap_search_request(body: &str) -> SearchOptions {
+    let mut builder = SearchOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
     match body.get_child("Search") {
@@ -891,7 +939,7 @@ fn parse_soap_search_request(
             for child in &browse.children {
                 match child.as_element().unwrap().name.as_str() {
                     "ContainerID" => {
-                        container_id = Some(
+                        builder.container_id(
                             child
                                 .as_element()
                                 .unwrap()
@@ -903,23 +951,16 @@ fn parse_soap_search_request(
                         );
                     }
                     "SearchCriteria" => {
-                        search_criteria = child.as_element().unwrap().get_text().map(Into::into);
-                        if let Some(search_criteria) = &search_criteria {
-                            warn!("search criteria: {search_criteria}. what's up");
-                        } else {
-                            warn!("no search criteria. why are we here?");
+                        let search_criteria = child.as_element().unwrap().get_text();
+                        if let Some(search_criteria) = search_criteria {
+                            builder.search_criteria(search_criteria.to_string());
                         }
                     }
                     "Filter" => {
-                        let filter = child.as_element().unwrap().get_text().unwrap();
-                        if filter == "*" {
-                            info!("no filter. simple.");
-                        } else {
-                            warn!("some filter: {filter}. what's up");
-                        }
+                        builder.filter(child.as_element().unwrap().get_text().unwrap().to_string());
                     }
                     "StartingIndex" => {
-                        starting_index = Some(
+                        builder.starting_index(
                             child
                                 .as_element()
                                 .unwrap()
@@ -930,7 +971,7 @@ fn parse_soap_search_request(
                         );
                     }
                     "RequestedCount" => {
-                        requested_count = Some(
+                        builder.requested_count(
                             child
                                 .as_element()
                                 .unwrap()
@@ -943,9 +984,7 @@ fn parse_soap_search_request(
                     "SortCriteria" => {
                         let sort_criteria = child.as_element().unwrap().get_text();
                         if let Some(sort_criteria) = sort_criteria {
-                            warn!("sort criteria: {sort_criteria}. what's up");
-                        } else {
-                            warn!("no sort criteria. do i just make this up?");
+                            builder.sort_criteria(sort_criteria.to_string());
                         }
                     }
                     anything => warn!("what is {anything:?}"),
@@ -955,12 +994,28 @@ fn parse_soap_search_request(
         None => panic!("no Browse child"),
     }
 
-    (
-        container_id,
-        search_criteria,
-        starting_index,
-        requested_count,
-    )
+    let options = builder.build();
+
+    debug!("browse options: {options:?}");
+
+    if let Some(search_criteria) = &options.search_criteria {
+        warn!("search criteria: {search_criteria}. what's up");
+    } else {
+        warn!("no search criteria. why are we here?");
+    }
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => info!("no filter. simple."),
+            Filter::Criteria(criteria) => warn!("some filter: {criteria}. what's up"),
+        }
+    }
+    if let Some(sort_criteria) = &options.sort_criteria {
+        warn!("sort criteria: {sort_criteria}. what's up");
+    } else {
+        warn!("no sort criteria. do i just make this up?");
+    }
+
+    options
 }
 
 /// based on "ContentDirectory:1 Service Template" section 2.5.5 Search Criteria
@@ -973,14 +1028,13 @@ fn generate_search_response(
     collection: &Collection,
     container_id: &[String],
     search_criteria: Option<&SearchCrit>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    options: &SearchOptions,
     addr: &str,
 ) -> (String, &'static str) {
     let search_response = match container_id {
         [root] if root == "0" => {
-            let starting_index = starting_index.unwrap().into();
-            let requested_count: usize = requested_count.unwrap().into();
+            let starting_index = options.starting_index.unwrap().into();
+            let requested_count: usize = options.requested_count.unwrap().into();
             let mut total_matches = 0;
             let mut number_returned = 0;
             let mut result = String::new();
@@ -1325,17 +1379,20 @@ fn handle_content_directory_actions<'a>(
             )
         }
         CDS_SEARCH_ACTION => {
-            let (container_id, search_criteria, starting_index, requested_count) = body
-                .map_or_else(
-                    || {
-                        panic!("no body");
-                    },
-                    |body| parse_soap_search_request(&body),
-                );
+            let options = body.map_or_else(
+                || {
+                    panic!("no body");
+                },
+                |body| parse_soap_search_request(&body),
+            );
 
-            let search_criteria = search_criteria.unwrap_or_default();
+            let search_criteria = options.search_criteria.clone().unwrap_or_default();
             info!(
-                "search:\n\tcontainer_id: {container_id:?}\n\tsearch_criteria: {search_criteria:?}\n\tstarting_index: {starting_index:?}\n\trequested_count: {requested_count:?}"
+                "search:\n\tcontainer_id: {:?}\n\tsearch_criteria: {:?}\n\tstarting_index: {:?}\n\trequested_count: {:?}",
+                options.container_id,
+                search_criteria,
+                options.starting_index,
+                options.requested_count
             );
 
             let search_criteria = match parse_search_criteria(&search_criteria) {
@@ -1347,17 +1404,16 @@ fn handle_content_directory_actions<'a>(
             };
             trace!("search criteria: {search_criteria:?}");
 
-            let container_id = container_id.unwrap_or_else(|| {
+            let container_id = &options.container_id.clone().unwrap_or_else(|| {
                 warn!("no container id, assuming 0");
                 vec!["0".to_string()]
             });
 
             generate_search_response(
                 collection,
-                &container_id,
+                container_id,
                 search_criteria.as_ref(),
-                starting_index,
-                requested_count,
+                &options,
                 addr,
             )
         }
