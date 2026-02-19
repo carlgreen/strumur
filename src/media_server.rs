@@ -341,16 +341,10 @@ fn generate_browse_an_album_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    let mut found = None;
-    for (artist, album) in collection.get_albums() {
-        if format!("*a{}", album.id) == album_id {
-            found = Some((artist, album));
-            break;
-        }
-    }
-    let Some((artist, album)) = found else {
-        return Err(UPNPError::NoSuchObject);
-    };
+    let (artist, album) = collection
+        .get_albums()
+        .find(|(_, album)| format!("*a{}", album.id) == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
     let starting_index = starting_index.unwrap().into();
@@ -457,12 +451,10 @@ fn generate_browse_an_artist_response(
     let starting_index = starting_index.unwrap().into();
     let requested_count = requested_count.unwrap().into();
     let total_matches = things.len();
-    let Some(artist) = collection
+    let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-    else {
-        return Err(UPNPError::NoSuchObject);
-    };
+        .ok_or(UPNPError::NoSuchObject)?;
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -502,12 +494,10 @@ fn generate_browse_an_artist_albums_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    let Some(artist) = collection
+    let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-    else {
-        return Err(UPNPError::NoSuchObject);
-    };
+        .ok_or(UPNPError::NoSuchObject)?;
     let albums = artist.get_albums();
     let total_matches = albums.len();
     let starting_index = starting_index.unwrap().into();
@@ -539,15 +529,14 @@ fn generate_browse_an_artist_album_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    let Some(artist) = collection
+    let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-    else {
-        return Err(UPNPError::NoSuchObject);
-    };
-    let Some(album) = artist.get_albums().find(|a| a.id.to_string() == album_id) else {
-        return Err(UPNPError::NoSuchObject);
-    };
+        .ok_or(UPNPError::NoSuchObject)?;
+    let album = artist
+        .get_albums()
+        .find(|a| a.id.to_string() == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
     let starting_index = starting_index.unwrap().into();
@@ -586,12 +575,10 @@ fn generate_browse_an_artist_items_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    let Some(artist) = collection
+    let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-    else {
-        return Err(UPNPError::NoSuchObject);
-    };
+        .ok_or(UPNPError::NoSuchObject)?;
     let total_matches = artist.get_tracks().count();
     let starting_index: usize = starting_index.unwrap().into();
     let requested_count: usize = requested_count.unwrap().into();
@@ -659,12 +646,10 @@ fn generate_browse_an_all_artist_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    let Some(artist) = collection
+    let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-    else {
-        return Err(UPNPError::NoSuchObject);
-    };
+        .ok_or(UPNPError::NoSuchObject)?;
     let albums = artist.get_albums();
     let total_matches = albums.len() + artist.get_tracks().count();
     let mut starting_index = starting_index.unwrap().into();
@@ -729,18 +714,14 @@ fn generate_browse_an_all_artist_album_response(
     requested_count: Option<u16>,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    let Some(artist) = collection
+    let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
-    else {
-        return Err(UPNPError::NoSuchObject);
-    };
-    let Some(album) = artist
+        .ok_or(UPNPError::NoSuchObject)?;
+    let album = artist
         .get_albums()
         .find(|a| format!("*a{}", a.id) == album_id)
-    else {
-        return Err(UPNPError::NoSuchObject);
-    };
+        .ok_or(UPNPError::NoSuchObject)?;
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
     let starting_index = starting_index.unwrap().into();
