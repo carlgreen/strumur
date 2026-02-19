@@ -161,14 +161,18 @@ impl Collection {
         self.artists.iter()
     }
 
-    pub fn get_albums(&self) -> impl Iterator<Item = &Album> {
-        self.artists.iter().flat_map(Artist::get_albums)
-    }
-
-    pub fn get_tracks(&self) -> impl Iterator<Item = &Track> {
+    pub fn get_albums(&self) -> impl Iterator<Item = (&Artist, &Album)> {
         self.artists
             .iter()
-            .flat_map(|artist| artist.get_albums().flat_map(Album::get_tracks))
+            .flat_map(|artist| artist.get_albums().map(move |album| (artist, album)))
+    }
+
+    pub fn get_tracks(&self) -> impl Iterator<Item = (&Artist, &Album, &Track)> {
+        self.artists.iter().flat_map(|artist| {
+            artist
+                .get_albums()
+                .flat_map(move |album| album.get_tracks().map(move |track| (artist, album, track)))
+        })
     }
 }
 

@@ -310,33 +310,25 @@ fn generate_browse_albums_response(
     let requested_count: usize = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    let mut skipped = 0;
-    'artists: for artist in collection.get_artists() {
-        // move on quickly if we're not up to the starting index
-        let albums = artist.get_albums();
-        if skipped + albums.len() <= starting_index {
-            skipped += albums.len();
-            continue;
-        }
+    for (artist, album) in collection
+        .get_albums()
+        .skip(starting_index)
+        .take(requested_count)
+    {
+        number_returned += 1;
         let artist_name = xml::escape::escape_str_attribute(&artist.name);
-        for album in albums
-            .skip(starting_index - skipped)
-            .take(requested_count - number_returned)
-        {
-            number_returned += 1;
-            let album_id = album.id;
-            let album_title = xml::escape::escape_str_attribute(&album.title);
-            let date = create_date_element(album.date);
-            let track_count = album.get_tracks().len();
-            let cover = create_album_art_element(addr, &album.cover);
-            // TODO album art details
-            write!(
-                result,
-                r#"<container id="0$albums$*a{album_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
-            ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-            if number_returned >= requested_count {
-                break 'artists;
-            }
+        let album_id = album.id;
+        let album_title = xml::escape::escape_str_attribute(&album.title);
+        let date = create_date_element(album.date);
+        let track_count = album.get_tracks().len();
+        let cover = create_album_art_element(addr, &album.cover);
+        // TODO album art details
+        write!(
+            result,
+            r#"<container id="0$albums$*a{album_id}" parentID="0$albums" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
+        if number_returned >= requested_count {
+            break;
         }
     }
     format_response(&result, number_returned, total_matches)
@@ -350,12 +342,10 @@ fn generate_browse_an_album_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     let mut found = None;
-    'artists: for artist in collection.get_artists() {
-        for album in artist.get_albums() {
-            if format!("*a{}", album.id) == album_id {
-                found = Some((artist, album));
-                break 'artists;
-            }
+    for (artist, album) in collection.get_albums() {
+        if format!("*a{}", album.id) == album_id {
+            found = Some((artist, album));
+            break;
         }
     }
     let Some((artist, album)) = found else {
@@ -399,50 +389,36 @@ fn generate_browse_items_response(
     addr: &str,
 ) -> String {
     let total_matches = collection.get_tracks().count();
-    let mut starting_index: usize = starting_index.unwrap().into();
+    let starting_index: usize = starting_index.unwrap().into();
     let requested_count: usize = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
-    'artists: for artist in collection.get_artists() {
+    for (artist, album, track) in collection
+        .get_tracks()
+        .skip(starting_index)
+        .take(requested_count)
+    {
+        number_returned += 1;
         let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
-        for album in artist.get_albums() {
-            let tracks = album.get_tracks();
-            let tracks_len = tracks.len();
-            // move on quickly if we're not up to the starting index
-            if tracks_len <= starting_index {
-                starting_index = starting_index.saturating_sub(tracks_len);
-                continue;
-            }
-            let album_title = xml::escape::escape_str_attribute(&album.title);
-            let date = create_date_element(album.date);
-            let cover = create_album_art_element(addr, &album.cover);
-            // TODO album art details
-            for track in tracks
-                .skip(starting_index)
-                .take(requested_count - number_returned)
-            {
-                number_returned += 1;
-                let id = track.id;
-                let track_title = xml::escape::escape_str_attribute(&track.title);
-                let artist_name = xml::escape::escape_str_attribute(&track.artist);
-                let track_number = track.number;
-                let duration = format_time_nice(track.duration);
-                let size = track.size;
-                let bits_per_sample = track.bits_per_sample;
-                let sample_frequency = track.sample_frequency;
-                let channels = track.channels;
-                let file = format!("{}/{}", addr, track.file);
-                let file = xml::escape::escape_str_attribute(&file);
-                write!(
-                    result,
-                    r#"<item id="0$items${id}" parentID="0$items" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-            }
-            if number_returned >= requested_count {
-                break 'artists;
-            }
-            starting_index = starting_index.saturating_sub(tracks_len);
-        }
+        let album_title = xml::escape::escape_str_attribute(&album.title);
+        let date = create_date_element(album.date);
+        let cover = create_album_art_element(addr, &album.cover);
+        // TODO album art details
+        let id = track.id;
+        let track_title = xml::escape::escape_str_attribute(&track.title);
+        let artist_name = xml::escape::escape_str_attribute(&track.artist);
+        let track_number = track.number;
+        let duration = format_time_nice(track.duration);
+        let size = track.size;
+        let bits_per_sample = track.bits_per_sample;
+        let sample_frequency = track.sample_frequency;
+        let channels = track.channels;
+        let file = format!("{}/{}", addr, track.file);
+        let file = xml::escape::escape_str_attribute(&file);
+        write!(
+            result,
+            r#"<item id="0$items${id}" parentID="0$items" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -617,49 +593,37 @@ fn generate_browse_an_artist_items_response(
         return Err(UPNPError::NoSuchObject);
     };
     let total_matches = artist.get_tracks().count();
-    let mut starting_index: usize = starting_index.unwrap().into();
+    let starting_index: usize = starting_index.unwrap().into();
     let requested_count: usize = requested_count.unwrap().into();
     let mut number_returned = 0;
     let mut result = String::new();
 
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
-    for album in artist.get_albums() {
-        let tracks = album.get_tracks();
-        let tracks_len = tracks.len();
-        // move on quickly if we're not up to the starting index
-        if tracks_len <= starting_index {
-            starting_index = starting_index.saturating_sub(tracks_len);
-            continue;
-        }
+    for (album, track) in artist
+        .get_tracks()
+        .skip(starting_index)
+        .take(requested_count)
+    {
+        number_returned += 1;
         let album_title = xml::escape::escape_str_attribute(&album.title);
         let date = create_date_element(album.date);
         let cover = create_album_art_element(addr, &album.cover);
         // TODO album art details
-        for track in tracks
-            .skip(starting_index)
-            .take(requested_count - number_returned)
-        {
-            number_returned += 1;
-            let id = track.id;
-            let track_title = xml::escape::escape_str_attribute(&track.title);
-            let artist_name = xml::escape::escape_str_attribute(&track.artist);
-            let track_number = track.number;
-            let duration = format_time_nice(track.duration);
-            let size = track.size;
-            let bits_per_sample = track.bits_per_sample;
-            let sample_frequency = track.sample_frequency;
-            let channels = track.channels;
-            let file = format!("{}/{}", addr, track.file);
-            let file = xml::escape::escape_str_attribute(&file);
-            write!(
-                    result,
-                    r#"<item id="0$=Artist${artist_id}$items${id}" parentID="0$=Artist${artist_id}$items" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
-                ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
-        }
-        if number_returned >= requested_count {
-            break;
-        }
-        starting_index = starting_index.saturating_sub(tracks_len);
+        let id = track.id;
+        let track_title = xml::escape::escape_str_attribute(&track.title);
+        let artist_name = xml::escape::escape_str_attribute(&track.artist);
+        let track_number = track.number;
+        let duration = format_time_nice(track.duration);
+        let size = track.size;
+        let bits_per_sample = track.bits_per_sample;
+        let sample_frequency = track.sample_frequency;
+        let channels = track.channels;
+        let file = format!("{}/{}", addr, track.file);
+        let file = xml::escape::escape_str_attribute(&file);
+        write!(
+            result,
+            r#"<item id="0$=Artist${artist_id}$items${id}" parentID="0$=Artist${artist_id}$items" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+        ).unwrap_or_else(|err| panic!("should be a 500 response: {err}"));
     }
 
     Ok(format_response(&result, number_returned, total_matches))
