@@ -263,7 +263,7 @@ struct BrowseOptions {
     filter: Option<Filter>,
     starting_index: Option<u16>,
     requested_count: Option<u16>,
-    sort_criteria: Option<Vec<Sort>>,
+    sort_criteria: Option<SortCriteria>,
 }
 
 #[derive(Debug)]
@@ -319,7 +319,9 @@ impl From<String> for Filter {
     }
 }
 
-fn parse_sort_criteria(sort_string: &str) -> Result<Vec<Sort>, SortCriteriaError> {
+type SortCriteria = Vec<Sort>;
+
+fn parse_sort_criteria(sort_string: &str) -> Result<SortCriteria, SortCriteriaError> {
     sort_string
         .split(',')
         .filter(|s| !s.is_empty())
