@@ -271,6 +271,13 @@ impl std::fmt::Display for BrowseFlagError {
 
 impl std::error::Error for BrowseFlagError {}
 
+/// A BrowseFlag parameter specifies a browse option to be used for browsing the Content Directory.
+/// Valid values are:
+///  - BrowseMetadata: this indicates that the properties of the object specified by the ObjectID
+///    parameter will be returned in the result.
+///  - BrowseDirectChildren: this indicates that first level objects under the object specified by
+///    ObjectID parameter will be returned in the result, as well as the metadata of all objects
+///    specified.
 #[derive(Debug, Clone)]
 enum BrowseFlag {
     Metadata,
