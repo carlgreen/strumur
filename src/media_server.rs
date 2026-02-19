@@ -367,10 +367,22 @@ impl TryFrom<String> for Sort {
     }
 }
 
+#[derive(Debug)]
 enum BrowseOptionError {
     BrowseFlag(BrowseFlagError),
     SortCriteria(SortCriteriaError),
 }
+
+impl std::fmt::Display for BrowseOptionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::BrowseFlag(err) => write!(f, "invalid browse flag {err}"),
+            Self::SortCriteria(err) => write!(f, "invalid search criteria {err}"),
+        }
+    }
+}
+
+impl std::error::Error for BrowseOptionError {}
 
 impl From<BrowseFlagError> for BrowseOptionError {
     fn from(value: BrowseFlagError) -> Self {
