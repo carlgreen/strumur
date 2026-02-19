@@ -238,9 +238,17 @@ impl BrowseOptionsBuilder {
         self
     }
 
-    fn sort_criteria(&mut self, sort_criteria: String) -> &Self {
-        self.0.sort_criteria = Some(sort_criteria);
-        self
+    fn sort_criteria(&mut self, sort_criteria: &str) -> Result<&Self, SortCriteriaError> {
+        match parse_sort_criteria(sort_criteria) {
+            Ok(sort) => {
+                self.0.sort_criteria = Some(sort);
+                Ok(self)
+            }
+            Err(err) => {
+                warn!("invalid sort criteria {err}");
+                Err(err)
+            }
+        }
     }
 
     fn build(self) -> BrowseOptions {
@@ -255,7 +263,7 @@ struct BrowseOptions {
     filter: Option<Filter>,
     starting_index: Option<u16>,
     requested_count: Option<u16>,
-    sort_criteria: Option<String>,
+    sort_criteria: Option<Vec<Sort>>,
 }
 
 #[derive(Debug)]
@@ -311,7 +319,70 @@ impl From<String> for Filter {
     }
 }
 
-fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseFlagError> {
+fn parse_sort_criteria(sort_string: &str) -> Result<Vec<Sort>, SortCriteriaError> {
+    sort_string
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .map(TryInto::try_into)
+        .collect()
+}
+
+#[derive(Debug, PartialEq)]
+enum SortCriteriaError {
+    MissingProperty(String),
+    BadDirection(String),
+}
+
+impl std::fmt::Display for SortCriteriaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::MissingProperty(s) => write!(f, "missing property in {s}"),
+            Self::BadDirection(s) => write!(f, "bad direction in {s}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Sort {
+    Ascending(String),
+    Descending(String),
+}
+
+impl TryFrom<String> for Sort {
+    type Error = SortCriteriaError;
+    fn try_from(s: String) -> Result<Self, SortCriteriaError> {
+        // shouldn't need to check split at because parse_sort_criteria filters empty strings
+        let (dir, property) = s.split_at(1);
+        if property.is_empty() {
+            return Err(SortCriteriaError::MissingProperty(s));
+        }
+        match dir {
+            "+" => Ok(Self::Ascending(property.to_string())),
+            "-" => Ok(Self::Descending(property.to_string())),
+            _ => Err(SortCriteriaError::BadDirection(s)),
+        }
+    }
+}
+
+enum BrowseOptionError {
+    BrowseFlag(BrowseFlagError),
+    SortCriteria(SortCriteriaError),
+}
+
+impl From<BrowseFlagError> for BrowseOptionError {
+    fn from(value: BrowseFlagError) -> Self {
+        Self::BrowseFlag(value)
+    }
+}
+
+impl From<SortCriteriaError> for BrowseOptionError {
+    fn from(value: SortCriteriaError) -> Self {
+        Self::SortCriteria(value)
+    }
+}
+
+fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionError> {
     let mut builder = BrowseOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
@@ -364,7 +435,7 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseFlagErro
                     "SortCriteria" => {
                         let sort_criteria = child.as_element().unwrap().get_text();
                         if let Some(sort_criteria) = sort_criteria {
-                            builder.sort_criteria(sort_criteria.to_string());
+                            builder.sort_criteria(sort_criteria.as_ref())?;
                         }
                     }
                     anything => warn!("what is {anything:?}"),
@@ -391,7 +462,7 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseFlagErro
         }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -441,7 +512,7 @@ fn generate_browse_albums_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -488,7 +559,7 @@ fn generate_browse_an_album_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -540,7 +611,7 @@ fn generate_browse_items_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -588,7 +659,7 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -624,7 +695,7 @@ fn generate_browse_an_artist_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -682,7 +753,7 @@ fn generate_browse_an_artist_albums_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -728,7 +799,7 @@ fn generate_browse_an_artist_album_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -830,7 +901,7 @@ fn generate_browse_all_artists_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -866,7 +937,7 @@ fn generate_browse_an_all_artist_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -945,7 +1016,7 @@ fn generate_browse_an_all_artist_album_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -1282,7 +1353,7 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
         }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -1304,7 +1375,7 @@ fn generate_search_response(
         warn!("some filter: {criteria}. what's up");
     }
     if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
+        warn!("sort criteria: {sort_criteria:?}. what's up");
     } else {
         warn!("no sort criteria. do i just make this up?");
     }
@@ -1644,14 +1715,25 @@ fn handle_content_directory_actions<'a>(
         CDS_GET_SEARCH_CAPABILITIES_ACTION => generate_get_search_capabilities_response(),
         CDS_GET_SORT_CAPABILITIES_ACTION => generate_get_sort_capabilities_response(),
         CDS_BROWSE_ACTION => {
-            let Ok(options) = body.map_or_else(
+            let options = match body.map_or_else(
                 || {
                     panic!("no body");
                 },
                 |body| parse_soap_browse_request(&body),
-            ) else {
-                // big assumption that this is the only error coming
-                return soap_upnp_error(708, "Invalid browse flag");
+            ) {
+                Ok(options) => options,
+                Err(err) => {
+                    return match err {
+                        BrowseOptionError::BrowseFlag(err) => {
+                            warn!("invalid browse flag: {err:?}");
+                            soap_upnp_error(402, "Invalid args")
+                        }
+                        BrowseOptionError::SortCriteria(err) => {
+                            warn!("invalid sort criteria: {err:?}");
+                            soap_upnp_error(709, "Invalid sort criteria")
+                        }
+                    };
+                }
             };
 
             options.object_id.as_ref().map_or_else(
@@ -3853,5 +3935,33 @@ mod tests {
     fn test_format_time_nice() {
         let time = NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap();
         assert_eq!(format_time_nice(time), "0:00:05.712");
+    }
+
+    #[test]
+    fn test_parse_sort_criteria() {
+        assert_eq!(parse_sort_criteria(""), Ok(vec![]));
+        assert_eq!(parse_sort_criteria(","), Ok(vec![]));
+        assert_eq!(
+            parse_sort_criteria("+upnp:artist,-dc:date,+dc:title"),
+            Ok(vec![
+                Sort::Ascending("upnp:artist".to_string()),
+                Sort::Descending("dc:date".to_string()),
+                Sort::Ascending("dc:title".to_string()),
+            ])
+        );
+        assert_eq!(
+            parse_sort_criteria("+upnp:originalTrackNumber"),
+            Ok(vec![Sort::Ascending(
+                "upnp:originalTrackNumber".to_string()
+            )])
+        );
+        assert_eq!(
+            parse_sort_criteria("upnp:artist"),
+            Err(SortCriteriaError::BadDirection("upnp:artist".to_string()))
+        );
+        assert_eq!(
+            parse_sort_criteria("+"),
+            Err(SortCriteriaError::MissingProperty("+".to_string()))
+        );
     }
 }
