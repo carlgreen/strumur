@@ -210,9 +210,17 @@ impl BrowseOptionsBuilder {
         self
     }
 
-    fn browse_flag(&mut self, browse_flag: String) -> &Self {
-        self.0.browse_flag = Some(browse_flag.into());
-        self
+    fn browse_flag(&mut self, browse_flag: String) -> Result<&Self, BrowseFlagError> {
+        match browse_flag.try_into() {
+            Ok(flag) => {
+                self.0.browse_flag = Some(flag);
+                Ok(self)
+            }
+            Err(err) => {
+                warn!("invalid browse flag {}", err.flag);
+                Err(err)
+            }
+        }
     }
 
     fn filter(&mut self, filter: String) -> &Self {
@@ -250,17 +258,33 @@ struct BrowseOptions {
     sort_criteria: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-enum BrowseFlag {
-    DirectChildren,
-    Flag(String),
+#[derive(Debug)]
+struct BrowseFlagError {
+    flag: String,
 }
 
-impl From<String> for BrowseFlag {
-    fn from(s: String) -> Self {
+impl std::fmt::Display for BrowseFlagError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "invalid browse flag {}", self.flag)
+    }
+}
+
+impl std::error::Error for BrowseFlagError {}
+
+#[derive(Debug, Clone)]
+enum BrowseFlag {
+    Metadata,
+    DirectChildren,
+}
+
+impl TryFrom<String> for BrowseFlag {
+    type Error = BrowseFlagError;
+
+    fn try_from(s: String) -> Result<Self, BrowseFlagError> {
         match s.as_str() {
-            "BrowseDirectChildren" => Self::DirectChildren,
-            _ => Self::Flag(s),
+            "BrowseMetadata" => Ok(Self::Metadata),
+            "BrowseDirectChildren" => Ok(Self::DirectChildren),
+            _ => Err(BrowseFlagError { flag: s }),
         }
     }
 }
@@ -280,7 +304,7 @@ impl From<String> for Filter {
     }
 }
 
-fn parse_soap_browse_request(body: &str) -> BrowseOptions {
+fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseFlagError> {
     let mut builder = BrowseOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
@@ -303,7 +327,7 @@ fn parse_soap_browse_request(body: &str) -> BrowseOptions {
                     "BrowseFlag" => {
                         builder.browse_flag(
                             child.as_element().unwrap().get_text().unwrap().to_string(),
-                        );
+                        )?;
                     }
                     "Filter" => {
                         builder.filter(child.as_element().unwrap().get_text().unwrap().to_string());
@@ -349,8 +373,8 @@ fn parse_soap_browse_request(body: &str) -> BrowseOptions {
 
     if let Some(browse_flag) = &options.browse_flag {
         match browse_flag {
+            BrowseFlag::Metadata => todo!("browse metadata"),
             BrowseFlag::DirectChildren => info!("direct children. simple."),
-            BrowseFlag::Flag(flag) => warn!("browse flag: {flag}. what's up"),
         }
     }
     if let Some(filter) = &options.filter {
@@ -365,7 +389,7 @@ fn parse_soap_browse_request(body: &str) -> BrowseOptions {
         warn!("no sort criteria. do i just make this up?");
     }
 
-    options
+    Ok(options)
 }
 
 enum UPNPError {
@@ -403,8 +427,8 @@ fn generate_browse_albums_response(
     addr: &str,
 ) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -450,8 +474,8 @@ fn generate_browse_an_album_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -502,8 +526,8 @@ fn generate_browse_items_response(
     addr: &str,
 ) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -550,8 +574,8 @@ fn generate_browse_items_response(
 
 fn generate_browse_artists_response(collection: &Collection, options: &BrowseOptions) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -586,8 +610,8 @@ fn generate_browse_an_artist_response(
     options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -644,8 +668,8 @@ fn generate_browse_an_artist_albums_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -690,8 +714,8 @@ fn generate_browse_an_artist_album_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -792,8 +816,8 @@ fn generate_browse_all_artists_response(
     options: &BrowseOptions,
 ) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -828,8 +852,8 @@ fn generate_browse_an_all_artist_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -907,8 +931,8 @@ fn generate_browse_an_all_artist_album_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
+        warn!("browse metadata. what's up");
     }
     if let Some(Filter::Criteria(criteria)) = &options.filter {
         warn!("some filter: {criteria}. what's up");
@@ -1613,12 +1637,15 @@ fn handle_content_directory_actions<'a>(
         CDS_GET_SEARCH_CAPABILITIES_ACTION => generate_get_search_capabilities_response(),
         CDS_GET_SORT_CAPABILITIES_ACTION => generate_get_sort_capabilities_response(),
         CDS_BROWSE_ACTION => {
-            let options = body.map_or_else(
+            let Ok(options) = body.map_or_else(
                 || {
                     panic!("no body");
                 },
                 |body| parse_soap_browse_request(&body),
-            );
+            ) else {
+                // big assumption that this is the only error coming
+                return soap_upnp_error(708, "Invalid browse flag");
+            };
 
             options.object_id.as_ref().map_or_else(
                 || {
