@@ -1289,21 +1289,29 @@ fn generate_browse_response(
     }
 }
 
-struct SearchOptionsBuilder(SearchOptions);
+struct SearchOptionsBuilder {
+    container_id: Option<Vec<String>>,
+    search_criteria: Option<SearchCrit>,
+    filter: Option<Filter>,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    sort_criteria: Option<SortCriteria>,
+}
+
 impl SearchOptionsBuilder {
     const fn new() -> Self {
-        Self(SearchOptions {
+        Self {
             container_id: None,
             search_criteria: None,
             filter: None,
             starting_index: None,
             requested_count: None,
             sort_criteria: None,
-        })
+        }
     }
 
     fn container_id(&mut self, container_id: Vec<String>) -> &Self {
-        self.0.container_id = Some(container_id);
+        self.container_id = Some(container_id);
         self
     }
 
@@ -1311,7 +1319,7 @@ impl SearchOptionsBuilder {
         match parse_search_criteria(search_criteria) {
             Ok(crit) => {
                 // already an option so just hope it is not overwriting something useful
-                self.0.search_criteria = crit;
+                self.search_criteria = crit;
                 Ok(self)
             }
             Err(err) => {
@@ -1322,41 +1330,125 @@ impl SearchOptionsBuilder {
     }
 
     fn filter(&mut self, filter: &str) -> &Self {
-        self.0.filter = Some(filter.into());
+        self.filter = Some(filter.into());
         self
     }
 
     const fn starting_index(&mut self, starting_index: u16) -> &Self {
-        self.0.starting_index = Some(starting_index);
+        self.starting_index = Some(starting_index);
         self
     }
 
     const fn requested_count(&mut self, requested_count: u16) -> &Self {
-        self.0.requested_count = Some(requested_count);
+        self.requested_count = Some(requested_count);
         self
     }
 
-    fn sort_criteria(&mut self, sort_criteria: String) -> &Self {
-        self.0.sort_criteria = Some(sort_criteria);
-        self
+    fn sort_criteria(&mut self, sort_criteria: &str) -> Result<&Self, SortCriteriaError> {
+        match parse_sort_criteria(sort_criteria) {
+            Ok(sort) => {
+                self.sort_criteria = Some(sort);
+                Ok(self)
+            }
+            Err(err) => {
+                warn!("invalid sort criteria {err}");
+                Err(err)
+            }
+        }
     }
 
-    fn build(self) -> SearchOptions {
-        self.0
+    fn build(self) -> Result<SearchOptions, SearchOptionError> {
+        Ok(SearchOptions {
+            container_id: self.container_id.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::ContainerID,
+            ))?,
+            search_criteria: self.search_criteria.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::SearchCriteria,
+            ))?,
+            filter: self
+                .filter
+                .ok_or(SearchOptionError::MissingField(SearchOptionsFields::Filter))?,
+            starting_index: self.starting_index.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::StartingIndex,
+            ))?,
+            requested_count: self.requested_count.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::RequestedCount,
+            ))?,
+            sort_criteria: self.sort_criteria.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::SortCriteria,
+            ))?,
+        })
     }
 }
 
 #[derive(Debug)]
 struct SearchOptions {
-    container_id: Option<Vec<String>>,
-    search_criteria: Option<SearchCrit>,
-    filter: Option<Filter>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
-    sort_criteria: Option<String>,
+    container_id: Vec<String>,
+    search_criteria: SearchCrit,
+    filter: Filter,
+    starting_index: u16,
+    requested_count: u16,
+    sort_criteria: SortCriteria,
 }
 
-fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
+#[derive(Debug)]
+enum SearchOptionsFields {
+    ContainerID,
+    SearchCriteria,
+    Filter,
+    StartingIndex,
+    RequestedCount,
+    SortCriteria,
+}
+
+impl std::fmt::Display for SearchOptionsFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let name = match self {
+            Self::ContainerID => "ContainerID",
+            Self::SearchCriteria => "SearchCriteria",
+            Self::Filter => "Filter",
+            Self::StartingIndex => "StartingIndex",
+            Self::RequestedCount => "RequestedCount",
+            Self::SortCriteria => "SortCriteria",
+        };
+        write!(f, "{name}")
+    }
+}
+
+impl std::error::Error for SearchOptionsFields {}
+
+#[derive(Debug)]
+enum SearchOptionError {
+    SearchCriteria(Error),
+    SortCriteria(SortCriteriaError),
+    MissingField(SearchOptionsFields),
+}
+
+impl std::fmt::Display for SearchOptionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::SearchCriteria(err) => write!(f, "invalid search {err}"),
+            Self::SortCriteria(err) => write!(f, "invalid sort criteria {err}"),
+            Self::MissingField(field) => write!(f, "missing search argument {field}"),
+        }
+    }
+}
+
+impl std::error::Error for SearchOptionError {}
+
+impl From<Error> for SearchOptionError {
+    fn from(value: Error) -> Self {
+        Self::SearchCriteria(value)
+    }
+}
+
+impl From<SortCriteriaError> for SearchOptionError {
+    fn from(value: SortCriteriaError) -> Self {
+        Self::SortCriteria(value)
+    }
+}
+
+fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionError> {
     let mut builder = SearchOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
@@ -1408,10 +1500,14 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
                         );
                     }
                     "SortCriteria" => {
-                        let sort_criteria = child.as_element().unwrap().get_text();
-                        if let Some(sort_criteria) = sort_criteria {
-                            builder.sort_criteria(sort_criteria.to_string());
-                        }
+                        builder.sort_criteria(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap_or_default()
+                                .as_ref(),
+                        )?;
                     }
                     anything => warn!("what is {anything:?}"),
                 }
@@ -1420,26 +1516,21 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
         None => panic!("no Search child"),
     }
 
-    let options = builder.build();
+    let options = builder.build()?;
 
     debug!("search options: {options:?}");
 
-    if let Some(search_criteria) = &options.search_criteria {
-        warn!("search criteria: {search_criteria:?}. what's up");
-    } else {
-        warn!("no search criteria. why are we here?");
-    }
-    if let Some(filter) = &options.filter {
-        match filter {
-            Filter::All => warn!("include all fields."),
-            Filter::Include(fields) => warn!("include {fields:?} fields"),
+    match &options.search_criteria {
+        SearchCrit::All => info!("search all. nothing to do"),
+        SearchCrit::SearchExp(search_exp) => {
+            warn!("search criteria: {search_exp:?}. what's up");
         }
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria:?}. what's up");
-    } else {
-        warn!("no sort criteria. do i just make this up?");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
+    warn!("sort criteria: {:?}. what's up", options.sort_criteria);
 
     Ok(options)
 }
@@ -1451,24 +1542,19 @@ fn generate_search_response(
     addr: &str,
 ) -> (String, &'static str) {
     // TODO do this stuff
-    if options.search_criteria.is_none() {
-        warn!("no search criteria. why are we here?");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(filter) = &options.filter {
-        match filter {
-            Filter::All => warn!("include all fields."),
-            Filter::Include(fields) => warn!("include {fields:?} fields"),
-        }
-    }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria:?}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let search_response = match container_id {
         [root] if root == "0" => {
-            let starting_index = options.starting_index.unwrap().into();
-            let requested_count: usize = options.requested_count.unwrap().into();
+            let starting_index = options.starting_index.into();
+            let requested_count: usize = options.requested_count.into();
             let mut total_matches = 0;
             let mut number_returned = 0;
             let mut result = String::new();
@@ -1476,7 +1562,7 @@ fn generate_search_response(
                 let artist_id = artist.id;
                 let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
                 let include = include_this(
-                    options.search_criteria.as_ref(),
+                    &options.search_criteria,
                     &SearchWhat::Artist,
                     None,
                     None,
@@ -1498,7 +1584,7 @@ fn generate_search_response(
                     let album_id = album.id;
                     let album_title = xml::escape::escape_str_attribute(&album.title);
                     let include = include_this(
-                        options.search_criteria.as_ref(),
+                        &options.search_criteria,
                         &SearchWhat::Album,
                         None,
                         Some(album),
@@ -1524,7 +1610,7 @@ fn generate_search_response(
 
                     for track in album.get_tracks() {
                         let include = include_this(
-                            options.search_criteria.as_ref(),
+                            &options.search_criteria,
                             &SearchWhat::Track,
                             Some(track),
                             Some(album),
@@ -1591,21 +1677,17 @@ enum SearchWhat {
 }
 
 fn include_this(
-    search_criteria: Option<&SearchCrit>,
+    search_criteria: &SearchCrit,
     what: &SearchWhat,
     track: Option<&Track>,
     album: Option<&Album>,
     artist: &Artist,
 ) -> bool {
-    // if search_criteria is None then treat as All
     match search_criteria {
-        Some(SearchCrit::All) | None => true,
-        Some(search_criteria) => match search_criteria {
-            SearchCrit::All => true,
-            SearchCrit::SearchExp(search_exp) => {
-                include_by_search_exp(search_exp, what, track, album, artist)
-            }
-        },
+        SearchCrit::All => true,
+        SearchCrit::SearchExp(search_exp) => {
+            include_by_search_exp(search_exp, what, track, album, artist)
+        }
     }
 }
 
@@ -1829,23 +1911,33 @@ fn handle_content_directory_actions<'a>(
             generate_browse_response(collection, &options.object_id, &options, addr)
         }
         CDS_SEARCH_ACTION => {
-            let Ok(options) = body.map_or_else(
+            let options = match body.map_or_else(
                 || {
                     panic!("no body");
                 },
                 |body| parse_soap_search_request(&body),
-            ) else {
-                // big assumption that this is the only error coming
-                return soap_upnp_error(708, "Invalid search criteria");
+            ) {
+                Ok(options) => options,
+                Err(err) => {
+                    return match err {
+                        SearchOptionError::SearchCriteria(err) => {
+                            warn!("{err}");
+                            soap_upnp_error(708, "Invalid search criteria")
+                        }
+                        SearchOptionError::MissingField(err) => {
+                            warn!("{err}");
+                            soap_upnp_error(402, "Invalid args")
+                        }
+                        SearchOptionError::SortCriteria(err) => {
+                            warn!("invalid sort criteria: {err:?}");
+                            soap_upnp_error(709, "Invalid sort criteria")
+                        }
+                    };
+                }
             };
             trace!("search criteria: {:?}", options.search_criteria);
 
-            let container_id = &options.container_id.clone().unwrap_or_else(|| {
-                warn!("no container id, assuming 0");
-                vec!["0".to_string()]
-            });
-
-            generate_search_response(collection, container_id, &options, addr)
+            generate_search_response(collection, &options.container_id, &options, addr)
         }
         CDS_CREATE_OBJECT_ACTION
         | CDS_DESTROY_OBJECT_ACTION
