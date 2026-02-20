@@ -192,95 +192,274 @@ fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> O
     }
 }
 
-struct BrowseOptionsBuilder(BrowseOptions);
+struct BrowseOptionsBuilder {
+    object_id: Option<Vec<String>>,
+    browse_flag: Option<BrowseFlag>,
+    filter: Option<Filter>,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    sort_criteria: Option<SortCriteria>,
+}
+
 impl BrowseOptionsBuilder {
     const fn new() -> Self {
-        Self(BrowseOptions {
+        Self {
             object_id: None,
             browse_flag: None,
             filter: None,
             starting_index: None,
             requested_count: None,
             sort_criteria: None,
-        })
+        }
     }
 
     fn object_id(&mut self, object_id: Vec<String>) -> &Self {
-        self.0.object_id = Some(object_id);
+        self.object_id = Some(object_id);
         self
     }
 
-    fn browse_flag(&mut self, browse_flag: String) -> &Self {
-        self.0.browse_flag = Some(browse_flag.into());
-        self
+    fn browse_flag(&mut self, browse_flag: String) -> Result<&Self, BrowseOptionError> {
+        match browse_flag.try_into() {
+            Ok(flag) => {
+                self.browse_flag = Some(flag);
+                Ok(self)
+            }
+            Err(err) => {
+                warn!("{err}");
+                Err(err)
+            }
+        }
     }
 
-    fn filter(&mut self, filter: String) -> &Self {
-        self.0.filter = Some(filter.into());
+    fn filter(&mut self, filter: &str) -> &Self {
+        self.filter = Some(filter.into());
         self
     }
 
     const fn starting_index(&mut self, starting_index: u16) -> &Self {
-        self.0.starting_index = Some(starting_index);
+        self.starting_index = Some(starting_index);
         self
     }
 
     const fn requested_count(&mut self, requested_count: u16) -> &Self {
-        self.0.requested_count = Some(requested_count);
+        self.requested_count = Some(requested_count);
         self
     }
 
-    fn sort_criteria(&mut self, sort_criteria: String) -> &Self {
-        self.0.sort_criteria = Some(sort_criteria);
-        self
+    fn sort_criteria(&mut self, sort_criteria: &str) -> Result<&Self, SortCriteriaError> {
+        match parse_sort_criteria(sort_criteria) {
+            Ok(sort) => {
+                self.sort_criteria = Some(sort);
+                Ok(self)
+            }
+            Err(err) => {
+                warn!("invalid sort criteria {err}");
+                Err(err)
+            }
+        }
     }
 
-    fn build(self) -> BrowseOptions {
-        self.0
+    fn build(self) -> Result<BrowseOptions, BrowseOptionError> {
+        Ok(BrowseOptions {
+            object_id: self.object_id.ok_or(BrowseOptionError::MissingField(
+                BrowseOptionsFields::ObjectID,
+            ))?,
+            browse_flag: self.browse_flag.ok_or(BrowseOptionError::MissingField(
+                BrowseOptionsFields::BrowseFlag,
+            ))?,
+            filter: self
+                .filter
+                .ok_or(BrowseOptionError::MissingField(BrowseOptionsFields::Filter))?,
+            starting_index: self.starting_index.ok_or(BrowseOptionError::MissingField(
+                BrowseOptionsFields::StartingIndex,
+            ))?,
+            requested_count: self.requested_count.ok_or(BrowseOptionError::MissingField(
+                BrowseOptionsFields::RequestedCount,
+            ))?,
+            sort_criteria: self.sort_criteria.ok_or(BrowseOptionError::MissingField(
+                BrowseOptionsFields::SortCriteria,
+            ))?,
+        })
     }
 }
 
 #[derive(Debug, Clone)]
 struct BrowseOptions {
-    object_id: Option<Vec<String>>,
-    browse_flag: Option<BrowseFlag>,
-    filter: Option<Filter>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
-    sort_criteria: Option<String>,
+    object_id: Vec<String>,
+    browse_flag: BrowseFlag,
+    filter: Filter,
+    starting_index: u16,
+    requested_count: u16,
+    sort_criteria: SortCriteria,
 }
 
+#[derive(Debug)]
+struct BrowseFlagError {
+    flag: String,
+}
+
+impl std::fmt::Display for BrowseFlagError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "invalid browse flag {}", self.flag)
+    }
+}
+
+impl std::error::Error for BrowseFlagError {}
+
+/// A `BrowseFlag` parameter specifies a browse option to be used for browsing the Content Directory.
+/// Valid values are:
+///  - `BrowseMetadata`: this indicates that the properties of the object specified by the `ObjectID`
+///    parameter will be returned in the result.
+///  - `BrowseDirectChildren`: this indicates that first level objects under the object specified by
+///    1 parameter will be returned in the result, as well as the metadata of all objects
+///    specified.
 #[derive(Debug, Clone)]
 enum BrowseFlag {
+    Metadata,
     DirectChildren,
-    Flag(String),
 }
 
-impl From<String> for BrowseFlag {
-    fn from(s: String) -> Self {
+impl TryFrom<String> for BrowseFlag {
+    type Error = BrowseOptionError;
+
+    fn try_from(s: String) -> Result<Self, BrowseOptionError> {
         match s.as_str() {
-            "BrowseDirectChildren" => Self::DirectChildren,
-            _ => Self::Flag(s),
+            "BrowseMetadata" => Ok(Self::Metadata),
+            "BrowseDirectChildren" => Ok(Self::DirectChildren),
+            _ => Err(BrowseOptionError::BrowseFlag(BrowseFlagError { flag: s })),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+/// This variable is used in conjunction with those actions that include a Filter parameter. The
+/// comma-separated list of property specifiers (including namespaces) indicates which metadata
+/// properties are to be returned in the results from browsing or searching.
+#[derive(Debug, Clone, PartialEq)]
 enum Filter {
     All,
-    Criteria(String),
+    Include(Vec<String>),
 }
 
-impl From<String> for Filter {
-    fn from(s: String) -> Self {
-        match s.as_str() {
+impl From<&str> for Filter {
+    fn from(s: &str) -> Self {
+        match s {
             "*" => Self::All,
-            _ => Self::Criteria(s),
+            s => Self::Include(
+                s.split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>(),
+            ),
         }
     }
 }
 
-fn parse_soap_browse_request(body: &str) -> BrowseOptions {
+type SortCriteria = Vec<Sort>;
+
+fn parse_sort_criteria(sort_string: &str) -> Result<SortCriteria, SortCriteriaError> {
+    sort_string
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .map(TryInto::try_into)
+        .collect()
+}
+
+#[derive(Debug, PartialEq)]
+enum SortCriteriaError {
+    MissingProperty(String),
+    BadDirection(String),
+}
+
+impl std::fmt::Display for SortCriteriaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::MissingProperty(s) => write!(f, "missing property in {s}"),
+            Self::BadDirection(s) => write!(f, "bad direction in {s}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Sort {
+    Ascending(String),
+    Descending(String),
+}
+
+impl TryFrom<String> for Sort {
+    type Error = SortCriteriaError;
+    fn try_from(s: String) -> Result<Self, SortCriteriaError> {
+        // shouldn't need to check split at because parse_sort_criteria filters empty strings
+        let (dir, property) = s.split_at(1);
+        if property.is_empty() {
+            return Err(SortCriteriaError::MissingProperty(s));
+        }
+        match dir {
+            "+" => Ok(Self::Ascending(property.to_string())),
+            "-" => Ok(Self::Descending(property.to_string())),
+            _ => Err(SortCriteriaError::BadDirection(s)),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum BrowseOptionsFields {
+    ObjectID,
+    BrowseFlag,
+    Filter,
+    StartingIndex,
+    RequestedCount,
+    SortCriteria,
+}
+
+impl std::fmt::Display for BrowseOptionsFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let name = match self {
+            Self::ObjectID => "ObjectID",
+            Self::BrowseFlag => "BrowseFlag",
+            Self::Filter => "Filter",
+            Self::StartingIndex => "StartingIndex",
+            Self::RequestedCount => "RequestedCount",
+            Self::SortCriteria => "SortCriteria",
+        };
+        write!(f, "{name}")
+    }
+}
+
+impl std::error::Error for BrowseOptionsFields {}
+
+#[derive(Debug)]
+enum BrowseOptionError {
+    BrowseFlag(BrowseFlagError),
+    SortCriteria(SortCriteriaError),
+    MissingField(BrowseOptionsFields),
+}
+
+impl std::fmt::Display for BrowseOptionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::BrowseFlag(err) => write!(f, "invalid browse flag {err}"),
+            Self::SortCriteria(err) => write!(f, "invalid sort criteria {err}"),
+            Self::MissingField(field) => write!(f, "missing browse argument {field}"),
+        }
+    }
+}
+
+impl std::error::Error for BrowseOptionError {}
+
+impl From<BrowseFlagError> for BrowseOptionError {
+    fn from(value: BrowseFlagError) -> Self {
+        Self::BrowseFlag(value)
+    }
+}
+
+impl From<SortCriteriaError> for BrowseOptionError {
+    fn from(value: SortCriteriaError) -> Self {
+        Self::SortCriteria(value)
+    }
+}
+
+fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionError> {
     let mut builder = BrowseOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
@@ -303,10 +482,10 @@ fn parse_soap_browse_request(body: &str) -> BrowseOptions {
                     "BrowseFlag" => {
                         builder.browse_flag(
                             child.as_element().unwrap().get_text().unwrap().to_string(),
-                        );
+                        )?;
                     }
                     "Filter" => {
-                        builder.filter(child.as_element().unwrap().get_text().unwrap().to_string());
+                        builder.filter(child.as_element().unwrap().get_text().unwrap().as_ref());
                     }
                     "StartingIndex" => {
                         builder.starting_index(
@@ -331,10 +510,14 @@ fn parse_soap_browse_request(body: &str) -> BrowseOptions {
                         );
                     }
                     "SortCriteria" => {
-                        let sort_criteria = child.as_element().unwrap().get_text();
-                        if let Some(sort_criteria) = sort_criteria {
-                            builder.sort_criteria(sort_criteria.to_string());
-                        }
+                        builder.sort_criteria(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap_or_default()
+                                .as_ref(),
+                        )?;
                     }
                     anything => warn!("what is {anything:?}"),
                 }
@@ -343,29 +526,21 @@ fn parse_soap_browse_request(body: &str) -> BrowseOptions {
         None => panic!("no Browse child"),
     }
 
-    let options = builder.build();
+    let options = builder.build()?;
 
     debug!("browse options: {options:?}");
 
-    if let Some(browse_flag) = &options.browse_flag {
-        match browse_flag {
-            BrowseFlag::DirectChildren => info!("direct children. simple."),
-            BrowseFlag::Flag(flag) => warn!("browse flag: {flag}. what's up"),
-        }
+    match options.browse_flag {
+        BrowseFlag::Metadata => todo!("browse metadata"),
+        BrowseFlag::DirectChildren => info!("direct children. simple."),
     }
-    if let Some(filter) = &options.filter {
-        match filter {
-            Filter::All => info!("no filter. simple."),
-            Filter::Criteria(criteria) => warn!("some filter: {criteria}. what's up"),
-        }
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
-        warn!("no sort criteria. do i just make this up?");
-    }
+    warn!("sort criteria: {:?}. what's up", options.sort_criteria);
 
-    options
+    Ok(options)
 }
 
 enum UPNPError {
@@ -403,20 +578,21 @@ fn generate_browse_albums_response(
     addr: &str,
 ) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let total_matches = collection.get_albums().count();
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count: usize = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album) in collection
@@ -450,16 +626,17 @@ fn generate_browse_an_album_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let (artist, album) = collection
         .get_albums()
@@ -467,8 +644,8 @@ fn generate_browse_an_album_response(
         .ok_or(UPNPError::NoSuchObject)?;
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = &album.title;
@@ -502,20 +679,21 @@ fn generate_browse_items_response(
     addr: &str,
 ) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let total_matches = collection.get_tracks().count();
-    let starting_index: usize = options.starting_index.unwrap().into();
-    let requested_count: usize = options.requested_count.unwrap().into();
+    let starting_index: usize = options.starting_index.into();
+    let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album, track) in collection
@@ -550,21 +728,22 @@ fn generate_browse_items_response(
 
 fn generate_browse_artists_response(collection: &Collection, options: &BrowseOptions) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artists = collection.get_artists();
     let total_matches = artists.len();
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -586,20 +765,21 @@ fn generate_browse_an_artist_response(
     options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let things = ["albums", "items"];
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count = options.requested_count.into();
     let total_matches = things.len();
     let artist = collection
         .get_artists()
@@ -644,16 +824,17 @@ fn generate_browse_an_artist_albums_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
@@ -661,8 +842,8 @@ fn generate_browse_an_artist_albums_response(
         .ok_or(UPNPError::NoSuchObject)?;
     let albums = artist.get_albums();
     let total_matches = albums.len();
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let artist_id = artist.id;
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
@@ -690,16 +871,17 @@ fn generate_browse_an_artist_album_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
@@ -711,8 +893,8 @@ fn generate_browse_an_artist_album_response(
         .ok_or(UPNPError::NoSuchObject)?;
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = xml::escape::escape_str_attribute(&album.title);
@@ -751,8 +933,8 @@ fn generate_browse_an_artist_items_response(
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
     let total_matches = artist.get_tracks().count();
-    let starting_index: usize = options.starting_index.unwrap().into();
-    let requested_count: usize = options.requested_count.unwrap().into();
+    let starting_index: usize = options.starting_index.into();
+    let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -792,21 +974,22 @@ fn generate_browse_all_artists_response(
     options: &BrowseOptions,
 ) -> String {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artists = collection.get_artists();
     let total_matches = artists.len();
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -828,16 +1011,17 @@ fn generate_browse_an_all_artist_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
@@ -845,8 +1029,8 @@ fn generate_browse_an_all_artist_response(
         .ok_or(UPNPError::NoSuchObject)?;
     let albums = artist.get_albums();
     let total_matches = albums.len() + artist.get_tracks().count();
-    let mut starting_index = options.starting_index.unwrap().into();
-    let mut requested_count = options.requested_count.unwrap().into();
+    let mut starting_index = options.starting_index.into();
+    let mut requested_count = options.requested_count.into();
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
     let mut number_returned = 0;
     let mut result = String::new();
@@ -907,16 +1091,17 @@ fn generate_browse_an_all_artist_album_response(
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
     // TODO do this stuff
-    if let Some(BrowseFlag::Flag(flag)) = &options.browse_flag {
-        warn!("browse flag: {flag}. what's up");
+    if matches!(options.browse_flag, BrowseFlag::Metadata) {
+        warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
@@ -928,8 +1113,8 @@ fn generate_browse_an_all_artist_album_response(
         .ok_or(UPNPError::NoSuchObject)?;
     let tracks = album.get_tracks();
     let total_matches = tracks.len();
-    let starting_index = options.starting_index.unwrap().into();
-    let requested_count = options.requested_count.unwrap().into();
+    let starting_index = options.starting_index.into();
+    let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
     let album_title = xml::escape::escape_str_attribute(&album.title);
@@ -1036,11 +1221,10 @@ fn wrap_with_envelope_body(body: &str) -> String {
 
 fn generate_browse_response(
     collection: &Collection,
-    object_id: &[String],
     options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
-    let browse_response = match object_id {
+    let browse_response = match options.object_id.as_slice() {
         [root] if root == "0" => Ok(generate_browse_root_response(collection)),
         [root, next] if root == "0" && next == "albums" => {
             Ok(generate_browse_albums_response(collection, options, addr))
@@ -1083,7 +1267,7 @@ fn generate_browse_response(
                 collection, artist_id, album_id, options, addr,
             )
         }
-        _ => {
+        object_id => {
             error!("control: unexpected object ID: {object_id:?}");
             Err(UPNPError::NoSuchObject)
         }
@@ -1104,21 +1288,29 @@ fn generate_browse_response(
     }
 }
 
-struct SearchOptionsBuilder(SearchOptions);
+struct SearchOptionsBuilder {
+    container_id: Option<Vec<String>>,
+    search_criteria: Option<SearchCrit>,
+    filter: Option<Filter>,
+    starting_index: Option<u16>,
+    requested_count: Option<u16>,
+    sort_criteria: Option<SortCriteria>,
+}
+
 impl SearchOptionsBuilder {
     const fn new() -> Self {
-        Self(SearchOptions {
+        Self {
             container_id: None,
             search_criteria: None,
             filter: None,
             starting_index: None,
             requested_count: None,
             sort_criteria: None,
-        })
+        }
     }
 
     fn container_id(&mut self, container_id: Vec<String>) -> &Self {
-        self.0.container_id = Some(container_id);
+        self.container_id = Some(container_id);
         self
     }
 
@@ -1126,7 +1318,7 @@ impl SearchOptionsBuilder {
         match parse_search_criteria(search_criteria) {
             Ok(crit) => {
                 // already an option so just hope it is not overwriting something useful
-                self.0.search_criteria = crit;
+                self.search_criteria = crit;
                 Ok(self)
             }
             Err(err) => {
@@ -1136,42 +1328,126 @@ impl SearchOptionsBuilder {
         }
     }
 
-    fn filter(&mut self, filter: String) -> &Self {
-        self.0.filter = Some(filter.into());
+    fn filter(&mut self, filter: &str) -> &Self {
+        self.filter = Some(filter.into());
         self
     }
 
     const fn starting_index(&mut self, starting_index: u16) -> &Self {
-        self.0.starting_index = Some(starting_index);
+        self.starting_index = Some(starting_index);
         self
     }
 
     const fn requested_count(&mut self, requested_count: u16) -> &Self {
-        self.0.requested_count = Some(requested_count);
+        self.requested_count = Some(requested_count);
         self
     }
 
-    fn sort_criteria(&mut self, sort_criteria: String) -> &Self {
-        self.0.sort_criteria = Some(sort_criteria);
-        self
+    fn sort_criteria(&mut self, sort_criteria: &str) -> Result<&Self, SortCriteriaError> {
+        match parse_sort_criteria(sort_criteria) {
+            Ok(sort) => {
+                self.sort_criteria = Some(sort);
+                Ok(self)
+            }
+            Err(err) => {
+                warn!("invalid sort criteria {err}");
+                Err(err)
+            }
+        }
     }
 
-    fn build(self) -> SearchOptions {
-        self.0
+    fn build(self) -> Result<SearchOptions, SearchOptionError> {
+        Ok(SearchOptions {
+            container_id: self.container_id.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::ContainerID,
+            ))?,
+            search_criteria: self.search_criteria.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::SearchCriteria,
+            ))?,
+            filter: self
+                .filter
+                .ok_or(SearchOptionError::MissingField(SearchOptionsFields::Filter))?,
+            starting_index: self.starting_index.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::StartingIndex,
+            ))?,
+            requested_count: self.requested_count.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::RequestedCount,
+            ))?,
+            sort_criteria: self.sort_criteria.ok_or(SearchOptionError::MissingField(
+                SearchOptionsFields::SortCriteria,
+            ))?,
+        })
     }
 }
 
 #[derive(Debug)]
 struct SearchOptions {
-    container_id: Option<Vec<String>>,
-    search_criteria: Option<SearchCrit>,
-    filter: Option<Filter>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
-    sort_criteria: Option<String>,
+    container_id: Vec<String>,
+    search_criteria: SearchCrit,
+    filter: Filter,
+    starting_index: u16,
+    requested_count: u16,
+    sort_criteria: SortCriteria,
 }
 
-fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
+#[derive(Debug)]
+enum SearchOptionsFields {
+    ContainerID,
+    SearchCriteria,
+    Filter,
+    StartingIndex,
+    RequestedCount,
+    SortCriteria,
+}
+
+impl std::fmt::Display for SearchOptionsFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let name = match self {
+            Self::ContainerID => "ContainerID",
+            Self::SearchCriteria => "SearchCriteria",
+            Self::Filter => "Filter",
+            Self::StartingIndex => "StartingIndex",
+            Self::RequestedCount => "RequestedCount",
+            Self::SortCriteria => "SortCriteria",
+        };
+        write!(f, "{name}")
+    }
+}
+
+impl std::error::Error for SearchOptionsFields {}
+
+#[derive(Debug)]
+enum SearchOptionError {
+    SearchCriteria(Error),
+    SortCriteria(SortCriteriaError),
+    MissingField(SearchOptionsFields),
+}
+
+impl std::fmt::Display for SearchOptionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::SearchCriteria(err) => write!(f, "invalid search {err}"),
+            Self::SortCriteria(err) => write!(f, "invalid sort criteria {err}"),
+            Self::MissingField(field) => write!(f, "missing search argument {field}"),
+        }
+    }
+}
+
+impl std::error::Error for SearchOptionError {}
+
+impl From<Error> for SearchOptionError {
+    fn from(value: Error) -> Self {
+        Self::SearchCriteria(value)
+    }
+}
+
+impl From<SortCriteriaError> for SearchOptionError {
+    fn from(value: SortCriteriaError) -> Self {
+        Self::SortCriteria(value)
+    }
+}
+
+fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionError> {
     let mut builder = SearchOptionsBuilder::new();
     let envelope = Element::parse(body.as_bytes()).unwrap();
     let body = envelope.get_child("Body").unwrap();
@@ -1198,7 +1474,7 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
                         }
                     }
                     "Filter" => {
-                        builder.filter(child.as_element().unwrap().get_text().unwrap().to_string());
+                        builder.filter(child.as_element().unwrap().get_text().unwrap().as_ref());
                     }
                     "StartingIndex" => {
                         builder.starting_index(
@@ -1223,10 +1499,14 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
                         );
                     }
                     "SortCriteria" => {
-                        let sort_criteria = child.as_element().unwrap().get_text();
-                        if let Some(sort_criteria) = sort_criteria {
-                            builder.sort_criteria(sort_criteria.to_string());
-                        }
+                        builder.sort_criteria(
+                            child
+                                .as_element()
+                                .unwrap()
+                                .get_text()
+                                .unwrap_or_default()
+                                .as_ref(),
+                        )?;
                     }
                     anything => warn!("what is {anything:?}"),
                 }
@@ -1235,52 +1515,44 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
         None => panic!("no Search child"),
     }
 
-    let options = builder.build();
+    let options = builder.build()?;
 
     debug!("search options: {options:?}");
 
-    if let Some(search_criteria) = &options.search_criteria {
-        warn!("search criteria: {search_criteria:?}. what's up");
-    } else {
-        warn!("no search criteria. why are we here?");
-    }
-    if let Some(filter) = &options.filter {
-        match filter {
-            Filter::All => info!("no filter. simple."),
-            Filter::Criteria(criteria) => warn!("some filter: {criteria}. what's up"),
+    match &options.search_criteria {
+        SearchCrit::All => info!("search all. nothing to do"),
+        SearchCrit::SearchExp(search_exp) => {
+            warn!("search criteria: {search_exp:?}. what's up");
         }
     }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
-        warn!("no sort criteria. do i just make this up?");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
+    warn!("sort criteria: {:?}. what's up", options.sort_criteria);
 
     Ok(options)
 }
 
 fn generate_search_response(
     collection: &Collection,
-    container_id: &[String],
     options: &SearchOptions,
     addr: &str,
 ) -> (String, &'static str) {
     // TODO do this stuff
-    if options.search_criteria.is_none() {
-        warn!("no search criteria. why are we here?");
+    match &options.filter {
+        Filter::All => warn!("include all fields."),
+        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
-    }
-    if let Some(sort_criteria) = &options.sort_criteria {
-        warn!("sort criteria: {sort_criteria}. what's up");
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
-    let search_response = match container_id {
+    let search_response = match options.container_id.as_slice() {
         [root] if root == "0" => {
-            let starting_index = options.starting_index.unwrap().into();
-            let requested_count: usize = options.requested_count.unwrap().into();
+            let starting_index = options.starting_index.into();
+            let requested_count: usize = options.requested_count.into();
             let mut total_matches = 0;
             let mut number_returned = 0;
             let mut result = String::new();
@@ -1288,7 +1560,7 @@ fn generate_search_response(
                 let artist_id = artist.id;
                 let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
                 let include = include_this(
-                    options.search_criteria.as_ref(),
+                    &options.search_criteria,
                     &SearchWhat::Artist,
                     None,
                     None,
@@ -1310,7 +1582,7 @@ fn generate_search_response(
                     let album_id = album.id;
                     let album_title = xml::escape::escape_str_attribute(&album.title);
                     let include = include_this(
-                        options.search_criteria.as_ref(),
+                        &options.search_criteria,
                         &SearchWhat::Album,
                         None,
                         Some(album),
@@ -1336,7 +1608,7 @@ fn generate_search_response(
 
                     for track in album.get_tracks() {
                         let include = include_this(
-                            options.search_criteria.as_ref(),
+                            &options.search_criteria,
                             &SearchWhat::Track,
                             Some(track),
                             Some(album),
@@ -1378,7 +1650,7 @@ fn generate_search_response(
 
             Some(format_response(&result, number_returned, total_matches))
         }
-        _ => {
+        container_id => {
             error!("control: unexpected container ID: {container_id:?}");
             None
         }
@@ -1403,21 +1675,17 @@ enum SearchWhat {
 }
 
 fn include_this(
-    search_criteria: Option<&SearchCrit>,
+    search_criteria: &SearchCrit,
     what: &SearchWhat,
     track: Option<&Track>,
     album: Option<&Album>,
     artist: &Artist,
 ) -> bool {
-    // if search_criteria is None then treat as All
     match search_criteria {
-        Some(SearchCrit::All) | None => true,
-        Some(search_criteria) => match search_criteria {
-            SearchCrit::All => true,
-            SearchCrit::SearchExp(search_exp) => {
-                include_by_search_exp(search_exp, what, track, album, artist)
-            }
-        },
+        SearchCrit::All => true,
+        SearchCrit::SearchExp(search_exp) => {
+            include_by_search_exp(search_exp, what, track, album, artist)
+        }
     }
 }
 
@@ -1613,40 +1881,61 @@ fn handle_content_directory_actions<'a>(
         CDS_GET_SEARCH_CAPABILITIES_ACTION => generate_get_search_capabilities_response(),
         CDS_GET_SORT_CAPABILITIES_ACTION => generate_get_sort_capabilities_response(),
         CDS_BROWSE_ACTION => {
-            let options = body.map_or_else(
+            let options = match body.map_or_else(
                 || {
                     panic!("no body");
                 },
                 |body| parse_soap_browse_request(&body),
-            );
+            ) {
+                Ok(options) => options,
+                Err(err) => {
+                    return match err {
+                        BrowseOptionError::BrowseFlag(err) => {
+                            warn!("{err}");
+                            soap_upnp_error(402, "Invalid args")
+                        }
+                        BrowseOptionError::MissingField(err) => {
+                            warn!("{err}");
+                            soap_upnp_error(402, "Invalid args")
+                        }
+                        BrowseOptionError::SortCriteria(err) => {
+                            warn!("invalid sort criteria: {err:?}");
+                            soap_upnp_error(709, "Invalid sort criteria")
+                        }
+                    };
+                }
+            };
 
-            options.object_id.as_ref().map_or_else(
-                || {
-                    panic!("no object id");
-                },
-                |object_id: &Vec<String>| {
-                    generate_browse_response(collection, object_id, &options, addr)
-                },
-            )
+            generate_browse_response(collection, &options, addr)
         }
         CDS_SEARCH_ACTION => {
-            let Ok(options) = body.map_or_else(
+            let options = match body.map_or_else(
                 || {
                     panic!("no body");
                 },
                 |body| parse_soap_search_request(&body),
-            ) else {
-                // big assumption that this is the only error coming
-                return soap_upnp_error(708, "Invalid search criteria");
+            ) {
+                Ok(options) => options,
+                Err(err) => {
+                    return match err {
+                        SearchOptionError::SearchCriteria(err) => {
+                            warn!("{err}");
+                            soap_upnp_error(708, "Invalid search criteria")
+                        }
+                        SearchOptionError::MissingField(err) => {
+                            warn!("{err}");
+                            soap_upnp_error(402, "Invalid args")
+                        }
+                        SearchOptionError::SortCriteria(err) => {
+                            warn!("invalid sort criteria: {err:?}");
+                            soap_upnp_error(709, "Invalid sort criteria")
+                        }
+                    };
+                }
             };
             trace!("search criteria: {:?}", options.search_criteria);
 
-            let container_id = &options.container_id.clone().unwrap_or_else(|| {
-                warn!("no container id, assuming 0");
-                vec!["0".to_string()]
-            });
-
-            generate_search_response(collection, container_id, &options, addr)
+            generate_search_response(collection, &options, addr)
         }
         CDS_CREATE_OBJECT_ACTION
         | CDS_DESTROY_OBJECT_ACTION
@@ -3819,5 +4108,47 @@ mod tests {
     fn test_format_time_nice() {
         let time = NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap();
         assert_eq!(format_time_nice(time), "0:00:05.712");
+    }
+
+    #[test]
+    fn test_filter_from() {
+        assert_eq!(<&str as Into<Filter>>::into("*"), Filter::All);
+        assert_eq!(<&str as Into<Filter>>::into(""), Filter::Include(vec![]));
+        assert_eq!(
+            <&str as Into<Filter>>::into("abc"),
+            Filter::Include(vec!["abc".to_string()])
+        );
+        assert_eq!(
+            <&str as Into<Filter>>::into("a,b"),
+            Filter::Include(vec!["a".to_string(), "b".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_parse_sort_criteria() {
+        assert_eq!(parse_sort_criteria(""), Ok(vec![]));
+        assert_eq!(parse_sort_criteria(","), Ok(vec![]));
+        assert_eq!(
+            parse_sort_criteria("+upnp:artist,-dc:date,+dc:title"),
+            Ok(vec![
+                Sort::Ascending("upnp:artist".to_string()),
+                Sort::Descending("dc:date".to_string()),
+                Sort::Ascending("dc:title".to_string()),
+            ])
+        );
+        assert_eq!(
+            parse_sort_criteria("+upnp:originalTrackNumber"),
+            Ok(vec![Sort::Ascending(
+                "upnp:originalTrackNumber".to_string()
+            )])
+        );
+        assert_eq!(
+            parse_sort_criteria("upnp:artist"),
+            Err(SortCriteriaError::BadDirection("upnp:artist".to_string()))
+        );
+        assert_eq!(
+            parse_sort_criteria("+"),
+            Err(SortCriteriaError::MissingProperty("+".to_string()))
+        );
     }
 }
