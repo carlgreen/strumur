@@ -439,7 +439,7 @@ impl std::fmt::Display for BrowseOptionError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::BrowseFlag(err) => write!(f, "invalid browse flag {err}"),
-            Self::SortCriteria(err) => write!(f, "invalid search criteria {err}"),
+            Self::SortCriteria(err) => write!(f, "invalid sort criteria {err}"),
             Self::MissingField(field) => write!(f, "missing browse argument {field}"),
         }
     }
