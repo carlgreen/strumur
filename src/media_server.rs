@@ -223,7 +223,7 @@ impl BrowseOptionsBuilder {
         }
     }
 
-    fn filter(&mut self, filter: String) -> &Self {
+    fn filter(&mut self, filter: &str) -> &Self {
         self.0.filter = Some(filter.into());
         self
     }
@@ -304,17 +304,25 @@ impl TryFrom<String> for BrowseFlag {
     }
 }
 
-#[derive(Debug, Clone)]
+/// This variable is used in conjunction with those actions that include a Filter parameter. The
+/// comma-separated list of property specifiers (including namespaces) indicates which metadata
+/// properties are to be returned in the results from browsing or searching.
+#[derive(Debug, Clone, PartialEq)]
 enum Filter {
     All,
-    Criteria(String),
+    Include(Vec<String>),
 }
 
-impl From<String> for Filter {
-    fn from(s: String) -> Self {
-        match s.as_str() {
+impl From<&str> for Filter {
+    fn from(s: &str) -> Self {
+        match s {
             "*" => Self::All,
-            _ => Self::Criteria(s),
+            s => Self::Include(
+                s.split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>(),
+            ),
         }
     }
 }
@@ -422,7 +430,7 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
                         )?;
                     }
                     "Filter" => {
-                        builder.filter(child.as_element().unwrap().get_text().unwrap().to_string());
+                        builder.filter(child.as_element().unwrap().get_text().unwrap().as_ref());
                     }
                     "StartingIndex" => {
                         builder.starting_index(
@@ -471,8 +479,8 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
     }
     if let Some(filter) = &options.filter {
         match filter {
-            Filter::All => info!("no filter. simple."),
-            Filter::Criteria(criteria) => warn!("some filter: {criteria}. what's up"),
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
         }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
@@ -522,8 +530,11 @@ fn generate_browse_albums_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -569,8 +580,11 @@ fn generate_browse_an_album_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -621,8 +635,11 @@ fn generate_browse_items_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -669,8 +686,11 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -705,8 +725,11 @@ fn generate_browse_an_artist_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -763,8 +786,11 @@ fn generate_browse_an_artist_albums_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -809,8 +835,11 @@ fn generate_browse_an_artist_album_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -911,8 +940,11 @@ fn generate_browse_all_artists_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -947,8 +979,11 @@ fn generate_browse_an_all_artist_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -1026,8 +1061,11 @@ fn generate_browse_an_all_artist_album_response(
     if matches!(&options.browse_flag, Some(BrowseFlag::Metadata)) {
         warn!("browse metadata. what's up");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -1252,7 +1290,7 @@ impl SearchOptionsBuilder {
         }
     }
 
-    fn filter(&mut self, filter: String) -> &Self {
+    fn filter(&mut self, filter: &str) -> &Self {
         self.0.filter = Some(filter.into());
         self
     }
@@ -1314,7 +1352,7 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
                         }
                     }
                     "Filter" => {
-                        builder.filter(child.as_element().unwrap().get_text().unwrap().to_string());
+                        builder.filter(child.as_element().unwrap().get_text().unwrap().as_ref());
                     }
                     "StartingIndex" => {
                         builder.starting_index(
@@ -1362,8 +1400,8 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, Error> {
     }
     if let Some(filter) = &options.filter {
         match filter {
-            Filter::All => info!("no filter. simple."),
-            Filter::Criteria(criteria) => warn!("some filter: {criteria}. what's up"),
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
         }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
@@ -1385,8 +1423,11 @@ fn generate_search_response(
     if options.search_criteria.is_none() {
         warn!("no search criteria. why are we here?");
     }
-    if let Some(Filter::Criteria(criteria)) = &options.filter {
-        warn!("some filter: {criteria}. what's up");
+    if let Some(filter) = &options.filter {
+        match filter {
+            Filter::All => warn!("include all fields."),
+            Filter::Include(fields) => warn!("include {fields:?} fields"),
+        }
     }
     if let Some(sort_criteria) = &options.sort_criteria {
         warn!("sort criteria: {sort_criteria:?}. what's up");
@@ -3949,6 +3990,20 @@ mod tests {
     fn test_format_time_nice() {
         let time = NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap();
         assert_eq!(format_time_nice(time), "0:00:05.712");
+    }
+
+    #[test]
+    fn test_filter_from() {
+        assert_eq!(<&str as Into<Filter>>::into("*"), Filter::All);
+        assert_eq!(<&str as Into<Filter>>::into(""), Filter::Include(vec![]));
+        assert_eq!(
+            <&str as Into<Filter>>::into("abc"),
+            Filter::Include(vec!["abc".to_string()])
+        );
+        assert_eq!(
+            <&str as Into<Filter>>::into("a,b"),
+            Filter::Include(vec!["a".to_string(), "b".to_string()])
+        );
     }
 
     #[test]
