@@ -585,10 +585,10 @@ fn generate_browse_albums_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let total_matches = collection.get_albums().count();
     let starting_index = options.starting_index.into();
@@ -633,10 +633,10 @@ fn generate_browse_an_album_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let (artist, album) = collection
         .get_albums()
@@ -686,10 +686,10 @@ fn generate_browse_items_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let total_matches = collection.get_tracks().count();
     let starting_index: usize = options.starting_index.into();
@@ -735,10 +735,10 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artists = collection.get_artists();
     let total_matches = artists.len();
@@ -772,10 +772,10 @@ fn generate_browse_an_artist_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let things = ["albums", "items"];
     let starting_index = options.starting_index.into();
@@ -831,10 +831,10 @@ fn generate_browse_an_artist_albums_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
@@ -878,10 +878,10 @@ fn generate_browse_an_artist_album_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
@@ -981,10 +981,10 @@ fn generate_browse_all_artists_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artists = collection.get_artists();
     let total_matches = artists.len();
@@ -1018,10 +1018,10 @@ fn generate_browse_an_all_artist_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
@@ -1098,10 +1098,10 @@ fn generate_browse_an_all_artist_album_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if !options.sort_criteria.is_empty() {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    } else {
+    if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
+    } else {
+        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
     let artist = collection
         .get_artists()
