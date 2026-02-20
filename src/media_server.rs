@@ -1221,11 +1221,10 @@ fn wrap_with_envelope_body(body: &str) -> String {
 
 fn generate_browse_response(
     collection: &Collection,
-    object_id: &[String],
     options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
-    let browse_response = match object_id {
+    let browse_response = match options.object_id.as_slice() {
         [root] if root == "0" => Ok(generate_browse_root_response(collection)),
         [root, next] if root == "0" && next == "albums" => {
             Ok(generate_browse_albums_response(collection, options, addr))
@@ -1268,7 +1267,7 @@ fn generate_browse_response(
                 collection, artist_id, album_id, options, addr,
             )
         }
-        _ => {
+        object_id => {
             error!("control: unexpected object ID: {object_id:?}");
             Err(UPNPError::NoSuchObject)
         }
@@ -1537,7 +1536,6 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionEr
 
 fn generate_search_response(
     collection: &Collection,
-    container_id: &[String],
     options: &SearchOptions,
     addr: &str,
 ) -> (String, &'static str) {
@@ -1551,7 +1549,7 @@ fn generate_search_response(
     } else {
         warn!("sort criteria: {:?}. what's up", options.sort_criteria);
     }
-    let search_response = match container_id {
+    let search_response = match options.container_id.as_slice() {
         [root] if root == "0" => {
             let starting_index = options.starting_index.into();
             let requested_count: usize = options.requested_count.into();
@@ -1652,7 +1650,7 @@ fn generate_search_response(
 
             Some(format_response(&result, number_returned, total_matches))
         }
-        _ => {
+        container_id => {
             error!("control: unexpected container ID: {container_id:?}");
             None
         }
@@ -1908,7 +1906,7 @@ fn handle_content_directory_actions<'a>(
                 }
             };
 
-            generate_browse_response(collection, &options.object_id, &options, addr)
+            generate_browse_response(collection, &options, addr)
         }
         CDS_SEARCH_ACTION => {
             let options = match body.map_or_else(
@@ -1937,7 +1935,7 @@ fn handle_content_directory_actions<'a>(
             };
             trace!("search criteria: {:?}", options.search_criteria);
 
-            generate_search_response(collection, &options.container_id, &options, addr)
+            generate_search_response(collection, &options, addr)
         }
         CDS_CREATE_OBJECT_ACTION
         | CDS_DESTROY_OBJECT_ACTION
