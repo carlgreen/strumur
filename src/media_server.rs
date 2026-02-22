@@ -3676,8 +3676,6 @@ mod tests {
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
-        println!("{result}");
-
         compare_xml(
             &result,
             r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
