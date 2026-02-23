@@ -534,10 +534,6 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
         BrowseFlag::Metadata => todo!("browse metadata"),
         BrowseFlag::DirectChildren => info!("direct children. simple."),
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     warn!("sort criteria: {:?}. what's up", options.sort_criteria);
 
     Ok(options)
@@ -590,10 +586,6 @@ fn generate_browse_albums_response(
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -613,11 +605,18 @@ fn generate_browse_albums_response(
         let album_id = album.id;
         let parent_id = "0$albums";
         let item_id = format!("*a{album_id}");
-        write_music_album(&mut result, parent_id, &item_id, artist, album, addr).unwrap_or_else(
-            |err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            },
-        );
+        write_music_album(
+            &mut result,
+            &options.filter,
+            parent_id,
+            &item_id,
+            artist,
+            album,
+            addr,
+        )
+        .unwrap_or_else(|err| match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        });
         if number_returned >= requested_count {
             break;
         }
@@ -822,10 +821,6 @@ fn generate_browse_an_artist_albums_response(
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -847,11 +842,18 @@ fn generate_browse_an_artist_albums_response(
         let id = album.id;
         let parent_id = format!("0$=Artist${artist_id}$albums");
         let item_id = format!("{id}");
-        write_music_album(&mut result, &parent_id, &item_id, artist, album, addr).unwrap_or_else(
-            |err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            },
-        );
+        write_music_album(
+            &mut result,
+            &options.filter,
+            &parent_id,
+            &item_id,
+            artist,
+            album,
+            addr,
+        )
+        .unwrap_or_else(|err| match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        });
     }
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -1000,10 +1002,6 @@ fn generate_browse_an_all_artist_response(
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -1028,11 +1026,18 @@ fn generate_browse_an_all_artist_response(
         let album_id = album.id;
         let parent_id = format!("0$=All Artists${artist_id}");
         let item_id = format!("*a{album_id}");
-        write_music_album(&mut result, &parent_id, &item_id, artist, album, addr).unwrap_or_else(
-            |err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            },
-        );
+        write_music_album(
+            &mut result,
+            &options.filter,
+            &parent_id,
+            &item_id,
+            artist,
+            album,
+            addr,
+        )
+        .unwrap_or_else(|err| match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        });
     }
     if starting_index > albums.len() {
         starting_index -= albums.len();
@@ -1142,6 +1147,32 @@ impl From<std::fmt::Error> for GenerateResponseError {
     }
 }
 
+const REQUIRED_OBJECT_PROPERTIES: [&str; 5] =
+    ["id", "parentID", "dc:title", "upnp:class", "restricted"];
+const OPTIONAL_OBJECT_PROPERTIES: [&str; 3] = ["dc:creator", "res", "writeStatus"];
+const REQUIRED_OBJECT_CONTAINER_PROPERTIES: [&str; 0] = [];
+const OPTIONAL_OBJECT_CONTAINER_PROPERTIES: [&str; 4] =
+    ["childCount", "createClass", "searchClass", "searchable"];
+const REQUIRED_OBJECT_CONTAINER_ALBUM_PROPERTIES: [&str; 0] = [];
+const OPTIONAL_OBJECT_CONTAINER_ALBUM_PROPERTIES: [&str; 8] = [
+    "upnp:storageMedium",
+    "dc:longDescription",
+    "dc:description",
+    "dc:publisher",
+    "dc:contributor",
+    "dc:date",
+    "dc:relation",
+    "dc:rights",
+];
+const REQUIRED_OBJECT_CONTAINER_ALBUM_MUSICALBUM_PROPERTIES: [&str; 0] = [];
+const OPTIONAL_OBJECT_CONTAINER_ALBUM_MUSICALBUM_PROPERTIES: [&str; 5] = [
+    "upnp:artist",
+    "upnp:genre",
+    "upnp:producer",
+    "upnp:albumArtURI",
+    "upnp:toc",
+];
+
 fn write_container(
     result: &mut String,
     parent_id: &str,
@@ -1158,12 +1189,40 @@ fn write_container(
 
 fn write_music_album(
     result: &mut String,
+    filter: &Filter,
     parent_id: &str,
     container_id: &str,
     artist: &Artist,
     album: &Album,
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
+    let mut required_properties = vec![];
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_PROPERTIES);
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PROPERTIES);
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_ALBUM_PROPERTIES);
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_ALBUM_MUSICALBUM_PROPERTIES);
+    let mut optional_properties = vec![];
+
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_PROPERTIES);
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PROPERTIES);
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_ALBUM_PROPERTIES);
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_ALBUM_MUSICALBUM_PROPERTIES);
+    let mut included_properties = required_properties;
+
+    match filter {
+        Filter::All => {
+            included_properties.extend_from_slice(&optional_properties);
+        }
+        Filter::Include(fields) => {
+            for field in fields {
+                if !optional_properties.contains(&field.as_str()) {
+                    warn!("requested field {field} does not exist");
+                }
+            }
+            included_properties.extend(fields.iter().map(String::as_str));
+        }
+    }
+
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
 
     let album_title = xml::escape::escape_str_attribute(&album.title);
@@ -1172,10 +1231,51 @@ fn write_music_album(
     let cover = create_album_art_element(addr, &album.cover);
     // TODO album art details
 
-    write!(
-        result,
-        r#"<container id="{parent_id}${container_id}" parentID="{parent_id}" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
-    )?;
+    write!(result, r"<container",)?;
+    if included_properties.contains(&"id") {
+        write!(result, r#" id="{parent_id}${container_id}""#,)?;
+    }
+    if included_properties.contains(&"parentID") {
+        write!(result, r#" parentID="{parent_id}""#,)?;
+    }
+    if included_properties.contains(&"childCount") {
+        write!(result, r#" childCount="{track_count}""#,)?;
+    }
+    if included_properties.contains(&"restricted") {
+        write!(result, r#" restricted="1""#,)?;
+    }
+    if included_properties.contains(&"searchable") {
+        write!(result, r#" searchable="1""#,)?;
+    }
+    write!(result, r">",)?;
+    if included_properties.contains(&"dc:title") {
+        write!(result, r"<dc:title>{album_title}</dc:title>",)?;
+    }
+    if included_properties.contains(&"dc:date") {
+        write!(result, r"{date}",)?;
+    }
+    if included_properties.contains(&"upnp:artist") {
+        write!(result, r"<upnp:artist>{artist_name}</upnp:artist>",)?;
+    }
+    if included_properties.contains(&"dc:creator") {
+        write!(result, r"<dc:creator>{artist_name}</dc:creator>",)?;
+    }
+    if included_properties.contains(&"upnp:artist") {
+        write!(
+            result,
+            r#"<upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>"#,
+        )?;
+    }
+    if included_properties.contains(&"upnp:albumArtURI") {
+        write!(result, r"{cover}",)?;
+    }
+    if included_properties.contains(&"upnp:class") {
+        write!(
+            result,
+            r"<upnp:class>object.container.album.musicAlbum</upnp:class>",
+        )?;
+    }
+    write!(result, r"</container>",)?;
 
     Ok(())
 }
@@ -1613,10 +1713,6 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionEr
             warn!("search criteria: {search_exp:?}. what's up");
         }
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     warn!("sort criteria: {:?}. what's up", options.sort_criteria);
 
     Ok(options)
@@ -1684,6 +1780,7 @@ fn generate_search_response(
                             let item_id = format!("*a{album_id}");
                             write_music_album(
                                 &mut result,
+                                &options.filter,
                                 parent_id,
                                 &item_id,
                                 artist,
@@ -4260,6 +4357,117 @@ mod tests {
         assert_eq!(
             parse_sort_criteria("+"),
             Err(SortCriteriaError::MissingProperty("+".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_write_music_album_all_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::All,
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        let album = Album::new(
+            2,
+            "the title".into(),
+            NaiveDate::from_ymd_opt(2026, 2, 21),
+            vec![],
+            "cover.jpg".into(),
+        );
+        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let addr = "abc";
+        write_music_album(
+            &mut result,
+            &options.filter,
+            "0$albums",
+            "*a2",
+            &artist,
+            &album,
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$albums$*a2" parentID="0$albums" childCount="0" restricted="1" searchable="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><dc:creator>an artist</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">abc/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_album_no_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        let album = Album::new(
+            2,
+            "the title".into(),
+            NaiveDate::from_ymd_opt(2026, 2, 21),
+            vec![],
+            "cover.jpg".into(),
+        );
+        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let addr = "abc";
+        write_music_album(
+            &mut result,
+            &options.filter,
+            "0$albums",
+            "*a2",
+            &artist,
+            &album,
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_album_some_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec!["dc:date".into(), "upnp:artist".into()]),
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        let album = Album::new(
+            2,
+            "the title".into(),
+            NaiveDate::from_ymd_opt(2026, 2, 21),
+            vec![],
+            "cover.jpg".into(),
+        );
+        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let addr = "abc";
+        write_music_album(
+            &mut result,
+            &options.filter,
+            "0$albums",
+            "*a2",
+            &artist,
+            &album,
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
         );
     }
 }
