@@ -634,10 +634,6 @@ fn generate_browse_an_album_response(
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -660,6 +656,7 @@ fn generate_browse_an_album_response(
         let item_id = format!("*i{track_id}");
         write_music_track(
             &mut result,
+            &options.filter,
             &parent_id,
             &item_id,
             artist,
@@ -683,10 +680,6 @@ fn generate_browse_items_response(
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -706,10 +699,19 @@ fn generate_browse_items_response(
         let id = track.id;
         let parent_id = "0$items";
         let item_id = format!("{id}");
-        write_music_track(&mut result, parent_id, &item_id, artist, album, track, addr)
-            .unwrap_or_else(|err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            });
+        write_music_track(
+            &mut result,
+            &options.filter,
+            parent_id,
+            &item_id,
+            artist,
+            album,
+            track,
+            addr,
+        )
+        .unwrap_or_else(|err| match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        });
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -864,10 +866,6 @@ fn generate_browse_an_artist_album_response(
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -894,6 +892,7 @@ fn generate_browse_an_artist_album_response(
         let item_id = format!("{id}");
         write_music_track(
             &mut result,
+            &options.filter,
             &parent_id,
             &item_id,
             artist,
@@ -935,6 +934,7 @@ fn generate_browse_an_artist_items_response(
         let item_id = format!("{id}");
         write_music_track(
             &mut result,
+            &options.filter,
             &parent_id,
             &item_id,
             artist,
@@ -1046,6 +1046,7 @@ fn generate_browse_an_all_artist_response(
         let item_id = format!("*i{id}");
         write_music_track(
             &mut result,
+            &options.filter,
             &parent_id,
             &item_id,
             artist,
@@ -1071,10 +1072,6 @@ fn generate_browse_an_all_artist_album_response(
     // TODO do this stuff
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
-    }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
@@ -1102,6 +1099,7 @@ fn generate_browse_an_all_artist_album_response(
         let item_id = format!("{id}");
         write_music_track(
             &mut result,
+            &options.filter,
             &parent_id,
             &item_id,
             artist,
@@ -1143,6 +1141,8 @@ const OPTIONAL_OBJECT_PROPERTIES: [&str; 3] = ["dc:creator", "res", "writeStatus
 const REQUIRED_OBJECT_CONTAINER_PROPERTIES: [&str; 0] = [];
 const OPTIONAL_OBJECT_CONTAINER_PROPERTIES: [&str; 4] =
     ["childCount", "createClass", "searchClass", "searchable"];
+const REQUIRED_OBJECT_ITEM_PROPERTIES: [&str; 0] = [];
+const OPTIONAL_OBJECT_ITEM_PROPERTIES: [&str; 1] = ["refID"];
 const REQUIRED_OBJECT_CONTAINER_ALBUM_PROPERTIES: [&str; 0] = [];
 const OPTIONAL_OBJECT_CONTAINER_ALBUM_PROPERTIES: [&str; 8] = [
     "upnp:storageMedium",
@@ -1167,6 +1167,26 @@ const OPTIONAL_OBJECT_CONTAINER_PERSON_PROPERTIES: [&str; 1] = ["dc:language"];
 const REQUIRED_OBJECT_CONTAINER_PERSON_MUSICARTIST_PROPERTIES: [&str; 0] = [];
 const OPTIONAL_OBJECT_CONTAINER_PERSON_MUSICARTIST_PROPERTIES: [&str; 2] =
     ["upnp:genre", "upnp:artistDiscographyURI"];
+const REQUIRED_OBJECT_ITEM_AUDIOITEM_PROPERTIES: [&str; 0] = [];
+const OPTIONAL_OBJECT_ITEM_AUDIOITEM_PROPERTIES: [&str; 7] = [
+    "upnp:genre",
+    "dc:description",
+    "upnp:longDescription",
+    "dc:publisher",
+    "dc:language",
+    "dc:relation",
+    "dc:rights",
+];
+const REQUIRED_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES: [&str; 0] = [];
+const OPTIONAL_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES: [&str; 7] = [
+    "upnp:artist",
+    "upnp:album",
+    "upnp:originalTrackNumber",
+    "upnp:playlist",
+    "upnp:storageMedium",
+    "dc:contributor",
+    "dc:date",
+];
 
 fn write_container(
     result: &mut String,
@@ -1277,6 +1297,7 @@ fn write_music_album(
 
 fn write_music_track(
     result: &mut String,
+    filter: &Filter,
     parent_id: &str,
     item_id: &str,
     artist: &Artist,
@@ -1284,6 +1305,33 @@ fn write_music_track(
     track: &Track,
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
+    let mut required_properties = vec![];
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_PROPERTIES);
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_PROPERTIES);
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_AUDIOITEM_PROPERTIES);
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES);
+    let mut optional_properties = vec![];
+
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_PROPERTIES);
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_PROPERTIES);
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_AUDIOITEM_PROPERTIES);
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES);
+    let mut included_properties = required_properties;
+
+    match filter {
+        Filter::All => {
+            included_properties.extend_from_slice(&optional_properties);
+        }
+        Filter::Include(fields) => {
+            for field in fields {
+                if !optional_properties.contains(&field.as_str()) {
+                    warn!("requested field {field} does not exist");
+                }
+            }
+            included_properties.extend(fields.iter().map(String::as_str));
+        }
+    }
+
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
 
     let album_title = &album.title;
@@ -1299,10 +1347,64 @@ fn write_music_track(
     let channels = track.channels;
     let file = format!("{}/{}", addr, track.file);
     let file = xml::escape::escape_str_attribute(&file);
-    write!(
-        result,
-        r#"<item id="{parent_id}${item_id}" parentID="{parent_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber><res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
-    )?;
+
+    write!(result, r"<item",)?;
+    if included_properties.contains(&"id") {
+        write!(result, r#" id="{parent_id}${item_id}""#,)?;
+    }
+    if included_properties.contains(&"parentID") {
+        write!(result, r#" parentID="{parent_id}""#,)?;
+    }
+    if included_properties.contains(&"refID") {
+        // TODO refID
+        warn!("refID not supported");
+    }
+    if included_properties.contains(&"restricted") {
+        write!(result, r#" restricted="1""#,)?;
+    }
+    write!(result, r">",)?;
+
+    if included_properties.contains(&"dc:title") {
+        write!(result, r"<dc:title>{track_title}</dc:title>",)?;
+    }
+    if included_properties.contains(&"dc:date") {
+        write!(result, r"{date}",)?;
+    }
+    if included_properties.contains(&"upnp:album") {
+        write!(result, r"<upnp:album>{album_title}</upnp:album>",)?;
+    }
+    if included_properties.contains(&"upnp:artist") {
+        write!(result, r"<upnp:artist>{artist_name}</upnp:artist>",)?;
+    }
+    if included_properties.contains(&"dc:creator") {
+        write!(result, r"<dc:creator>{artist_name}</dc:creator>",)?;
+    }
+    if included_properties.contains(&"upnp:artist") {
+        write!(
+            result,
+            r#"<upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist>"#,
+        )?;
+    }
+    if included_properties.contains(&"upnp:originalTrackNumber") {
+        write!(
+            result,
+            r"<upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>",
+        )?;
+    }
+    if included_properties.contains(&"res") {
+        write!(
+            result,
+            r#"<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res>"#,
+        )?;
+    }
+    // TODO consider upnp:genre, dc:description, upnp:longDescription, dc:publisher, dc:language, dc:relation, dc:rights, upnp:playlist, upnp:storageMedium, dc:contributor
+    if included_properties.contains(&"upnp:class") {
+        write!(
+            result,
+            r"<upnp:class>object.item.audioItem.musicTrack</upnp:class>",
+        )?;
+    }
+    write!(result, r"</item>",)?;
 
     Ok(())
 }
@@ -1770,10 +1872,6 @@ fn generate_search_response(
     addr: &str,
 ) -> (String, &'static str) {
     // TODO do this stuff
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -1866,6 +1964,7 @@ fn generate_search_response(
                                 let item_id = format!("*i{track_id}");
                                 write_music_track(
                                     &mut result,
+                                    &options.filter,
                                     &parent_id,
                                     &item_id,
                                     artist,
@@ -4553,6 +4652,159 @@ mod tests {
         assert_eq!(
             result,
             r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_track_all_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::All,
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        let track = Track {
+            id: 3,
+            disc: 0,
+            number: 1,
+            title: "some song".into(),
+            artist: "an artist feat. someone".into(),
+            file: "01_some_song.flac".into(),
+            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
+            size: 1234,
+            bits_per_sample: 3,
+            sample_frequency: 4,
+            channels: 2,
+        };
+        let album = Album::new(
+            2,
+            "the title".into(),
+            NaiveDate::from_ymd_opt(2026, 2, 21),
+            vec![track.clone()],
+            "cover.jpg".into(),
+        );
+        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let addr = "abc";
+        write_music_track(
+            &mut result,
+            &options.filter,
+            "0$albums$*a2",
+            "*i3",
+            &artist,
+            &album,
+            &track,
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><dc:date>2026-02-21</dc:date><upnp:album>the title</upnp:album><upnp:artist>an artist feat. someone</upnp:artist><dc:creator>an artist feat. someone</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:originalTrackNumber>1</upnp:originalTrackNumber><res duration="0:03:30.000" size="1234" bitsPerSample="3" sampleFrequency="4" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">abc/01_some_song.flac</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_track_no_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        let track = Track {
+            id: 3,
+            disc: 0,
+            number: 1,
+            title: "some song".into(),
+            artist: "an artist feat. someone".into(),
+            file: "01_some_song.flac".into(),
+            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
+            size: 1234,
+            bits_per_sample: 3,
+            sample_frequency: 4,
+            channels: 2,
+        };
+        let album = Album::new(
+            2,
+            "the title".into(),
+            NaiveDate::from_ymd_opt(2026, 2, 21),
+            vec![track.clone()],
+            "cover.jpg".into(),
+        );
+        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let addr = "abc";
+        write_music_track(
+            &mut result,
+            &options.filter,
+            "0$albums$*a2",
+            "*i3",
+            &artist,
+            &album,
+            &track,
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_track_some_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec!["res".into()]),
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        let track = Track {
+            id: 3,
+            disc: 0,
+            number: 1,
+            title: "some song".into(),
+            artist: "an artist feat. someone".into(),
+            file: "01_some_song.flac".into(),
+            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
+            size: 1234,
+            bits_per_sample: 3,
+            sample_frequency: 4,
+            channels: 2,
+        };
+        let album = Album::new(
+            2,
+            "the title".into(),
+            NaiveDate::from_ymd_opt(2026, 2, 21),
+            vec![track.clone()],
+            "cover.jpg".into(),
+        );
+        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let addr = "abc";
+        write_music_track(
+            &mut result,
+            &options.filter,
+            "0$albums$*a2",
+            "*i3",
+            &artist,
+            &album,
+            &track,
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><res duration="0:03:30.000" size="1234" bitsPerSample="3" sampleFrequency="4" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">abc/01_some_song.flac</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
         );
     }
 }
