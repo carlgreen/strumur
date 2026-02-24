@@ -618,9 +618,6 @@ fn generate_browse_albums_response(
                 GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
             },
         );
-        if number_returned >= requested_count {
-            break;
-        }
     }
     format_response(&result, number_returned, total_matches)
 }
