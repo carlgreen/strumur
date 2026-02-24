@@ -556,8 +556,7 @@ fn generate_browse_root_response(collection: &Collection, options: &BrowseOption
     write_container(
         &mut result,
         &options.filter,
-        "0",
-        "albums",
+        ("0", "albums"),
         &format!("{album_count} albums"),
     )
     .unwrap_or_else(|err| match err {
@@ -567,8 +566,7 @@ fn generate_browse_root_response(collection: &Collection, options: &BrowseOption
     write_container(
         &mut result,
         &options.filter,
-        "0",
-        "items",
+        ("0", "items"),
         &format!("{items_count} items"),
     )
     .unwrap_or_else(|err| match err {
@@ -576,16 +574,15 @@ fn generate_browse_root_response(collection: &Collection, options: &BrowseOption
     });
 
     // how much of this do i even care about?
-    write_container(&mut result, &options.filter, "0", "=Artist", "Artist").unwrap_or_else(|err| {
-        match err {
+    write_container(&mut result, &options.filter, ("0", "=Artist"), "Artist").unwrap_or_else(
+        |err| match err {
             GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        }
-    });
+        },
+    );
     write_container(
         &mut result,
         &options.filter,
-        "0",
-        "=All Artists",
+        ("0", "=All Artists"),
         "All Artists",
     )
     .unwrap_or_else(|err| match err {
@@ -625,8 +622,7 @@ fn generate_browse_albums_response(
         write_music_album(
             &mut result,
             &options.filter,
-            parent_id,
-            &item_id,
+            (parent_id, &item_id),
             artist,
             album,
             addr,
@@ -674,8 +670,7 @@ fn generate_browse_an_album_response(
         write_music_track(
             &mut result,
             &options.filter,
-            &parent_id,
-            &item_id,
+            (&parent_id, &item_id),
             artist,
             album,
             track,
@@ -719,8 +714,7 @@ fn generate_browse_items_response(
         write_music_track(
             &mut result,
             &options.filter,
-            parent_id,
-            &item_id,
+            (parent_id, &item_id),
             artist,
             album,
             track,
@@ -754,7 +748,7 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
         let id = artist.id;
         let parent_id = "0$=Artist";
         let item_id = format!("{id}");
-        write_music_artist(&mut result, &options.filter, parent_id, &item_id, artist)
+        write_music_artist(&mut result, &options.filter, (parent_id, &item_id), artist)
             .unwrap_or_else(|err| match err {
                 GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
             });
@@ -811,8 +805,7 @@ fn generate_browse_an_artist_response(
         write_container(
             &mut result,
             &options.filter,
-            &format!("0$=Artist${artist_id}"),
-            &sub_id.clone(),
+            (&format!("0$=Artist${artist_id}"), &sub_id.clone()),
             &title,
         )
         .unwrap_or_else(|err| match err {
@@ -856,8 +849,7 @@ fn generate_browse_an_artist_albums_response(
         write_music_album(
             &mut result,
             &options.filter,
-            &parent_id,
-            &item_id,
+            (&parent_id, &item_id),
             artist,
             album,
             addr,
@@ -907,8 +899,7 @@ fn generate_browse_an_artist_album_response(
         write_music_track(
             &mut result,
             &options.filter,
-            &parent_id,
-            &item_id,
+            (&parent_id, &item_id),
             artist,
             album,
             track,
@@ -949,8 +940,7 @@ fn generate_browse_an_artist_items_response(
         write_music_track(
             &mut result,
             &options.filter,
-            &parent_id,
-            &item_id,
+            (&parent_id, &item_id),
             artist,
             album,
             track,
@@ -988,7 +978,7 @@ fn generate_browse_all_artists_response(
         let id = artist.id;
         let parent_id = "0$=All Artists";
         let item_id = format!("{id}");
-        write_music_artist(&mut result, &options.filter, parent_id, &item_id, artist)
+        write_music_artist(&mut result, &options.filter, (parent_id, &item_id), artist)
             .unwrap_or_else(|err| match err {
                 GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
             });
@@ -1033,8 +1023,7 @@ fn generate_browse_an_all_artist_response(
         write_music_album(
             &mut result,
             &options.filter,
-            &parent_id,
-            &item_id,
+            (&parent_id, &item_id),
             artist,
             album,
             addr,
@@ -1061,8 +1050,7 @@ fn generate_browse_an_all_artist_response(
         write_music_track(
             &mut result,
             &options.filter,
-            &parent_id,
-            &item_id,
+            (&parent_id, &item_id),
             artist,
             album,
             track,
@@ -1114,8 +1102,7 @@ fn generate_browse_an_all_artist_album_response(
         write_music_track(
             &mut result,
             &options.filter,
-            &parent_id,
-            &item_id,
+            (&parent_id, &item_id),
             artist,
             album,
             track,
@@ -1227,8 +1214,7 @@ fn get_included_fields<'a>(
 fn write_container(
     result: &mut String,
     filter: &Filter,
-    parent_id: &str,
-    container_id: &str,
+    (parent_id, container_id): (&str, &str),
     title: &str,
 ) -> Result<(), GenerateResponseError> {
     let mut required_properties = vec![];
@@ -1275,8 +1261,7 @@ fn write_container(
 fn write_music_album(
     result: &mut String,
     filter: &Filter,
-    parent_id: &str,
-    container_id: &str,
+    (parent_id, container_id): (&str, &str),
     artist: &Artist,
     album: &Album,
     addr: &str,
@@ -1356,8 +1341,7 @@ fn write_music_album(
 fn write_music_track(
     result: &mut String,
     filter: &Filter,
-    parent_id: &str,
-    item_id: &str,
+    (parent_id, item_id): (&str, &str),
     artist: &Artist,
     album: &Album,
     track: &Track,
@@ -1458,8 +1442,7 @@ fn write_music_track(
 fn write_music_artist(
     result: &mut String,
     filter: &Filter,
-    parent_id: &str,
-    container_id: &str,
+    (parent_id, container_id): (&str, &str),
     artist: &Artist,
 ) -> Result<(), GenerateResponseError> {
     let mut required_properties = vec![];
@@ -1934,8 +1917,7 @@ fn generate_search_response(
                         write_music_artist(
                             &mut result,
                             &options.filter,
-                            parent_id,
-                            &item_id,
+                            (parent_id, &item_id),
                             artist,
                         )
                         .unwrap_or_else(|err| match err {
@@ -1965,8 +1947,7 @@ fn generate_search_response(
                             write_music_album(
                                 &mut result,
                                 &options.filter,
-                                parent_id,
-                                &item_id,
+                                (parent_id, &item_id),
                                 artist,
                                 album,
                                 addr,
@@ -1999,8 +1980,7 @@ fn generate_search_response(
                                 write_music_track(
                                     &mut result,
                                     &options.filter,
-                                    &parent_id,
-                                    &item_id,
+                                    (&parent_id, &item_id),
                                     artist,
                                     album,
                                     track,
@@ -4541,8 +4521,7 @@ mod tests {
         write_music_album(
             &mut result,
             &options.filter,
-            "0$albums",
-            "*a2",
+            ("0$albums", "*a2"),
             &artist,
             &album,
             addr,
@@ -4578,8 +4557,7 @@ mod tests {
         write_music_album(
             &mut result,
             &options.filter,
-            "0$albums",
-            "*a2",
+            ("0$albums", "*a2"),
             &artist,
             &album,
             addr,
@@ -4615,8 +4593,7 @@ mod tests {
         write_music_album(
             &mut result,
             &options.filter,
-            "0$albums",
-            "*a2",
+            ("0$albums", "*a2"),
             &artist,
             &album,
             addr,
@@ -4641,7 +4618,7 @@ mod tests {
             sort_criteria: vec![] as SortCriteria,
         };
         let artist = Artist::new(1, "an artist".into(), vec![]);
-        write_music_artist(&mut result, &options.filter, "0$artists", "*a2", &artist).unwrap();
+        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
             result,
@@ -4661,7 +4638,7 @@ mod tests {
             sort_criteria: vec![] as SortCriteria,
         };
         let artist = Artist::new(1, "an artist".into(), vec![]);
-        write_music_artist(&mut result, &options.filter, "0$artists", "*a2", &artist).unwrap();
+        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
             result,
@@ -4681,7 +4658,7 @@ mod tests {
             sort_criteria: vec![] as SortCriteria,
         };
         let artist = Artist::new(1, "an artist".into(), vec![]);
-        write_music_artist(&mut result, &options.filter, "0$artists", "*a2", &artist).unwrap();
+        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
             result,
@@ -4725,8 +4702,7 @@ mod tests {
         write_music_track(
             &mut result,
             &options.filter,
-            "0$albums$*a2",
-            "*i3",
+            ("0$albums$*a2", "*i3"),
             &artist,
             &album,
             &track,
@@ -4776,8 +4752,7 @@ mod tests {
         write_music_track(
             &mut result,
             &options.filter,
-            "0$albums$*a2",
-            "*i3",
+            ("0$albums$*a2", "*i3"),
             &artist,
             &album,
             &track,
@@ -4827,8 +4802,7 @@ mod tests {
         write_music_track(
             &mut result,
             &options.filter,
-            "0$albums$*a2",
-            "*i3",
+            ("0$albums$*a2", "*i3"),
             &artist,
             &album,
             &track,
@@ -4856,8 +4830,7 @@ mod tests {
         write_container(
             &mut result,
             &options.filter,
-            "0$=Artist$5",
-            "albums",
+            ("0$=Artist$5", "albums"),
             "what",
         )
         .unwrap();
@@ -4882,8 +4855,7 @@ mod tests {
         write_container(
             &mut result,
             &options.filter,
-            "0$=Artist$5",
-            "albums",
+            ("0$=Artist$5", "albums"),
             "what",
         )
         .unwrap();
@@ -4908,8 +4880,7 @@ mod tests {
         write_container(
             &mut result,
             &options.filter,
-            "0$=Artist$5",
-            "albums",
+            ("0$=Artist$5", "albums"),
             "what",
         )
         .unwrap();
