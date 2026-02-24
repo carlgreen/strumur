@@ -1216,14 +1216,14 @@ fn write_music_album(
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_ALBUM_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_ALBUM_MUSICALBUM_PROPERTIES);
-    let mut optional_properties = vec![];
 
+    let mut optional_properties = vec![];
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_ALBUM_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_ALBUM_MUSICALBUM_PROPERTIES);
-    let mut included_properties = required_properties;
 
+    let mut included_properties = required_properties;
     match filter {
         Filter::All => {
             included_properties.extend_from_slice(&optional_properties);
@@ -1310,14 +1310,14 @@ fn write_music_track(
     required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_AUDIOITEM_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES);
-    let mut optional_properties = vec![];
 
+    let mut optional_properties = vec![];
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_AUDIOITEM_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES);
-    let mut included_properties = required_properties;
 
+    let mut included_properties = required_properties;
     match filter {
         Filter::All => {
             included_properties.extend_from_slice(&optional_properties);
@@ -1421,14 +1421,14 @@ fn write_music_artist(
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PERSON_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PERSON_MUSICARTIST_PROPERTIES);
-    let mut optional_properties = vec![];
 
+    let mut optional_properties = vec![];
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PERSON_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PERSON_MUSICARTIST_PROPERTIES);
-    let mut included_properties = required_properties;
 
+    let mut included_properties = required_properties;
     match filter {
         Filter::All => {
             included_properties.extend_from_slice(&optional_properties);
