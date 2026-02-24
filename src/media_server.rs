@@ -550,30 +550,47 @@ impl UPNPError {
     }
 }
 
-fn generate_browse_root_response(collection: &Collection) -> String {
+fn generate_browse_root_response(collection: &Collection, options: &BrowseOptions) -> String {
     let mut result = String::new();
     let album_count = collection.get_albums().count();
-    write_container(&mut result, "0", "albums", &format!("{album_count} albums")).unwrap_or_else(
-        |err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        },
-    );
-    let items_count = collection.get_tracks().count();
-    write_container(&mut result, "0", "items", &format!("{items_count} items")).unwrap_or_else(
-        |err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        },
-    );
-
-    // how much of this do i even care about?
-    write_container(&mut result, "0", "=Artist", "Artist").unwrap_or_else(|err| match err {
+    write_container(
+        &mut result,
+        &options.filter,
+        "0",
+        "albums",
+        &format!("{album_count} albums"),
+    )
+    .unwrap_or_else(|err| match err {
         GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
     });
-    write_container(&mut result, "0", "=All Artists", "All Artists").unwrap_or_else(
-        |err| match err {
+    let items_count = collection.get_tracks().count();
+    write_container(
+        &mut result,
+        &options.filter,
+        "0",
+        "items",
+        &format!("{items_count} items"),
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+
+    // how much of this do i even care about?
+    write_container(&mut result, &options.filter, "0", "=Artist", "Artist").unwrap_or_else(|err| {
+        match err {
             GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        },
-    );
+        }
+    });
+    write_container(
+        &mut result,
+        &options.filter,
+        "0",
+        "=All Artists",
+        "All Artists",
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
     format_response(&result, 4, 4)
 }
 
@@ -754,10 +771,6 @@ fn generate_browse_an_artist_response(
     if matches!(options.browse_flag, BrowseFlag::Metadata) {
         warn!("browse metadata. what's up");
     }
-    match &options.filter {
-        Filter::All => warn!("include all fields."),
-        Filter::Include(fields) => warn!("include {fields:?} fields"),
-    }
     if options.sort_criteria.is_empty() {
         warn!("no sort criteria. do i just make this up?");
     } else {
@@ -797,6 +810,7 @@ fn generate_browse_an_artist_response(
         };
         write_container(
             &mut result,
+            &options.filter,
             &format!("0$=Artist${artist_id}"),
             &sub_id.clone(),
             &title,
@@ -1190,14 +1204,60 @@ const OPTIONAL_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES: [&str; 7] = [
 
 fn write_container(
     result: &mut String,
+    filter: &Filter,
     parent_id: &str,
     container_id: &str,
     title: &str,
 ) -> Result<(), GenerateResponseError> {
-    write!(
-        result,
-        r#"<container id="{parent_id}${container_id}" parentID="{parent_id}" restricted="1" searchable="1"><dc:title>{title}</dc:title><upnp:class>object.container</upnp:class></container>"#,
-    )?;
+    let mut required_properties = vec![];
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_PROPERTIES);
+    required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PROPERTIES);
+
+    let mut optional_properties = vec![];
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_PROPERTIES);
+    optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PROPERTIES);
+
+    let mut included_properties = required_properties;
+    match filter {
+        Filter::All => {
+            included_properties.extend_from_slice(&optional_properties);
+        }
+        Filter::Include(fields) => {
+            for field in fields {
+                if !optional_properties.contains(&field.as_str()) {
+                    warn!("requested field {field} does not exist");
+                }
+            }
+            included_properties.extend(fields.iter().map(String::as_str));
+        }
+    }
+
+    write!(result, r"<container",)?;
+    if included_properties.contains(&"id") {
+        write!(result, r#" id="{parent_id}${container_id}""#,)?;
+    }
+    if included_properties.contains(&"parentID") {
+        write!(result, r#" parentID="{parent_id}""#,)?;
+    }
+    if included_properties.contains(&"childCount") {
+        // TODO childCount
+        warn!("child count not implemented for container");
+    }
+    if included_properties.contains(&"restricted") {
+        write!(result, r#" restricted="1""#,)?;
+    }
+    if included_properties.contains(&"searchable") {
+        write!(result, r#" searchable="1""#,)?;
+    }
+    write!(result, r">",)?;
+    if included_properties.contains(&"dc:title") {
+        write!(result, r"<dc:title>{title}</dc:title>",)?;
+    }
+    // TODO consider dc:creator, res
+    if included_properties.contains(&"upnp:class") {
+        write!(result, r"<upnp:class>object.container</upnp:class>",)?;
+    }
+    write!(result, r"</container>",)?;
 
     Ok(())
 }
@@ -1561,7 +1621,7 @@ fn generate_browse_response(
     addr: &str,
 ) -> (String, &'static str) {
     let browse_response = match options.object_id.as_slice() {
-        [root] if root == "0" => Ok(generate_browse_root_response(collection)),
+        [root] if root == "0" => Ok(generate_browse_root_response(collection, options)),
         [root, next] if root == "0" && next == "albums" => {
             Ok(generate_browse_albums_response(collection, options, addr))
         }
@@ -4805,6 +4865,84 @@ mod tests {
         assert_eq!(
             result,
             r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><res duration="0:03:30.000" size="1234" bitsPerSample="3" sampleFrequency="4" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">abc/01_some_song.flac</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_container_all_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::All,
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        write_container(
+            &mut result,
+            &options.filter,
+            "0$=Artist$5",
+            "albums",
+            "what",
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1" searchable="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_container_no_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        write_container(
+            &mut result,
+            &options.filter,
+            "0$=Artist$5",
+            "albums",
+            "what",
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>"#,
+        );
+    }
+
+    #[test]
+    fn test_write_container_some_filter() {
+        let mut result = String::new();
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec!["searchable".into()]),
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
+        write_container(
+            &mut result,
+            &options.filter,
+            "0$=Artist$5",
+            "albums",
+            "what",
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1" searchable="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>"#,
         );
     }
 }
