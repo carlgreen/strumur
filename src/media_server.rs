@@ -1213,32 +1213,32 @@ fn write_container(
     let included_properties =
         get_included_fields(&required_properties, &optional_properties, filter);
 
-    write!(result, r"<container",)?;
+    write!(result, r"<container")?;
     if included_properties.contains(&"id") {
-        write!(result, r#" id="{parent_id}${container_id}""#,)?;
+        write!(result, r#" id="{parent_id}${container_id}""#)?;
     }
     if included_properties.contains(&"parentID") {
-        write!(result, r#" parentID="{parent_id}""#,)?;
+        write!(result, r#" parentID="{parent_id}""#)?;
     }
     if included_properties.contains(&"childCount") {
         // TODO childCount
         warn!("child count not implemented for container");
     }
     if included_properties.contains(&"restricted") {
-        write!(result, r#" restricted="1""#,)?;
+        write!(result, r#" restricted="1""#)?;
     }
     if included_properties.contains(&"searchable") {
-        write!(result, r#" searchable="1""#,)?;
+        write!(result, r#" searchable="1""#)?;
     }
-    write!(result, r">",)?;
+    write!(result, r">")?;
     if included_properties.contains(&"dc:title") {
-        write!(result, r"<dc:title>{title}</dc:title>",)?;
+        write!(result, r"<dc:title>{title}</dc:title>")?;
     }
     // TODO consider dc:creator, res
     if included_properties.contains(&"upnp:class") {
-        write!(result, r"<upnp:class>object.container</upnp:class>",)?;
+        write!(result, r"<upnp:class>object.container</upnp:class>")?;
     }
-    write!(result, r"</container>",)?;
+    write!(result, r"</container>")?;
 
     Ok(())
 }
@@ -1273,51 +1273,51 @@ fn write_music_album(
     let cover = create_album_art_element(addr, &album.cover);
     // TODO album art details
 
-    write!(result, r"<container",)?;
+    write!(result, r"<container")?;
     if included_properties.contains(&"id") {
-        write!(result, r#" id="{parent_id}${container_id}""#,)?;
+        write!(result, r#" id="{parent_id}${container_id}""#)?;
     }
     if included_properties.contains(&"parentID") {
-        write!(result, r#" parentID="{parent_id}""#,)?;
+        write!(result, r#" parentID="{parent_id}""#)?;
     }
     if included_properties.contains(&"childCount") {
-        write!(result, r#" childCount="{track_count}""#,)?;
+        write!(result, r#" childCount="{track_count}""#)?;
     }
     if included_properties.contains(&"restricted") {
-        write!(result, r#" restricted="1""#,)?;
+        write!(result, r#" restricted="1""#)?;
     }
     if included_properties.contains(&"searchable") {
-        write!(result, r#" searchable="1""#,)?;
+        write!(result, r#" searchable="1""#)?;
     }
-    write!(result, r">",)?;
+    write!(result, r">")?;
     if included_properties.contains(&"dc:title") {
-        write!(result, r"<dc:title>{album_title}</dc:title>",)?;
+        write!(result, r"<dc:title>{album_title}</dc:title>")?;
     }
     if included_properties.contains(&"dc:date") {
-        write!(result, r"{date}",)?;
+        write!(result, r"{date}")?;
     }
     if included_properties.contains(&"upnp:artist") {
-        write!(result, r"<upnp:artist>{artist_name}</upnp:artist>",)?;
+        write!(result, r"<upnp:artist>{artist_name}</upnp:artist>")?;
     }
     if included_properties.contains(&"dc:creator") {
-        write!(result, r"<dc:creator>{artist_name}</dc:creator>",)?;
+        write!(result, r"<dc:creator>{artist_name}</dc:creator>")?;
     }
     if included_properties.contains(&"upnp:artist") {
         write!(
             result,
-            r#"<upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>"#,
+            r#"<upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>"#
         )?;
     }
     if included_properties.contains(&"upnp:albumArtURI") {
-        write!(result, r"{cover}",)?;
+        write!(result, r"{cover}")?;
     }
     if included_properties.contains(&"upnp:class") {
         write!(
             result,
-            r"<upnp:class>object.container.album.musicAlbum</upnp:class>",
+            r"<upnp:class>object.container.album.musicAlbum</upnp:class>"
         )?;
     }
-    write!(result, r"</container>",)?;
+    write!(result, r"</container>")?;
 
     Ok(())
 }
@@ -1360,63 +1360,63 @@ fn write_music_track(
     let file = format!("{}/{}", addr, track.file);
     let file = xml::escape::escape_str_attribute(&file);
 
-    write!(result, r"<item",)?;
+    write!(result, r"<item")?;
     if included_properties.contains(&"id") {
-        write!(result, r#" id="{parent_id}${item_id}""#,)?;
+        write!(result, r#" id="{parent_id}${item_id}""#)?;
     }
     if included_properties.contains(&"parentID") {
-        write!(result, r#" parentID="{parent_id}""#,)?;
+        write!(result, r#" parentID="{parent_id}""#)?;
     }
     if included_properties.contains(&"refID") {
         // TODO refID
         warn!("refID not supported");
     }
     if included_properties.contains(&"restricted") {
-        write!(result, r#" restricted="1""#,)?;
+        write!(result, r#" restricted="1""#)?;
     }
-    write!(result, r">",)?;
+    write!(result, r">")?;
 
     if included_properties.contains(&"dc:title") {
-        write!(result, r"<dc:title>{track_title}</dc:title>",)?;
+        write!(result, r"<dc:title>{track_title}</dc:title>")?;
     }
     if included_properties.contains(&"dc:date") {
-        write!(result, r"{date}",)?;
+        write!(result, r"{date}")?;
     }
     if included_properties.contains(&"upnp:album") {
-        write!(result, r"<upnp:album>{album_title}</upnp:album>",)?;
+        write!(result, r"<upnp:album>{album_title}</upnp:album>")?;
     }
     if included_properties.contains(&"upnp:artist") {
-        write!(result, r"<upnp:artist>{artist_name}</upnp:artist>",)?;
+        write!(result, r"<upnp:artist>{artist_name}</upnp:artist>")?;
     }
     if included_properties.contains(&"dc:creator") {
-        write!(result, r"<dc:creator>{artist_name}</dc:creator>",)?;
+        write!(result, r"<dc:creator>{artist_name}</dc:creator>")?;
     }
     if included_properties.contains(&"upnp:artist") {
         write!(
             result,
-            r#"<upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist>"#,
+            r#"<upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist>"#
         )?;
     }
     if included_properties.contains(&"upnp:originalTrackNumber") {
         write!(
             result,
-            r"<upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>",
+            r"<upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>"
         )?;
     }
     if included_properties.contains(&"res") {
         write!(
             result,
-            r#"<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res>"#,
+            r#"<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res>"#
         )?;
     }
     // TODO consider upnp:genre, dc:description, upnp:longDescription, dc:publisher, dc:language, dc:relation, dc:rights, upnp:playlist, upnp:storageMedium, dc:contributor
     if included_properties.contains(&"upnp:class") {
         write!(
             result,
-            r"<upnp:class>object.item.audioItem.musicTrack</upnp:class>",
+            r"<upnp:class>object.item.audioItem.musicTrack</upnp:class>"
         )?;
     }
-    write!(result, r"</item>",)?;
+    write!(result, r"</item>")?;
 
     Ok(())
 }
@@ -1444,35 +1444,35 @@ fn write_music_artist(
 
     let name = xml::escape::escape_str_attribute(&artist.name);
 
-    write!(result, r"<container",)?;
+    write!(result, r"<container")?;
     if included_properties.contains(&"id") {
-        write!(result, r#" id="{parent_id}${container_id}""#,)?;
+        write!(result, r#" id="{parent_id}${container_id}""#)?;
     }
     if included_properties.contains(&"parentID") {
-        write!(result, r#" parentID="{parent_id}""#,)?;
+        write!(result, r#" parentID="{parent_id}""#)?;
     }
     if included_properties.contains(&"childCount") {
         // TODO childCount
         warn!("child count not implemented for artist");
     }
     if included_properties.contains(&"restricted") {
-        write!(result, r#" restricted="1""#,)?;
+        write!(result, r#" restricted="1""#)?;
     }
     if included_properties.contains(&"searchable") {
-        write!(result, r#" searchable="1""#,)?;
+        write!(result, r#" searchable="1""#)?;
     }
-    write!(result, r">",)?;
+    write!(result, r">")?;
     if included_properties.contains(&"dc:title") {
-        write!(result, r"<dc:title>{name}</dc:title>",)?;
+        write!(result, r"<dc:title>{name}</dc:title>")?;
     }
     // TODO consider res, dc:creator, dc:language, upnp:genre, upnp:artistDiscographyURI
     if included_properties.contains(&"upnp:class") {
         write!(
             result,
-            r"<upnp:class>object.container.person.musicArtist</upnp:class>",
+            r"<upnp:class>object.container.person.musicArtist</upnp:class>"
         )?;
     }
-    write!(result, r"</container>",)?;
+    write!(result, r"</container>")?;
 
     Ok(())
 }
