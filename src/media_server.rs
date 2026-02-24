@@ -623,8 +623,7 @@ fn generate_browse_albums_response(
             &mut result,
             &options.filter,
             (parent_id, &item_id),
-            artist,
-            album,
+            (artist, album),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -671,9 +670,7 @@ fn generate_browse_an_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            artist,
-            album,
-            track,
+            (artist, album, track),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -715,9 +712,7 @@ fn generate_browse_items_response(
             &mut result,
             &options.filter,
             (parent_id, &item_id),
-            artist,
-            album,
-            track,
+            (artist, album, track),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -850,8 +845,7 @@ fn generate_browse_an_artist_albums_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            artist,
-            album,
+            (artist, album),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -900,9 +894,7 @@ fn generate_browse_an_artist_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            artist,
-            album,
-            track,
+            (artist, album, track),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -941,9 +933,7 @@ fn generate_browse_an_artist_items_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            artist,
-            album,
-            track,
+            (artist, album, track),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -1024,8 +1014,7 @@ fn generate_browse_an_all_artist_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            artist,
-            album,
+            (artist, album),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -1051,9 +1040,7 @@ fn generate_browse_an_all_artist_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            artist,
-            album,
-            track,
+            (artist, album, track),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -1103,9 +1090,7 @@ fn generate_browse_an_all_artist_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            artist,
-            album,
-            track,
+            (artist, album, track),
             addr,
         )
         .unwrap_or_else(|err| match err {
@@ -1262,8 +1247,7 @@ fn write_music_album(
     result: &mut String,
     filter: &Filter,
     (parent_id, container_id): (&str, &str),
-    artist: &Artist,
-    album: &Album,
+    (artist, album): (&Artist, &Album),
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
     let mut required_properties = vec![];
@@ -1342,9 +1326,7 @@ fn write_music_track(
     result: &mut String,
     filter: &Filter,
     (parent_id, item_id): (&str, &str),
-    artist: &Artist,
-    album: &Album,
-    track: &Track,
+    (artist, album, track): (&Artist, &Album, &Track),
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
     let mut required_properties = vec![];
@@ -1948,8 +1930,7 @@ fn generate_search_response(
                                 &mut result,
                                 &options.filter,
                                 (parent_id, &item_id),
-                                artist,
-                                album,
+                                (artist, album),
                                 addr,
                             )
                             .unwrap_or_else(|err| match err {
@@ -1981,9 +1962,7 @@ fn generate_search_response(
                                     &mut result,
                                     &options.filter,
                                     (&parent_id, &item_id),
-                                    artist,
-                                    album,
-                                    track,
+                                    (artist, album, track),
                                     addr,
                                 )
                                 .unwrap_or_else(|err| match err {
@@ -4522,8 +4501,7 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            &artist,
-            &album,
+            (&artist, &album),
             addr,
         )
         .unwrap();
@@ -4558,8 +4536,7 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            &artist,
-            &album,
+            (&artist, &album),
             addr,
         )
         .unwrap();
@@ -4594,8 +4571,7 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            &artist,
-            &album,
+            (&artist, &album),
             addr,
         )
         .unwrap();
@@ -4703,9 +4679,7 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            &artist,
-            &album,
-            &track,
+            (&artist, &album, &track),
             addr,
         )
         .unwrap();
@@ -4753,9 +4727,7 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            &artist,
-            &album,
-            &track,
+            (&artist, &album, &track),
             addr,
         )
         .unwrap();
@@ -4803,9 +4775,7 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            &artist,
-            &album,
-            &track,
+            (&artist, &album, &track),
             addr,
         )
         .unwrap();
