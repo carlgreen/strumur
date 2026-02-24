@@ -1202,6 +1202,28 @@ const OPTIONAL_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES: [&str; 7] = [
     "dc:date",
 ];
 
+fn get_included_fields<'a>(
+    required_properties: &'a [&'a str],
+    optional_properties: &'a [&'a str],
+    filter: &'a Filter,
+) -> Vec<&'a str> {
+    let mut included_properties: Vec<&str> = required_properties.to_vec();
+    match filter {
+        Filter::All => {
+            included_properties.extend_from_slice(optional_properties);
+        }
+        Filter::Include(fields) => {
+            for field in fields {
+                if !optional_properties.contains(&field.as_str()) {
+                    warn!("requested field {field} does not exist");
+                }
+            }
+            included_properties.extend(fields.iter().map(String::as_str));
+        }
+    }
+    included_properties
+}
+
 fn write_container(
     result: &mut String,
     filter: &Filter,
@@ -1217,20 +1239,8 @@ fn write_container(
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PROPERTIES);
 
-    let mut included_properties = required_properties;
-    match filter {
-        Filter::All => {
-            included_properties.extend_from_slice(&optional_properties);
-        }
-        Filter::Include(fields) => {
-            for field in fields {
-                if !optional_properties.contains(&field.as_str()) {
-                    warn!("requested field {field} does not exist");
-                }
-            }
-            included_properties.extend(fields.iter().map(String::as_str));
-        }
-    }
+    let included_properties =
+        get_included_fields(&required_properties, &optional_properties, filter);
 
     write!(result, r"<container",)?;
     if included_properties.contains(&"id") {
@@ -1283,20 +1293,8 @@ fn write_music_album(
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_ALBUM_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_ALBUM_MUSICALBUM_PROPERTIES);
 
-    let mut included_properties = required_properties;
-    match filter {
-        Filter::All => {
-            included_properties.extend_from_slice(&optional_properties);
-        }
-        Filter::Include(fields) => {
-            for field in fields {
-                if !optional_properties.contains(&field.as_str()) {
-                    warn!("requested field {field} does not exist");
-                }
-            }
-            included_properties.extend(fields.iter().map(String::as_str));
-        }
-    }
+    let included_properties =
+        get_included_fields(&required_properties, &optional_properties, filter);
 
     let artist_name = xml::escape::escape_str_attribute(&artist.name);
 
@@ -1377,20 +1375,8 @@ fn write_music_track(
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_AUDIOITEM_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_ITEM_AUDIOITEM_MUSICTRACK_PROPERTIES);
 
-    let mut included_properties = required_properties;
-    match filter {
-        Filter::All => {
-            included_properties.extend_from_slice(&optional_properties);
-        }
-        Filter::Include(fields) => {
-            for field in fields {
-                if !optional_properties.contains(&field.as_str()) {
-                    warn!("requested field {field} does not exist");
-                }
-            }
-            included_properties.extend(fields.iter().map(String::as_str));
-        }
-    }
+    let included_properties =
+        get_included_fields(&required_properties, &optional_properties, filter);
 
     let album_artist_name = xml::escape::escape_str_attribute(&artist.name);
 
@@ -1488,20 +1474,8 @@ fn write_music_artist(
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PERSON_PROPERTIES);
     optional_properties.extend_from_slice(&OPTIONAL_OBJECT_CONTAINER_PERSON_MUSICARTIST_PROPERTIES);
 
-    let mut included_properties = required_properties;
-    match filter {
-        Filter::All => {
-            included_properties.extend_from_slice(&optional_properties);
-        }
-        Filter::Include(fields) => {
-            for field in fields {
-                if !optional_properties.contains(&field.as_str()) {
-                    warn!("requested field {field} does not exist");
-                }
-            }
-            included_properties.extend(fields.iter().map(String::as_str));
-        }
-    }
+    let included_properties =
+        get_included_fields(&required_properties, &optional_properties, filter);
 
     let name = xml::escape::escape_str_attribute(&artist.name);
 
