@@ -721,8 +721,8 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
 
+    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
@@ -982,12 +982,32 @@ fn generate_browse_all_artists_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if options.sort_criteria.is_empty() {
-        warn!("no sort criteria. do i just make this up?");
-    } else {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
+
+    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
+    let mut sort_criteria = options.sort_criteria.clone();
+    if sort_criteria.is_empty() {
+        // this is what i have decided should be the default, so make it so:
+        sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
-    let artists = collection.get_artists();
+
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                artists.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            }
+            other => warn!("unsupported sort field: {other}"),
+        }
+        if !ascending {
+            artists.reverse();
+        }
+    }
+    let artists = artists.iter();
+
     let total_matches = artists.len();
     let starting_index = options.starting_index.into();
     let requested_count = options.requested_count.into();
@@ -4297,6 +4317,29 @@ mod tests {
             response,
             r#"
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$=Artist$35&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;xyz&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$34&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;w&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$33&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;tuv&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>3</NumberReturned>
+            <TotalMatches>10</TotalMatches>
+            <UpdateID>25</UpdateID>"#
+        );
+    }
+
+    #[test]
+    fn test_generate_browse_all_artists_response() {
+        let collection = generate_test_collection();
+        let browse_options = BrowseOptions {
+            object_id: vec!["0".into(), "all artists".into()],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 0,
+            requested_count: 3,
+            sort_criteria: vec![Sort::Descending("dc:title".into())],
+        };
+        let response = generate_browse_all_artists_response(&collection, &browse_options);
+
+        assert_eq!(
+            response,
+            r#"
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$=All Artists$35&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;xyz&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$34&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;w&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=All Artists$33&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;tuv&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>10</TotalMatches>
             <UpdateID>25</UpdateID>"#
