@@ -605,21 +605,43 @@ fn generate_browse_albums_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if options.sort_criteria.is_empty() {
-        warn!("no sort criteria. do i just make this up?");
-    } else {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
+
+    let mut albums = collection.get_albums().collect::<Vec<(&Artist, &Album)>>();
+    let mut sort_criteria = options.sort_criteria.clone();
+    if sort_criteria.is_empty() {
+        // this is what i have decided should be the default, so make it so:
+        sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
+
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                albums.sort_by(|(_, album1), (_, album2)| {
+                    album1
+                        .title
+                        .to_lowercase()
+                        .cmp(&album2.title.to_lowercase())
+                });
+            }
+            other => warn!("unsupported sort field: {other}"),
+        }
+        if !ascending {
+            albums.reverse();
+        }
+    }
+    let albums = albums.iter();
+
     let total_matches = collection.get_albums().count();
     let starting_index = options.starting_index.into();
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
-    for (artist, album) in collection
-        .get_albums()
-        .skip(starting_index)
-        .take(requested_count)
-    {
+    for (artist, album) in albums.skip(starting_index).take(requested_count) {
         number_returned += 1;
         let album_id = album.id;
         let parent_id = "0$albums";
@@ -854,16 +876,41 @@ fn generate_browse_an_artist_albums_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if options.sort_criteria.is_empty() {
-        warn!("no sort criteria. do i just make this up?");
-    } else {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    }
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
-    let albums = artist.get_albums();
+
+    let mut albums = artist.get_albums().collect::<Vec<&Album>>();
+    let mut sort_criteria = options.sort_criteria.clone();
+    if sort_criteria.is_empty() {
+        // this is what i have decided should be the default, so make it so:
+        sort_criteria.push(Sort::Ascending("dc:title".into()));
+    }
+
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                albums.sort_by(|album1, album2| {
+                    album1
+                        .title
+                        .to_lowercase()
+                        .cmp(&album2.title.to_lowercase())
+                });
+            }
+            other => warn!("unsupported sort field: {other}"),
+        }
+        if !ascending {
+            albums.reverse();
+        }
+    }
+    let albums = albums.iter();
+
     let total_matches = albums.len();
     let starting_index = options.starting_index.into();
     let requested_count = options.requested_count.into();
@@ -4308,6 +4355,64 @@ mod tests {
         assert_eq!(
             parse_sort_criteria("+"),
             Err(SortCriteriaError::MissingProperty("+".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_generate_browse_albums_response() {
+        let collection = generate_test_collection();
+        let browse_options = BrowseOptions {
+            object_id: vec!["0".into(), "albums".into()],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 0,
+            requested_count: 3,
+            sort_criteria: vec![Sort::Descending("dc:title".into())],
+        };
+        let response = generate_browse_albums_response(&collection, &browse_options, "abc");
+
+        assert_eq!(
+            response,
+            r#"
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$albums$*a24&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;x1&lt;/dc:title&gt;&lt;dc:date&gt;1992-12-12&lt;/dc:date&gt;&lt;upnp:artist&gt;xyz&lt;/upnp:artist&gt;&lt;dc:creator&gt;xyz&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;xyz&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/xyz/x1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a23&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;w1&lt;/dc:title&gt;&lt;dc:date&gt;1990-10-10&lt;/dc:date&gt;&lt;upnp:artist&gt;w&lt;/upnp:artist&gt;&lt;dc:creator&gt;w&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;w&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/w/w1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a22&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;t1&lt;/dc:title&gt;&lt;dc:date&gt;1988-08-08&lt;/dc:date&gt;&lt;upnp:artist&gt;tuv&lt;/upnp:artist&gt;&lt;dc:creator&gt;tuv&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;tuv&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/tuv/t1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>3</NumberReturned>
+            <TotalMatches>12</TotalMatches>
+            <UpdateID>25</UpdateID>"#
+        );
+    }
+
+    #[test]
+    fn test_generate_browse_an_artist_albums_response() {
+        let collection = generate_test_collection();
+        let artist = collection.get_artists().find(|a| a.name == "ghi").unwrap();
+        let browse_options = BrowseOptions {
+            object_id: vec![
+                "0".into(),
+                "=Artist".into(),
+                artist.id.to_string(),
+                "albums".into(),
+            ],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 0,
+            requested_count: 2,
+            sort_criteria: vec![Sort::Descending("dc:title".into())],
+        };
+        let response = generate_browse_an_artist_albums_response(
+            &collection,
+            artist.id.to_string().as_ref(),
+            &browse_options,
+            "abc",
+        )
+        .unwrap();
+
+        assert_eq!(
+            response,
+            r#"
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$=Artist$28$albums$17&quot; parentID=&quot;0$=Artist$28$albums&quot; childCount=&quot;2&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;i3&lt;/dc:title&gt;&lt;dc:date&gt;2011-11-11&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/i3/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$=Artist$28$albums$14&quot; parentID=&quot;0$=Artist$28$albums&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;h2&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/h2/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>2</NumberReturned>
+            <TotalMatches>3</TotalMatches>
+            <UpdateID>25</UpdateID>"#
         );
     }
 
