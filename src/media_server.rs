@@ -628,6 +628,14 @@ fn generate_browse_albums_response(
                         .cmp(&album2.title.to_lowercase())
                 });
             }
+            "upnp:artist" => {
+                albums.sort_by(|(artist1, _), (artist2, _)| {
+                    artist1
+                        .name
+                        .to_lowercase()
+                        .cmp(&artist2.name.to_lowercase())
+                });
+            }
             other => warn!("unsupported sort field: {other}"),
         }
         if !ascending {
@@ -4462,23 +4470,26 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_browse_albums_response() {
+    fn test_generate_browse_albums_response_sort_by_artist_ascending_title_descending() {
         let collection = generate_test_collection();
         let browse_options = BrowseOptions {
             object_id: vec!["0".into(), "albums".into()],
             browse_flag: BrowseFlag::DirectChildren,
             filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 3,
-            sort_criteria: vec![Sort::Descending("dc:title".into())],
+            starting_index: 1,
+            requested_count: 4,
+            sort_criteria: vec![
+                Sort::Ascending("upnp:artist".into()),
+                Sort::Descending("dc:title".into()),
+            ],
         };
         let response = generate_browse_albums_response(&collection, &browse_options, "abc");
 
         assert_eq!(
             response,
             r#"
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$albums$*a24&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;x1&lt;/dc:title&gt;&lt;dc:date&gt;1992-12-12&lt;/dc:date&gt;&lt;upnp:artist&gt;xyz&lt;/upnp:artist&gt;&lt;dc:creator&gt;xyz&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;xyz&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/xyz/x1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a23&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;w1&lt;/dc:title&gt;&lt;dc:date&gt;1990-10-10&lt;/dc:date&gt;&lt;upnp:artist&gt;w&lt;/upnp:artist&gt;&lt;dc:creator&gt;w&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;w&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/w/w1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a22&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;t1&lt;/dc:title&gt;&lt;dc:date&gt;1988-08-08&lt;/dc:date&gt;&lt;upnp:artist&gt;tuv&lt;/upnp:artist&gt;&lt;dc:creator&gt;tuv&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;tuv&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/tuv/t1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
-            <NumberReturned>3</NumberReturned>
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$albums$*a25&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;d&amp;lt;1&lt;/dc:title&gt;&lt;dc:date&gt;2005-07-02&lt;/dc:date&gt;&lt;upnp:artist&gt;def&lt;/upnp:artist&gt;&lt;dc:creator&gt;def&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;def&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/def/d&amp;lt;1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a17&quot; parentID=&quot;0$albums&quot; childCount=&quot;2&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;i3&lt;/dc:title&gt;&lt;dc:date&gt;2011-11-11&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/i3/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a14&quot; parentID=&quot;0$albums&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;h2&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/h2/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;container id=&quot;0$albums$*a9&quot; parentID=&quot;0$albums&quot; childCount=&quot;3&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;g1&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/g1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>4</NumberReturned>
             <TotalMatches>12</TotalMatches>
             <UpdateID>25</UpdateID>"#
         );
