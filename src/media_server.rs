@@ -746,21 +746,66 @@ fn generate_browse_items_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if options.sort_criteria.is_empty() {
-        warn!("no sort criteria. do i just make this up?");
-    } else {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
+
+    let mut tracks = collection
+        .get_tracks()
+        .collect::<Vec<(&Artist, &Album, &Track)>>();
+    let mut sort_criteria = options.sort_criteria.clone();
+    if sort_criteria.is_empty() {
+        // this is what i have decided should be the default, so make it so:
+        sort_criteria.push(Sort::Ascending("upnp:artist".into()));
+        sort_criteria.push(Sort::Ascending("upnp:album".into()));
+        sort_criteria.push(Sort::Ascending("upnp:originalTrackNumber".into()));
     }
+
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "upnp:artist" => {
+                tracks.sort_by(|(artist1, _, _), (artist2, _, _)| {
+                    artist1
+                        .name
+                        .to_lowercase()
+                        .cmp(&artist2.name.to_lowercase())
+                });
+            }
+            "upnp:album" => {
+                tracks.sort_by(|(_, album1, _), (_, album2, _)| {
+                    album1
+                        .title
+                        .to_lowercase()
+                        .cmp(&album2.title.to_lowercase())
+                });
+            }
+            "upnp:originalTrackNumber" => {
+                tracks.sort_by(|(_, _, track1), (_, _, track2)| track1.number.cmp(&track2.number));
+            }
+            "dc:title" => {
+                tracks.sort_by(|(_, _, track1), (_, _, track2)| {
+                    track1
+                        .title
+                        .to_lowercase()
+                        .cmp(&track2.title.to_lowercase())
+                });
+            }
+            other => warn!("unsupported sort field: {other}"),
+        }
+        if !ascending {
+            tracks.reverse();
+        }
+    }
+    let tracks = tracks.iter();
+
     let total_matches = collection.get_tracks().count();
     let starting_index: usize = options.starting_index.into();
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
-    for (artist, album, track) in collection
-        .get_tracks()
-        .skip(starting_index)
-        .take(requested_count)
-    {
+    for (artist, album, track) in tracks.skip(starting_index).take(requested_count) {
         number_returned += 1;
         let id = track.id;
         let parent_id = "0$items";
@@ -1438,7 +1483,7 @@ fn generate_get_search_capabilities_response() -> (String, &'static str) {
 }
 
 fn generate_get_sort_capabilities_response() -> (String, &'static str) {
-    let sort_caps = "dc:title,upnp:originalTrackNumber";
+    let sort_caps = "dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album";
     let body = format!(
         r#"
         <u:GetSortCapabilitiesResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
@@ -2704,7 +2749,10 @@ mod tests {
 
         let id = extract_get_sort_capabilities_response(&body);
 
-        assert_eq!(id, Some("dc:title,upnp:originalTrackNumber".into()));
+        assert_eq!(
+            id,
+            Some("dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album".into())
+        );
     }
 
     fn generate_browse_request(
@@ -4498,6 +4546,55 @@ mod tests {
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$albums$*a5$*i2&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a5$*i3&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$albums$*a5$*i4&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>4</TotalMatches>
+            <UpdateID>25</UpdateID>"#
+        );
+    }
+
+    #[test]
+    fn test_generate_browse_items_response_sort_by_title_descending() {
+        let collection = generate_test_collection();
+        let browse_options = BrowseOptions {
+            object_id: vec!["0".into(), "items".into()],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 5,
+            requested_count: 2,
+            sort_criteria: vec![Sort::Descending("dc:title".into())],
+        };
+        let response = generate_browse_items_response(&collection, &browse_options, "abc");
+
+        assert_eq!(
+            response,
+            r#"
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$items$10&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;h21&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:album&gt;h2&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/h2/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/h2/01*20h21.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$items$6&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;g&amp;lt;11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;g1&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/g1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/g1/01*20g&amp;lt;11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>2</NumberReturned>
+            <TotalMatches>13</TotalMatches>
+            <UpdateID>25</UpdateID>"#
+        );
+    }
+
+    #[test]
+    fn test_generate_browse_items_response_sort_by_track_number_ascending_title_descending() {
+        let collection = generate_test_collection();
+        let browse_options = BrowseOptions {
+            object_id: vec!["0".into(), "items".into()],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 0,
+            requested_count: 4,
+            sort_criteria: vec![
+                Sort::Ascending("upnp:originalTrackNumber".into()),
+                Sort::Descending("dc:title".into()),
+            ],
+        };
+        let response = generate_browse_items_response(&collection, &browse_options, "abc");
+
+        assert_eq!(
+            response,
+            r#"
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$items$15&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;i31&lt;/dc:title&gt;&lt;dc:date&gt;2011-11-11&lt;/dc:date&gt;&lt;upnp:album&gt;i3&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/i3/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/i3/01*20i31.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$items$10&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;h21&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:album&gt;h2&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/h2/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/h2/01*20h21.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$items$6&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;g&amp;lt;11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;g1&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/g1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/g1/01*20g&amp;lt;11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;item id=&quot;0$items$1&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/01*20a11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>4</NumberReturned>
+            <TotalMatches>13</TotalMatches>
             <UpdateID>25</UpdateID>"#
         );
     }
