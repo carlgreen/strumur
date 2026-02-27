@@ -543,9 +543,11 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
     Ok(options)
 }
 
+#[derive(Debug)]
 enum UPNPError {
     NoSuchObject,
 }
+
 impl UPNPError {
     const fn describe(&self) -> (u16, &str) {
         match self {
@@ -553,6 +555,15 @@ impl UPNPError {
         }
     }
 }
+
+impl std::fmt::Display for UPNPError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (_error_code, description) = self.describe();
+        write!(f, "UPNP error: {description}")
+    }
+}
+
+impl std::error::Error for UPNPError {}
 
 fn generate_browse_root_response(collection: &Collection) -> String {
     let mut result = String::new();
