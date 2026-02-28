@@ -621,20 +621,10 @@ fn generate_browse_albums_response(
         };
         match field.as_str() {
             "dc:title" => {
-                albums.sort_by(|(_, album1), (_, album2)| {
-                    album1
-                        .title
-                        .to_lowercase()
-                        .cmp(&album2.title.to_lowercase())
-                });
+                albums.sort_by(|(_, album1), (_, album2)| Album::title_sort(album1, album2));
             }
             "upnp:artist" => {
-                albums.sort_by(|(artist1, _), (artist2, _)| {
-                    artist1
-                        .name
-                        .to_lowercase()
-                        .cmp(&artist2.name.to_lowercase())
-                });
+                albums.sort_by(|(artist1, _), (artist2, _)| Artist::name_sort(artist1, artist2));
             }
             other => warn!("unsupported sort field: {other}"),
         }
@@ -697,15 +687,10 @@ fn generate_browse_an_album_response(
         };
         match field.as_str() {
             "upnp:originalTrackNumber" => {
-                tracks.sort_by(|track1, track2| track1.number.cmp(&track2.number));
+                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
             }
             "dc:title" => {
-                tracks.sort_by(|track1, track2| {
-                    track1
-                        .title
-                        .to_lowercase()
-                        .cmp(&track2.title.to_lowercase())
-                });
+                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
             }
             other => warn!("unsupported sort field: {other}"),
         }
@@ -775,30 +760,17 @@ fn generate_browse_items_response(
         match field.as_str() {
             "upnp:artist" => {
                 tracks.sort_by(|(artist1, _, _), (artist2, _, _)| {
-                    artist1
-                        .name
-                        .to_lowercase()
-                        .cmp(&artist2.name.to_lowercase())
+                    Artist::name_sort(artist1, artist2)
                 });
             }
             "upnp:album" => {
-                tracks.sort_by(|(_, album1, _), (_, album2, _)| {
-                    album1
-                        .title
-                        .to_lowercase()
-                        .cmp(&album2.title.to_lowercase())
-                });
+                tracks.sort_by(|(_, album1, _), (_, album2, _)| Album::title_sort(album1, album2));
             }
             "upnp:originalTrackNumber" => {
-                tracks.sort_by(|(_, _, track1), (_, _, track2)| track1.number.cmp(&track2.number));
+                tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::number_sort(track1, track2));
             }
             "dc:title" => {
-                tracks.sort_by(|(_, _, track1), (_, _, track2)| {
-                    track1
-                        .title
-                        .to_lowercase()
-                        .cmp(&track2.title.to_lowercase())
-                });
+                tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::title_sort(track1, track2));
             }
             other => warn!("unsupported sort field: {other}"),
         }
@@ -851,7 +823,7 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
         };
         match field.as_str() {
             "dc:title" => {
-                artists.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
             }
             other => warn!("unsupported sort field: {other}"),
         }
@@ -977,12 +949,7 @@ fn generate_browse_an_artist_albums_response(
         };
         match field.as_str() {
             "dc:title" => {
-                albums.sort_by(|album1, album2| {
-                    album1
-                        .title
-                        .to_lowercase()
-                        .cmp(&album2.title.to_lowercase())
-                });
+                albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
             }
             other => warn!("unsupported sort field: {other}"),
         }
@@ -1051,15 +1018,10 @@ fn generate_browse_an_artist_album_response(
         };
         match field.as_str() {
             "upnp:originalTrackNumber" => {
-                tracks.sort_by(|track1, track2| track1.number.cmp(&track2.number));
+                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
             }
             "dc:title" => {
-                tracks.sort_by(|track1, track2| {
-                    track1
-                        .title
-                        .to_lowercase()
-                        .cmp(&track2.title.to_lowercase())
-                });
+                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
             }
             other => warn!("unsupported sort field: {other}"),
         }
@@ -1165,7 +1127,7 @@ fn generate_browse_all_artists_response(
         };
         match field.as_str() {
             "dc:title" => {
-                artists.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
             }
             other => warn!("unsupported sort field: {other}"),
         }

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 use std::fs::DirEntry;
 use std::fs::File;
@@ -38,6 +39,13 @@ impl Artist {
             .iter()
             .flat_map(|album| album.get_tracks().map(move |track| (album, track)))
     }
+
+    pub fn name_sort(artist1: &Self, artist2: &Self) -> Ordering {
+        artist1
+            .name
+            .to_lowercase()
+            .cmp(&artist2.name.to_lowercase())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,6 +78,13 @@ impl Album {
     pub fn get_tracks(&self) -> impl ExactSizeIterator<Item = &Track> {
         self.tracks.iter()
     }
+
+    pub fn title_sort(album1: &Self, album2: &Self) -> Ordering {
+        album1
+            .title
+            .to_lowercase()
+            .cmp(&album2.title.to_lowercase())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,6 +100,19 @@ pub struct Track {
     pub bits_per_sample: u8,
     pub sample_frequency: u32,
     pub channels: u8,
+}
+
+impl Track {
+    pub fn title_sort(track1: &Self, track2: &Self) -> Ordering {
+        track1
+            .title
+            .to_lowercase()
+            .cmp(&track2.title.to_lowercase())
+    }
+
+    pub fn number_sort(track1: &Self, track2: &Self) -> Ordering {
+        track1.number.cmp(&track2.number)
+    }
 }
 
 #[derive(Clone, Debug)]
