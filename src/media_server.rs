@@ -1218,16 +1218,12 @@ fn generate_browse_an_all_artist_response(
     }
     let albums = albums.iter();
 
-    let total_matches = albums.len() + artist.get_tracks().count();
+    let total_matches = artist.get_albums().len() + artist.get_tracks().count();
     let mut starting_index = options.starting_index.into();
     let mut requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
-    for album in artist
-        .get_albums()
-        .skip(starting_index)
-        .take(requested_count)
-    {
+    for album in albums.skip(starting_index).take(requested_count) {
         number_returned += 1;
         let album_id = album.id;
         let parent_id = format!("0$=All Artists${artist_id}");
@@ -1238,8 +1234,8 @@ fn generate_browse_an_all_artist_response(
             },
         );
     }
-    if starting_index > albums.len() {
-        starting_index -= albums.len();
+    if starting_index > artist.get_albums().len() {
+        starting_index -= artist.get_albums().len();
     } else {
         starting_index = 0;
     }
