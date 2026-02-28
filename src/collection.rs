@@ -85,6 +85,10 @@ impl Album {
             .to_lowercase()
             .cmp(&album2.title.to_lowercase())
     }
+
+    pub fn date_sort(album1: &Self, album2: &Self) -> Ordering {
+        album1.date.cmp(&album2.date)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

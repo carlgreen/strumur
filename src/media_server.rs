@@ -626,6 +626,9 @@ fn generate_browse_albums_response(
             "upnp:artist" => {
                 albums.sort_by(|(artist1, _), (artist2, _)| Artist::name_sort(artist1, artist2));
             }
+            "dc:date" => {
+                albums.sort_by(|(_, album1), (_, album2)| Album::date_sort(album1, album2));
+            }
             other => warn!("unsupported sort field: {other}"),
         }
         if !ascending {
@@ -765,6 +768,9 @@ fn generate_browse_items_response(
             }
             "upnp:album" => {
                 tracks.sort_by(|(_, album1, _), (_, album2, _)| Album::title_sort(album1, album2));
+            }
+            "dc:date" => {
+                tracks.sort_by(|(_, album1, _), (_, album2, _)| Album::date_sort(album1, album2));
             }
             "upnp:originalTrackNumber" => {
                 tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::number_sort(track1, track2));
@@ -938,6 +944,7 @@ fn generate_browse_an_artist_albums_response(
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
+        sort_criteria.push(Sort::Ascending("date".into()));
         sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
 
@@ -950,6 +957,9 @@ fn generate_browse_an_artist_albums_response(
         match field.as_str() {
             "dc:title" => {
                 albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
+            }
+            "dc:date" => {
+                albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
             }
             other => warn!("unsupported sort field: {other}"),
         }
@@ -1453,7 +1463,7 @@ fn generate_get_search_capabilities_response() -> (String, &'static str) {
 }
 
 fn generate_get_sort_capabilities_response() -> (String, &'static str) {
-    let sort_caps = "dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album";
+    let sort_caps = "dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album,dc:date";
     let body = format!(
         r#"
         <u:GetSortCapabilitiesResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
@@ -2721,7 +2731,7 @@ mod tests {
 
         assert_eq!(
             id,
-            Some("dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album".into())
+            Some("dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album,dc:date".into())
         );
     }
 
