@@ -1199,7 +1199,10 @@ fn generate_browse_an_all_artist_response(
         starting_index,
         requested_count,
         &mut number_returned,
-    );
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
 
     if starting_index > artist.get_albums().len() {
         starting_index -= artist.get_albums().len();
@@ -1216,7 +1219,10 @@ fn generate_browse_an_all_artist_response(
         starting_index,
         requested_count,
         &mut number_returned,
-    );
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
 
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -1229,7 +1235,7 @@ fn generate_browse_an_all_artist_response_album_part(
     starting_index: usize,
     requested_count: usize,
     number_returned: &mut usize,
-) {
+) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
     let mut albums = artist.get_albums().collect::<Vec<&Album>>();
@@ -1265,12 +1271,10 @@ fn generate_browse_an_all_artist_response_album_part(
         let album_id = album.id;
         let parent_id = format!("0$=All Artists${artist_id}");
         let item_id = format!("*a{album_id}");
-        write_music_album(result, &parent_id, &item_id, artist, album, addr).unwrap_or_else(
-            |err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            },
-        );
+        write_music_album(result, &parent_id, &item_id, artist, album, addr)?;
     }
+
+    Ok(())
 }
 
 fn generate_browse_an_all_artist_response_track_part(
@@ -1281,7 +1285,7 @@ fn generate_browse_an_all_artist_response_track_part(
     starting_index: usize,
     requested_count: usize,
     number_returned: &mut usize,
-) {
+) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
     let mut tracks = artist.get_tracks().collect::<Vec<(&Album, &Track)>>();
@@ -1324,12 +1328,10 @@ fn generate_browse_an_all_artist_response_track_part(
         let id = track.id;
         let parent_id = format!("0$=All Artists${artist_id}");
         let item_id = format!("*i{id}");
-        write_music_track(result, &parent_id, &item_id, artist, album, track, addr).unwrap_or_else(
-            |err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            },
-        );
+        write_music_track(result, &parent_id, &item_id, artist, album, track, addr)?;
     }
+
+    Ok(())
 }
 
 // almost identical to generate_browse_an_artist_album_response
