@@ -1180,15 +1180,57 @@ fn generate_browse_an_all_artist_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if options.sort_criteria.is_empty() {
-        warn!("no sort criteria. do i just make this up?");
-    } else {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    }
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
+
+    let total_matches = artist.get_albums().len() + artist.get_tracks().count();
+    let mut starting_index = options.starting_index.into();
+    let mut requested_count = options.requested_count.into();
+    let mut number_returned = 0;
+    let mut result = String::new();
+
+    generate_browse_an_all_artist_response_album_part(
+        &mut result,
+        artist,
+        options,
+        addr,
+        starting_index,
+        requested_count,
+        &mut number_returned,
+    );
+
+    if starting_index > artist.get_albums().len() {
+        starting_index -= artist.get_albums().len();
+    } else {
+        starting_index = 0;
+    }
+    requested_count -= number_returned;
+
+    generate_browse_an_all_artist_response_track_part(
+        &mut result,
+        artist,
+        options,
+        addr,
+        starting_index,
+        requested_count,
+        &mut number_returned,
+    );
+
+    Ok(format_response(&result, number_returned, total_matches))
+}
+
+fn generate_browse_an_all_artist_response_album_part(
+    result: &mut String,
+    artist: &Artist,
+    options: &BrowseOptions,
+    addr: &str,
+    starting_index: usize,
+    requested_count: usize,
+    number_returned: &mut usize,
+) {
+    let artist_id = artist.id;
 
     let mut albums = artist.get_albums().collect::<Vec<&Album>>();
     let mut sort_criteria = options.sort_criteria.clone();
@@ -1218,28 +1260,29 @@ fn generate_browse_an_all_artist_response(
     }
     let albums = albums.iter();
 
-    let total_matches = artist.get_albums().len() + artist.get_tracks().count();
-    let mut starting_index = options.starting_index.into();
-    let mut requested_count = options.requested_count.into();
-    let mut number_returned = 0;
-    let mut result = String::new();
     for album in albums.skip(starting_index).take(requested_count) {
-        number_returned += 1;
+        *number_returned += 1;
         let album_id = album.id;
         let parent_id = format!("0$=All Artists${artist_id}");
         let item_id = format!("*a{album_id}");
-        write_music_album(&mut result, &parent_id, &item_id, artist, album, addr).unwrap_or_else(
+        write_music_album(result, &parent_id, &item_id, artist, album, addr).unwrap_or_else(
             |err| match err {
                 GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
             },
         );
     }
-    if starting_index > artist.get_albums().len() {
-        starting_index -= artist.get_albums().len();
-    } else {
-        starting_index = 0;
-    }
-    requested_count -= number_returned;
+}
+
+fn generate_browse_an_all_artist_response_track_part(
+    result: &mut String,
+    artist: &Artist,
+    options: &BrowseOptions,
+    addr: &str,
+    starting_index: usize,
+    requested_count: usize,
+    number_returned: &mut usize,
+) {
+    let artist_id = artist.id;
 
     let mut tracks = artist.get_tracks().collect::<Vec<(&Album, &Track)>>();
     let mut sort_criteria = options.sort_criteria.clone();
@@ -1277,24 +1320,16 @@ fn generate_browse_an_all_artist_response(
     let tracks = tracks.iter();
 
     for (album, track) in tracks.skip(starting_index).take(requested_count) {
-        number_returned += 1;
+        *number_returned += 1;
         let id = track.id;
         let parent_id = format!("0$=All Artists${artist_id}");
         let item_id = format!("*i{id}");
-        write_music_track(
-            &mut result,
-            &parent_id,
-            &item_id,
-            artist,
-            album,
-            track,
-            addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        write_music_track(result, &parent_id, &item_id, artist, album, track, addr).unwrap_or_else(
+            |err| match err {
+                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+            },
+        );
     }
-    Ok(format_response(&result, number_returned, total_matches))
 }
 
 // almost identical to generate_browse_an_artist_album_response
