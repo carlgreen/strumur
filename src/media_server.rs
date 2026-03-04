@@ -1417,7 +1417,7 @@ fn write_container(
     container_id: &str,
     title: &str,
 ) -> Result<(), GenerateResponseError> {
-    write!(
+    writeln!(
         result,
         r#"<container id="{parent_id}${container_id}" parentID="{parent_id}" restricted="1" searchable="1"><dc:title>{title}</dc:title><upnp:class>object.container</upnp:class></container>"#,
     )?;
@@ -1441,7 +1441,7 @@ fn write_music_album(
     let cover = create_album_art_element(addr, &album.cover);
     // TODO album art details
 
-    write!(
+    writeln!(
         result,
         r#"<container id="{parent_id}${container_id}" parentID="{parent_id}" childCount="{track_count}" restricted="1" searchable="1"><dc:title>{album_title}</dc:title>{date}<upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{artist_name}</upnp:artist>{cover}<upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
     )?;
@@ -1475,7 +1475,7 @@ fn write_music_track(
     let channels = track.channels;
     let file = format!("{}/{}", addr, track.file);
     let file = xml::escape::escape_str_attribute(&file);
-    write!(
+    writeln!(
         result,
         r#"<item id="{parent_id}${item_id}" parentID="{parent_id}" restricted="1"><dc:title>{track_title}</dc:title>{date}<upnp:album>{album_title}</upnp:album><upnp:artist>{artist_name}</upnp:artist><dc:creator>{artist_name}</dc:creator><upnp:artist role="AlbumArtist">{album_artist_name}</upnp:artist><upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>{cover}<res duration="{duration}" size="{size}" bitsPerSample="{bits_per_sample}" sampleFrequency="{sample_frequency}" nrAudioChannels="{channels}" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">{file}</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
     )?;
@@ -1491,7 +1491,7 @@ fn write_music_artist(
 ) -> Result<(), GenerateResponseError> {
     let name = xml::escape::escape_str_attribute(&artist.name);
 
-    write!(
+    writeln!(
         result,
         r#"<container id="{parent_id}${container_id}" parentID="{parent_id}" restricted="1" searchable="1"><dc:title>{name}</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#
     )?;
@@ -2324,7 +2324,8 @@ fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &'stati
                     <errorDescription>{error_description}</errorDescription>
                 </UPnPError>
             </detail>
-        </s:Fault>"#
+        </s:Fault>
+"#
     );
     (
         wrap_with_envelope_body(&content),
@@ -2406,8 +2407,7 @@ fn content_handler(
 mod tests {
     use std::{io::Cursor, path::PathBuf};
 
-    use x_diff_rs::diff::diff;
-    use x_diff_rs::tree::XTree;
+    use xmldiff::diff;
 
     use crate::collection::{Album, Artist, Track};
 
@@ -2934,9 +2934,7 @@ mod tests {
     }
 
     fn compare_xml(a: &str, b: &str) {
-        let tree1 = XTree::parse(a).unwrap();
-        let tree2 = XTree::parse(b).unwrap();
-        let difference = diff(&tree1, &tree2);
+        let difference = diff(a, b);
         assert!(difference.is_empty(), "difference: {difference:#?}");
     }
 
@@ -3959,7 +3957,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=All Artists$28$*a14" parentID="0$=All Artists$28" childCount="2" restricted="1" searchable="1">
+    <container id="0$=All Artists$28$*a14" parentID="0$=All Artists$28" childCount="4" restricted="1" searchable="1">
         <dc:title>h2</dc:title>
         <dc:date>2002-07-30</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -3968,7 +3966,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=All Artists$28$*a17" parentID="0$=All Artists$28" childCount="4" restricted="1" searchable="1">
+    <container id="0$=All Artists$28$*a17" parentID="0$=All Artists$28" childCount="2" restricted="1" searchable="1">
         <dc:title>i3</dc:title>
         <dc:date>2011-11-11</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -4296,7 +4294,7 @@ mod tests {
 
         compare_xml(
             &body,
-            r#"<?xml version="1.0"?>
+            r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <s:Fault>
