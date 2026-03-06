@@ -871,11 +871,6 @@ fn generate_browse_an_artist_response(
         Filter::All => warn!("include all fields."),
         Filter::Include(fields) => warn!("include {fields:?} fields"),
     }
-    if options.sort_criteria.is_empty() {
-        warn!("no sort criteria. do i just make this up?");
-    } else {
-        warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-    }
     let things = ["albums", "items"];
     let starting_index = options.starting_index.into();
     let requested_count = options.requested_count.into();
