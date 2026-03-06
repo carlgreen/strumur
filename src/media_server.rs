@@ -1185,44 +1185,100 @@ fn generate_browse_an_all_artist_response(
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let total_matches = artist.get_albums().len() + artist.get_tracks().count();
     let mut starting_index = options.starting_index.into();
     let mut requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
 
-    generate_browse_an_all_artist_response_album_part(
-        &mut result,
-        artist,
-        options,
-        addr,
-        starting_index,
-        requested_count,
-        &mut number_returned,
-    )
-    .unwrap_or_else(|err| match err {
-        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-    });
-
-    if starting_index > artist.get_albums().len() {
-        starting_index -= artist.get_albums().len();
-    } else {
-        starting_index = 0;
+    let mut sort_criteria = options.sort_criteria.clone();
+    if sort_criteria.is_empty() {
+        // this is what i have decided should be the default, so make it so:
+        sort_criteria.push(Sort::Ascending("upnp:class".into()));
+        sort_criteria.push(Sort::Ascending("upnp:album".into()));
+        sort_criteria.push(Sort::Ascending("upnp:originalTrackNumber".into()));
+        sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
-    requested_count -= number_returned;
 
-    generate_browse_an_all_artist_response_track_part(
-        &mut result,
-        artist,
-        options,
-        addr,
-        starting_index,
-        requested_count,
-        &mut number_returned,
-    )
-    .unwrap_or_else(|err| match err {
-        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-    });
+    // this is how i defince searching by class: not alphabetically but some kind of depth first
+    // thing that orders containers before items, and persons before albums. you're free to disagree
+    let mut class_order = [
+        // "object",
+        // "object.container",
+        // "object.container.person",
+        // "object.container.person.musicArtist",
+        // "object.container.album",
+        "object.container.album.musicAlbum",
+        // "object.item",
+        // "object.item.audioItem",
+        "object.item.audioItem.musicTrack",
+    ];
+
+    match sort_criteria.first() {
+        Some(sort) => match sort {
+            Sort::Ascending(f) => {
+                if f == "upnp:class" {
+                    // nothing to do here
+                } else {
+                    warn!("All Artist response is not ordered by upnp:class, but will be anyway");
+                }
+            }
+            Sort::Descending(f) => {
+                if f == "upnp:class" {
+                    class_order.reverse();
+                } else {
+                    warn!("All Artist response is not ordered by upnp:class, but will be anyway");
+                }
+            }
+        },
+        None => {
+            unreachable!("should have ensured there is some sort criteria");
+        }
+    }
+
+    let mut total_matches = 0;
+    for class in class_order {
+        let sub_total_matches = match class {
+            "object.container.album.musicAlbum" => {
+                generate_browse_an_all_artist_response_album_part(
+                    &mut result,
+                    artist,
+                    options,
+                    addr,
+                    starting_index,
+                    requested_count,
+                    &mut number_returned,
+                )
+                .unwrap_or_else(|err| match err {
+                    GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+                });
+
+                artist.get_albums().len()
+            }
+            "object.item.audioItem.musicTrack" => {
+                generate_browse_an_all_artist_response_track_part(
+                    &mut result,
+                    artist,
+                    options,
+                    addr,
+                    starting_index,
+                    requested_count,
+                    &mut number_returned,
+                )
+                .unwrap_or_else(|err| match err {
+                    GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+                });
+
+                artist.get_tracks().count()
+            }
+            _ => {
+                unreachable!("did not expect to include {class}");
+            }
+        };
+
+        starting_index = starting_index.saturating_sub(sub_total_matches);
+        requested_count = requested_count.saturating_sub(number_returned);
+        total_matches += sub_total_matches;
+    }
 
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -1556,7 +1612,7 @@ fn generate_get_search_capabilities_response() -> (String, &'static str) {
 }
 
 fn generate_get_sort_capabilities_response() -> (String, &'static str) {
-    let sort_caps = "dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album,dc:date";
+    let sort_caps = "upnp:class,dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album,dc:date";
     let body = format!(
         r#"
         <u:GetSortCapabilitiesResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">
@@ -2824,7 +2880,10 @@ mod tests {
 
         assert_eq!(
             id,
-            Some("dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album,dc:date".into())
+            Some(
+                "upnp:class,dc:title,upnp:originalTrackNumber,upnp:artist,upnp:album,dc:date"
+                    .into()
+            )
         );
     }
 
@@ -4830,6 +4889,36 @@ mod tests {
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$=All Artists$35&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;xyz&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$=All Artists$34&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;w&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$=All Artists$33&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;tuv&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>10</TotalMatches>
+            <UpdateID>25</UpdateID>"#
+        );
+    }
+
+    #[test]
+    fn test_generate_browse_an_all_artists_response_sort_by_class_descending_title_ascending() {
+        let collection = generate_test_collection();
+        let browse_options = BrowseOptions {
+            object_id: vec!["0".into(), "all artists".into(), "25".into()],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter: Filter::Include(vec![]),
+            starting_index: 2,
+            requested_count: 5,
+            sort_criteria: vec![
+                Sort::Descending("upnp:class".into()),
+                Sort::Descending("dc:title".into()),
+            ],
+        };
+        let response =
+            generate_browse_an_all_artist_response(&collection, "25", &browse_options, "abc")
+                .unwrap();
+
+        println!("{response}");
+
+        assert_eq!(
+            response,
+            r#"
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i3&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i4&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;container id=&quot;0$=All Artists$25$*a5&quot; parentID=&quot;0$=All Artists$25&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;a1&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:artist&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
+            <NumberReturned>3</NumberReturned>
+            <TotalMatches>5</TotalMatches>
             <UpdateID>25</UpdateID>"#
         );
     }
