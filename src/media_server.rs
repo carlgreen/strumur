@@ -2650,6 +2650,7 @@ fn content_handler(
 mod tests {
     use std::{io::Cursor, path::PathBuf};
 
+    use test_log::test;
     use xmldiff::diff;
 
     use crate::collection::{Album, Artist, Track};
