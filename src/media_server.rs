@@ -619,6 +619,7 @@ fn generate_browse_albums_response(
         let album_id = album.id;
         let parent_id = "0$albums";
         let item_id = format!("*a{album_id}");
+
         write_music_album(
             &mut result,
             &options.filter,
@@ -629,9 +630,6 @@ fn generate_browse_albums_response(
         .unwrap_or_else(|err| match err {
             GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
         });
-        if number_returned >= requested_count {
-            break;
-        }
     }
     format_response(&result, number_returned, total_matches)
 }
@@ -1238,7 +1236,7 @@ fn write_container(
     if included_properties.contains(&"upnp:class") {
         write!(result, r"<upnp:class>object.container</upnp:class>")?;
     }
-    write!(result, r"</container>")?;
+    writeln!(result, r"</container>")?;
 
     Ok(())
 }
@@ -1317,7 +1315,7 @@ fn write_music_album(
             r"<upnp:class>object.container.album.musicAlbum</upnp:class>"
         )?;
     }
-    write!(result, r"</container>")?;
+    writeln!(result, r"</container>")?;
 
     Ok(())
 }
@@ -1348,6 +1346,8 @@ fn write_music_track(
 
     let album_title = &album.title;
     let date = create_date_element(album.date);
+    let cover = create_album_art_element(addr, &album.cover);
+    // TODO album art details
 
     let track_title = xml::escape::escape_str_attribute(&track.title);
     let artist_name = xml::escape::escape_str_attribute(&track.artist);
@@ -1403,6 +1403,9 @@ fn write_music_track(
             r"<upnp:originalTrackNumber>{track_number}</upnp:originalTrackNumber>"
         )?;
     }
+    if included_properties.contains(&"upnp:albumArtURI") {
+        write!(result, r"{cover}")?;
+    }
     if included_properties.contains(&"res") {
         write!(
             result,
@@ -1416,7 +1419,7 @@ fn write_music_track(
             r"<upnp:class>object.item.audioItem.musicTrack</upnp:class>"
         )?;
     }
-    write!(result, r"</item>")?;
+    writeln!(result, r"</item>")?;
 
     Ok(())
 }
@@ -1472,7 +1475,7 @@ fn write_music_artist(
             r"<upnp:class>object.container.person.musicArtist</upnp:class>"
         )?;
     }
-    write!(result, r"</container>")?;
+    writeln!(result, r"</container>")?;
 
     Ok(())
 }
@@ -2297,7 +2300,8 @@ fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &'stati
                     <errorDescription>{error_description}</errorDescription>
                 </UPnPError>
             </detail>
-        </s:Fault>"#
+        </s:Fault>
+"#
     );
     (
         wrap_with_envelope_body(&content),
@@ -2379,8 +2383,7 @@ fn content_handler(
 mod tests {
     use std::{io::Cursor, path::PathBuf};
 
-    use x_diff_rs::diff::diff;
-    use x_diff_rs::tree::XTree;
+    use xmldiff::diff;
 
     use crate::collection::{Album, Artist, Track};
 
@@ -2904,9 +2907,7 @@ mod tests {
     }
 
     fn compare_xml(a: &str, b: &str) {
-        let tree1 = XTree::parse(a).unwrap();
-        let tree2 = XTree::parse(b).unwrap();
-        let difference = diff(&tree1, &tree2);
+        let difference = diff(a, b);
         assert!(difference.is_empty(), "difference: {difference:#?}");
     }
 
@@ -3106,6 +3107,7 @@ mod tests {
         <dc:creator>ghi feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3117,6 +3119,7 @@ mod tests {
         <dc:creator>ghi feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3128,6 +3131,7 @@ mod tests {
         <dc:creator>ghi feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3224,6 +3228,7 @@ mod tests {
         <dc:creator>a&lt;bc feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">a&lt;bc</upnp:artist>
         <upnp:originalTrackNumber>4</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/a&lt;bc/a1/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/a&lt;bc/a1/04*20a14.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3235,6 +3240,7 @@ mod tests {
         <dc:creator>ghi feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/01*20g&lt;11.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3246,6 +3252,7 @@ mod tests {
         <dc:creator>ghi feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>2</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/02*20g12.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3257,6 +3264,7 @@ mod tests {
         <dc:creator>ghi feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>3</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/g1/03*20g13.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3268,6 +3276,7 @@ mod tests {
         <dc:creator>ghi feat. X</dc:creator>
         <upnp:artist role="AlbumArtist">ghi</upnp:artist>
         <upnp:originalTrackNumber>1</upnp:originalTrackNumber>
+        <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <res duration="0:02:18.893" size="18323574" bitsPerSample="16" sampleFrequency="44100" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">http://1.2.3.100:1234/Content/Music/ghi/h2/01*20h21.flac</res>
         <upnp:class>object.item.audioItem.musicTrack</upnp:class>
     </item>
@@ -3913,7 +3922,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=All Artists$28$*a14" parentID="0$=All Artists$28" childCount="2" restricted="1" searchable="1">
+    <container id="0$=All Artists$28$*a14" parentID="0$=All Artists$28" childCount="4" restricted="1" searchable="1">
         <dc:title>h2</dc:title>
         <dc:date>2002-07-30</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -3922,7 +3931,7 @@ mod tests {
         <upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/h2/cover.jpg</upnp:albumArtURI>
         <upnp:class>object.container.album.musicAlbum</upnp:class>
     </container>
-    <container id="0$=All Artists$28$*a17" parentID="0$=All Artists$28" childCount="4" restricted="1" searchable="1">
+    <container id="0$=All Artists$28$*a17" parentID="0$=All Artists$28" childCount="2" restricted="1" searchable="1">
         <dc:title>i3</dc:title>
         <dc:date>2011-11-11</dc:date>
         <upnp:artist>ghi</upnp:artist>
@@ -4242,7 +4251,7 @@ mod tests {
 
         compare_xml(
             &body,
-            r#"<?xml version="1.0"?>
+            r#"<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
     <s:Body>
         <s:Fault>
@@ -4508,7 +4517,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$albums$*a2" parentID="0$albums" childCount="0" restricted="1" searchable="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><dc:creator>an artist</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">abc/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+            r#"<container id="0$albums$*a2" parentID="0$albums" childCount="0" restricted="1" searchable="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><dc:creator>an artist</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">abc/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+"#,
         );
     }
 
@@ -4543,7 +4553,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+"#,
         );
     }
 
@@ -4578,7 +4589,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
+            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+"#,
         );
     }
 
@@ -4598,7 +4610,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#,
+            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+"#,
         );
     }
 
@@ -4618,7 +4631,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#,
+            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+"#,
         );
     }
 
@@ -4638,7 +4652,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>"#,
+            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+"#,
         );
     }
 
@@ -4686,7 +4701,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><dc:date>2026-02-21</dc:date><upnp:album>the title</upnp:album><upnp:artist>an artist feat. someone</upnp:artist><dc:creator>an artist feat. someone</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:originalTrackNumber>1</upnp:originalTrackNumber><res duration="0:03:30.000" size="1234" bitsPerSample="3" sampleFrequency="4" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">abc/01_some_song.flac</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><dc:date>2026-02-21</dc:date><upnp:album>the title</upnp:album><upnp:artist>an artist feat. someone</upnp:artist><dc:creator>an artist feat. someone</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:originalTrackNumber>1</upnp:originalTrackNumber><res duration="0:03:30.000" size="1234" bitsPerSample="3" sampleFrequency="4" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">abc/01_some_song.flac</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>
+"#,
         );
     }
 
@@ -4734,7 +4750,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>
+"#,
         );
     }
 
@@ -4782,7 +4799,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><res duration="0:03:30.000" size="1234" bitsPerSample="3" sampleFrequency="4" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">abc/01_some_song.flac</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>"#,
+            r#"<item id="0$albums$*a2$*i3" parentID="0$albums$*a2" restricted="1"><dc:title>some song</dc:title><res duration="0:03:30.000" size="1234" bitsPerSample="3" sampleFrequency="4" nrAudioChannels="2" protocolInfo="http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000">abc/01_some_song.flac</res><upnp:class>object.item.audioItem.musicTrack</upnp:class></item>
+"#,
         );
     }
 
@@ -4807,7 +4825,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1" searchable="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>"#,
+            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1" searchable="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>
+"#,
         );
     }
 
@@ -4832,7 +4851,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>"#,
+            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>
+"#,
         );
     }
 
@@ -4857,7 +4877,8 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1" searchable="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>"#,
+            r#"<container id="0$=Artist$5$albums" parentID="0$=Artist$5" restricted="1" searchable="1"><dc:title>what</dc:title><upnp:class>object.container</upnp:class></container>
+"#,
         );
     }
 }
