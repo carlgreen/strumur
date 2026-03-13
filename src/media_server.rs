@@ -629,7 +629,10 @@ fn generate_browse_albums_response(
             "dc:date" => {
                 albums.sort_by(|(_, album1), (_, album2)| Album::date_sort(album1, album2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             albums.reverse();
@@ -695,7 +698,10 @@ fn generate_browse_an_album_response(
             "dc:title" => {
                 tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             tracks.reverse();
@@ -778,7 +784,10 @@ fn generate_browse_items_response(
             "dc:title" => {
                 tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::title_sort(track1, track2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             tracks.reverse();
@@ -831,7 +840,10 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
             "dc:title" => {
                 artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             artists.reverse();
@@ -956,7 +968,10 @@ fn generate_browse_an_artist_albums_response(
             "dc:date" => {
                 albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             albums.reverse();
@@ -1028,7 +1043,10 @@ fn generate_browse_an_artist_album_response(
             "dc:title" => {
                 tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             tracks.reverse();
@@ -1134,7 +1152,10 @@ fn generate_browse_all_artists_response(
             "dc:title" => {
                 artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             artists.reverse();
@@ -1309,7 +1330,10 @@ fn generate_browse_an_all_artist_response_album_part(
             "dc:date" => {
                 albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             albums.reverse();
@@ -1366,7 +1390,10 @@ fn generate_browse_an_all_artist_response_track_part(
             "dc:title" => {
                 tracks.sort_by(|(_, track1), (_, track2)| Track::title_sort(track1, track2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             tracks.reverse();
@@ -1430,7 +1457,10 @@ fn generate_browse_an_all_artist_album_response(
             "dc:title" => {
                 tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
             }
-            other => warn!("unsupported sort field: {other}"),
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
         }
         if !ascending {
             tracks.reverse();
@@ -4929,12 +4959,10 @@ mod tests {
             generate_browse_an_all_artist_response(&collection, "25", &browse_options, "abc")
                 .unwrap();
 
-        println!("{response}");
-
         assert_eq!(
             response,
             r#"
-            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i3&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i4&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;container id=&quot;0$=All Artists$25$*a5&quot; parentID=&quot;0$=All Artists$25&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;a1&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:artist&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
+            <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i2&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i1&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/01*20a11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;container id=&quot;0$=All Artists$25$*a5&quot; parentID=&quot;0$=All Artists$25&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;a1&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:artist&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>5</TotalMatches>
             <UpdateID>25</UpdateID>"#
