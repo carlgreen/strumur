@@ -1339,10 +1339,7 @@ fn generate_browse_an_all_artist_response_album_part(
             (&parent_id, &item_id),
             (artist, album),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
 
     Ok(())
@@ -1408,10 +1405,7 @@ fn generate_browse_an_all_artist_response_track_part(
             (&parent_id, &item_id),
             (artist, album, track),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
 
     Ok(())
