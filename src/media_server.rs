@@ -531,7 +531,7 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
     debug!("browse options: {options:?}");
 
     match options.browse_flag {
-        BrowseFlag::Metadata => todo!("browse metadata"),
+        BrowseFlag::Metadata => warn!("browse metadata"),
         BrowseFlag::DirectChildren => info!("direct children. simple."),
     }
     warn!("sort criteria: {:?}. what's up", options.sort_criteria);
@@ -1951,53 +1951,58 @@ fn generate_browse_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
-    let browse_response = match options.object_id.as_slice() {
-        [root] if root == "0" => Ok(generate_browse_root_response(collection, options)),
-        [root, next] if root == "0" && next == "albums" => {
-            Ok(generate_browse_albums_response(collection, options, addr))
-        }
-        [root, next, album_id] if root == "0" && next == "albums" => {
-            generate_browse_an_album_response(collection, album_id, options, addr)
-        }
-        [root, next] if root == "0" && next == "items" => {
-            Ok(generate_browse_items_response(collection, options, addr))
-        }
-        [root, next] if root == "0" && next == "=Artist" => {
-            Ok(generate_browse_artists_response(collection, options))
-        }
-        [root, next, artist_id] if root == "0" && next == "=Artist" => {
-            generate_browse_an_artist_response(collection, artist_id, options)
-        }
-        [root, next, artist_id, artist_what]
-            if root == "0" && next == "=Artist" && artist_what == "albums" =>
-        {
-            generate_browse_an_artist_albums_response(collection, artist_id, options, addr)
-        }
-        [root, next, artist_id, artist_what, album_id]
-            if root == "0" && next == "=Artist" && artist_what == "albums" =>
-        {
-            generate_browse_an_artist_album_response(collection, artist_id, album_id, options, addr)
-        }
-        [root, next, artist_id, artist_what]
-            if root == "0" && next == "=Artist" && artist_what == "items" =>
-        {
-            generate_browse_an_artist_items_response(collection, artist_id, options, addr)
-        }
-        [root, next] if root == "0" && next == "=All Artists" => {
-            Ok(generate_browse_all_artists_response(collection, options))
-        }
-        [root, next, artist_id] if root == "0" && next == "=All Artists" => {
-            generate_browse_an_all_artist_response(collection, artist_id, options, addr)
-        }
-        [root, next, artist_id, album_id] if root == "0" && next == "=All Artists" => {
-            generate_browse_an_all_artist_album_response(
-                collection, artist_id, album_id, options, addr,
-            )
-        }
-        object_id => {
-            error!("control: unexpected object ID: {object_id:?}");
-            Err(UPNPError::NoSuchObject)
-        }
+    let browse_response = match options.browse_flag {
+        BrowseFlag::Metadata => todo!("browse metadata"),
+        BrowseFlag::DirectChildren => match options.object_id.as_slice() {
+            [root] if root == "0" => Ok(generate_browse_root_response(collection, options)),
+            [root, next] if root == "0" && next == "albums" => {
+                Ok(generate_browse_albums_response(collection, options, addr))
+            }
+            [root, next, album_id] if root == "0" && next == "albums" => {
+                generate_browse_an_album_response(collection, album_id, options, addr)
+            }
+            [root, next] if root == "0" && next == "items" => {
+                Ok(generate_browse_items_response(collection, options, addr))
+            }
+            [root, next] if root == "0" && next == "=Artist" => {
+                Ok(generate_browse_artists_response(collection, options))
+            }
+            [root, next, artist_id] if root == "0" && next == "=Artist" => {
+                generate_browse_an_artist_response(collection, artist_id, options)
+            }
+            [root, next, artist_id, artist_what]
+                if root == "0" && next == "=Artist" && artist_what == "albums" =>
+            {
+                generate_browse_an_artist_albums_response(collection, artist_id, options, addr)
+            }
+            [root, next, artist_id, artist_what, album_id]
+                if root == "0" && next == "=Artist" && artist_what == "albums" =>
+            {
+                generate_browse_an_artist_album_response(
+                    collection, artist_id, album_id, options, addr,
+                )
+            }
+            [root, next, artist_id, artist_what]
+                if root == "0" && next == "=Artist" && artist_what == "items" =>
+            {
+                generate_browse_an_artist_items_response(collection, artist_id, options, addr)
+            }
+            [root, next] if root == "0" && next == "=All Artists" => {
+                Ok(generate_browse_all_artists_response(collection, options))
+            }
+            [root, next, artist_id] if root == "0" && next == "=All Artists" => {
+                generate_browse_an_all_artist_response(collection, artist_id, options, addr)
+            }
+            [root, next, artist_id, album_id] if root == "0" && next == "=All Artists" => {
+                generate_browse_an_all_artist_album_response(
+                    collection, artist_id, album_id, options, addr,
+                )
+            }
+            object_id => {
+                error!("control: unexpected object ID: {object_id:?}");
+                Err(UPNPError::NoSuchObject)
+            }
+        },
     };
     match browse_response {
         Ok(browse_response) => {
@@ -4609,6 +4614,88 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
+        assert_eq!(update_id, "25");
+    }
+
+    fn generate_browse_metadata_request(object_id: &str) -> String {
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
+        let body = format!(
+            r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <ObjectID>{object_id}</ObjectID>
+            <BrowseFlag>BrowseMetadata</BrowseFlag>
+            <Filter>*</Filter>
+            <StartingIndex>0</StartingIndex>
+            <RequestedCount>0</RequestedCount>
+            <SortCriteria></SortCriteria>
+        </u:Browse>
+    </s:Body>
+</s:Envelope>"#
+        );
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + &body
+    }
+
+    #[test]
+    fn test_handle_browse_content_root_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
+    <container id="0" parentID="-1" childCount="1" restricted="true" searchable="true">
+        <dc:title>Music</dc:title>
+        <upnp:class>object.container.storageFolder</upnp:class>
+        <upnp:storageUsed>907000</upnp:storageUsed>
+        <upnp:writeStatus>NOT_WRITABLE</upnp:writeStatus>
+        <upnp:searchClass includeDerived="false">object.container.album.musicAlbum</upnp:searchClass>
+        <upnp:searchClass includeDerived="false">object.item.audioItem.musicTrack</upnp:searchClass>
+    </container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
         assert_eq!(update_id, "25");
     }
 
