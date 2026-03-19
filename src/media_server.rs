@@ -3304,20 +3304,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         // check a couple of bits of the body rather than hard coding the whole thing
         assert!(body.contains("<root xmlns=\"urn:schemas-upnp-org:device-1-0\" configId=\"1\">"));
@@ -3341,20 +3330,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         // check a couple of bits of the body rather than hard coding the whole thing
         assert!(body.contains("<scpd xmlns=\"urn:schemas-upnp-org:service-1-0\">"));
@@ -3415,20 +3393,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let id = extract_get_system_update_id_response(&body);
 
@@ -3486,20 +3453,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let id = extract_get_search_capabilities_response(&body);
 
@@ -3557,20 +3513,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let id = extract_get_sort_capabilities_response(&body);
 
@@ -3710,20 +3655,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3770,20 +3704,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3860,20 +3783,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3941,23 +3853,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -3981,20 +3879,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4086,20 +3973,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4150,20 +4026,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4202,23 +4067,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -4242,20 +4093,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4313,23 +4153,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -4353,20 +4179,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4430,23 +4245,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -4470,23 +4271,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -4510,20 +4297,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4610,20 +4386,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4675,20 +4440,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4801,20 +4555,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4908,20 +4651,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4953,20 +4685,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4998,20 +4719,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5043,20 +4753,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5088,20 +4787,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5133,20 +4821,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5178,20 +4855,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5223,20 +4889,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5268,20 +4923,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5313,20 +4957,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5358,20 +4991,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5403,20 +5025,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -5583,23 +5194,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         compare_xml(
             &body,
@@ -5715,20 +5312,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_search_response(&body);
 
@@ -5788,6 +5374,25 @@ mod tests {
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
         assert_eq!(update_id, "25");
+    }
+
+    fn read_status_and_body(cursor: Cursor<Vec<u8>>) -> (String, String) {
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        let status = lines.next().unwrap().to_string();
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        (status, body)
     }
 
     #[test]
