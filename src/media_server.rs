@@ -3433,7 +3433,7 @@ mod tests {
             .unwrap()
             .get_text();
 
-        search_caps.map(|sort_caps| sort_caps.into())
+        search_caps.map(Into::into)
     }
 
     #[test]
@@ -3493,7 +3493,7 @@ mod tests {
             .unwrap()
             .get_text();
 
-        sort_caps.map(|sort_caps| sort_caps.into())
+        sort_caps.map(Into::into)
     }
 
     #[test]
