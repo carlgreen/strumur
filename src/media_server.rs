@@ -3173,10 +3173,10 @@ mod tests {
         mut tracks: Vec<Track>,
     ) -> Album {
         let date = release_date.parse::<NaiveDate>().unwrap();
-        tracks.iter_mut().for_each(|t| {
+        for t in &mut tracks {
             *id += 1;
             t.id = *id;
-        });
+        }
         *id += 1;
         Album::new(
             *id,
