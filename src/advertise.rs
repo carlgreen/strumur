@@ -861,10 +861,8 @@ Man: "ssdp:discover"
         let mut addr_storage = SockAddrStorage::zeroed();
         let mut len = addr_storage.size_of();
         let res =
-            unsafe { libc::getsockname(socket.as_raw_fd(), addr_storage.view_as(), &mut len) };
-        if res == -1 {
-            panic!("{}", std::io::Error::last_os_error());
-        }
+            unsafe { libc::getsockname(socket.as_raw_fd(), addr_storage.view_as(), &raw mut len) };
+        assert!(res != -1, "{}", std::io::Error::last_os_error());
         unsafe { SockAddr::new(addr_storage, len) }
     }
 
