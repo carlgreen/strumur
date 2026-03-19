@@ -607,11 +607,6 @@ fn generate_browse_albums_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let mut albums = collection.get_albums().collect::<Vec<(&Artist, &Album)>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
@@ -677,10 +672,6 @@ fn generate_browse_an_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
     let (artist, album) = collection
         .get_albums()
         .find(|(_, album)| format!("*a{}", album.id) == album_id)
@@ -746,11 +737,6 @@ fn generate_browse_items_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let mut tracks = collection
         .get_tracks()
         .collect::<Vec<(&Artist, &Album, &Track)>>();
@@ -822,11 +808,6 @@ fn generate_browse_items_response(
 }
 
 fn generate_browse_artists_response(collection: &Collection, options: &BrowseOptions) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
@@ -878,11 +859,6 @@ fn generate_browse_an_artist_response(
     artist_id: &str,
     options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let things = ["albums", "items"];
     let starting_index = options.starting_index.into();
     let requested_count = options.requested_count.into();
@@ -934,11 +910,6 @@ fn generate_browse_an_artist_albums_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1008,11 +979,6 @@ fn generate_browse_an_artist_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1121,11 +1087,6 @@ fn generate_browse_all_artists_response(
     collection: &Collection,
     options: &BrowseOptions,
 ) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
@@ -1178,11 +1139,6 @@ fn generate_browse_an_all_artist_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1419,11 +1375,6 @@ fn generate_browse_an_all_artist_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1603,7 +1554,13 @@ fn write_container(
 
     write!(result, r"<container")?;
     if included_properties.contains(&"id") {
-        write!(result, r#" id="{parent_id}${container_id}""#)?;
+        // special case if parent ID is -1 then its not really a thing at all
+        let id_prefix = if parent_id == "-1" {
+            String::new()
+        } else {
+            format!("{parent_id}$")
+        };
+        write!(result, r#" id="{id_prefix}{container_id}""#)?;
     }
     if included_properties.contains(&"parentID") {
         write!(result, r#" parentID="{parent_id}""#)?;
@@ -1946,13 +1903,312 @@ fn wrap_with_envelope_body(body: &str) -> String {
     )
 }
 
+fn generate_browse_root_metadata_response() -> String {
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(&mut result, &filter, ("-1", "0"), "root").unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+    format_response(&result, 1, 1)
+}
+
+fn generate_browse_albums_metadata_response(collection: &Collection) -> String {
+    let album_count = collection.get_albums().count();
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        ("0", "albums"),
+        &format!("{album_count} albums"),
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+    format_response(&result, 1, 1)
+}
+
+fn generate_browse_an_album_metadata_response(
+    collection: &Collection,
+    album_id: &str,
+    addr: &str,
+) -> std::result::Result<String, UPNPError> {
+    let (artist, album) = collection
+        .get_albums()
+        .find(|(_, album)| format!("*a{}", album.id) == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let album_id = album.id;
+    let parent_id = "0$albums";
+    let item_id = format!("*a{album_id}");
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_album(
+        &mut result,
+        &filter,
+        (parent_id, &item_id),
+        (artist, album),
+        addr,
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_items_metadata_response(collection: &Collection) -> String {
+    let album_count = collection.get_tracks().count();
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        ("0", "items"),
+        &format!("{album_count} items"),
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+    format_response(&result, 1, 1)
+}
+
+fn generate_browse_artists_metadata_response() -> String {
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(&mut result, &filter, ("0", "=Artist"), "Artist").unwrap_or_else(
+        |err| match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        },
+    );
+    format_response(&result, 1, 1)
+}
+
+fn generate_browse_an_artist_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = "0$=Artist";
+    let item_id = format!("{}", artist.id);
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_artist(&mut result, &filter, (parent_id, &item_id), artist).unwrap_or_else(|err| {
+        match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        }
+    });
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_artist_albums_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = format!("0$=Artist${artist_id}");
+    let item_id = "albums";
+    let album_count = artist.get_albums().count();
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        (&parent_id, item_id),
+        &format!("{album_count} albums"),
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_artist_album_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    addr: &str,
+) -> std::result::Result<String, UPNPError> {
+    let (artist, album) = collection
+        .get_albums()
+        .find(|(_, album)| format!("*a{}", album.id) == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let id = album.id;
+    let parent_id = format!("0$=Artist${artist_id}$albums");
+    let item_id = format!("{id}");
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_album(
+        &mut result,
+        &filter,
+        (&parent_id, &item_id),
+        (artist, album),
+        addr,
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_artist_items_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = format!("0$=Artist${artist_id}");
+    let item_id = "items";
+    let item_count = artist.get_tracks().count();
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        (&parent_id, item_id),
+        &format!("{item_count} items"),
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_all_artists_metadata_response() -> String {
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(&mut result, &filter, ("0", "=All Artists"), "All Artists").unwrap_or_else(
+        |err| match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        },
+    );
+    format_response(&result, 1, 1)
+}
+
+fn generate_browse_an_all_artist_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = "0$=All Artists";
+    let item_id = format!("{}", artist.id);
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_artist(&mut result, &filter, (parent_id, &item_id), artist).unwrap_or_else(|err| {
+        match err {
+            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+        }
+    });
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_all_artist_album_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    addr: &str,
+) -> std::result::Result<String, UPNPError> {
+    let (artist, album) = collection
+        .get_albums()
+        .find(|(_, album)| format!("*a{}", album.id) == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let id = album.id;
+    let parent_id = format!("0$=All Artists${artist_id}");
+    let item_id = format!("*a{id}");
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_album(
+        &mut result,
+        &filter,
+        (&parent_id, &item_id),
+        (artist, album),
+        addr,
+    )
+    .unwrap_or_else(|err| match err {
+        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
+    });
+
+    Ok(format_response(&result, 1, 1))
+}
+
 fn generate_browse_response(
     collection: &Collection,
     options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
     let browse_response = match options.browse_flag {
-        BrowseFlag::Metadata => todo!("browse metadata"),
+        BrowseFlag::Metadata => match options.object_id.as_slice() {
+            [root] if root == "0" => Ok(generate_browse_root_metadata_response()),
+            [root, next] if root == "0" && next == "albums" => {
+                Ok(generate_browse_albums_metadata_response(collection))
+            }
+            [root, next, album_id] if root == "0" && next == "albums" => {
+                generate_browse_an_album_metadata_response(collection, album_id, addr)
+            }
+            [root, next] if root == "0" && next == "items" => {
+                Ok(generate_browse_items_metadata_response(collection))
+            }
+            [root, next] if root == "0" && next == "=Artist" => {
+                Ok(generate_browse_artists_metadata_response())
+            }
+            [root, next, artist_id] if root == "0" && next == "=Artist" => {
+                generate_browse_an_artist_metadata_response(collection, artist_id)
+            }
+            [root, next, artist_id, artist_what]
+                if root == "0" && next == "=Artist" && artist_what == "albums" =>
+            {
+                generate_browse_an_artist_albums_metadata_response(collection, artist_id)
+            }
+            [root, next, artist_id, artist_what, album_id]
+                if root == "0" && next == "=Artist" && artist_what == "albums" =>
+            {
+                generate_browse_an_artist_album_metadata_response(
+                    collection, artist_id, album_id, addr,
+                )
+            }
+            [root, next, artist_id, artist_what]
+                if root == "0" && next == "=Artist" && artist_what == "items" =>
+            {
+                generate_browse_an_artist_items_metadata_response(collection, artist_id)
+            }
+            [root, next] if root == "0" && next == "=All Artists" => {
+                Ok(generate_browse_all_artists_metadata_response())
+            }
+            [root, next, artist_id] if root == "0" && next == "=All Artists" => {
+                generate_browse_an_all_artist_metadata_response(collection, artist_id)
+            }
+            [root, next, artist_id, album_id] if root == "0" && next == "=All Artists" => {
+                generate_browse_an_all_artist_album_metadata_response(
+                    collection, artist_id, album_id, addr,
+                )
+            }
+            object_id => {
+                error!("control: unexpected object ID: {object_id:?}");
+                Err(UPNPError::NoSuchObject)
+            }
+        },
         BrowseFlag::DirectChildren => match options.object_id.as_slice() {
             [root] if root == "0" => Ok(generate_browse_root_response(collection, options)),
             [root, next] if root == "0" && next == "albums" => {
@@ -4648,7 +4904,7 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_browse_content_root_metadata() {
+    fn test_handle_browse_root_metadata() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
@@ -4683,15 +4939,503 @@ mod tests {
 
         compare_xml(
             &result,
-            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
-    <container id="0" parentID="-1" childCount="1" restricted="true" searchable="true">
-        <dc:title>Music</dc:title>
-        <upnp:class>object.container.storageFolder</upnp:class>
-        <upnp:storageUsed>907000</upnp:storageUsed>
-        <upnp:writeStatus>NOT_WRITABLE</upnp:writeStatus>
-        <upnp:searchClass includeDerived="false">object.container.album.musicAlbum</upnp:searchClass>
-        <upnp:searchClass includeDerived="false">object.item.audioItem.musicTrack</upnp:searchClass>
-    </container>
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0" parentID="-1" restricted="1" searchable="1"><dc:title>root</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_albums_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$albums");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$albums" parentID="0" restricted="1" searchable="1"><dc:title>12 albums</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_album_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$albums$*a9");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$albums$*a9" parentID="0$albums" childCount="3" restricted="1" searchable="1"><dc:title>g1</dc:title><dc:date>1996-02-12</dc:date><upnp:artist>ghi</upnp:artist><dc:creator>ghi</dc:creator><upnp:artist role="AlbumArtist">ghi</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_items_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$items");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$items" parentID="0" restricted="1" searchable="1"><dc:title>13 items</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_artists_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist" parentID="0" restricted="1" searchable="1"><dc:title>Artist</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$25");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$25" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>a&lt;bc</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_albums_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$25$albums");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$25$albums" parentID="0$=Artist$25" restricted="1" searchable="1"><dc:title>1 albums</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_album_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$28$albums$*a17");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$28$albums$17" parentID="0$=Artist$28$albums" childCount="2" restricted="1" searchable="1"><dc:title>i3</dc:title><dc:date>2011-11-11</dc:date><upnp:artist>ghi</upnp:artist><dc:creator>ghi</dc:creator><upnp:artist role="AlbumArtist">ghi</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_items_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$28$items");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$28$items" parentID="0$=Artist$28" restricted="1" searchable="1"><dc:title>9 items</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_all_artists_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=All Artists");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=All Artists" parentID="0" restricted="1" searchable="1"><dc:title>All Artists</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_all_artist_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=All Artists$25");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=All Artists$25" parentID="0$=All Artists" restricted="1" searchable="1"><dc:title>a&lt;bc</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_handle_browse_an_all_artist_album_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=All Artists$28$*a17");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let result = String::from_utf8(cursor.into_inner()).unwrap();
+        let mut lines = result.lines();
+
+        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
+
+        // skip headers
+        loop {
+            let l = lines.next().unwrap();
+            if l.is_empty() {
+                break;
+            }
+        }
+
+        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=All Artists$28$*a17" parentID="0$=All Artists$28" childCount="2" restricted="1" searchable="1"><dc:title>i3</dc:title><dc:date>2011-11-11</dc:date><upnp:artist>ghi</upnp:artist><dc:creator>ghi</dc:creator><upnp:artist role="AlbumArtist">ghi</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
 </DIDL-Lite>"#,
         );
         assert_eq!(number_returned, 1);
