@@ -787,19 +787,19 @@ mod tests {
     #[test]
     fn test_parse_request_line_with_invalid_method() {
         let request_line = "HELLO * HTTP/1.1";
-        assert!(parse_request_line(request_line).is_err())
+        assert!(parse_request_line(request_line).is_err());
     }
 
     #[test]
     fn test_parse_request_line_with_invalid_target() {
         let request_line = "M-SEARCH 1 HTTP/1.1";
-        assert!(parse_request_line(request_line).is_err())
+        assert!(parse_request_line(request_line).is_err());
     }
 
     #[test]
     fn test_parse_request_line_with_invalid_protocol() {
         let request_line = "M-SEARCH * HTTP/a.b";
-        assert!(parse_request_line(request_line).is_err())
+        assert!(parse_request_line(request_line).is_err());
     }
 
     #[test]
