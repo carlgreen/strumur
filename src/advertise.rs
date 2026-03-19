@@ -777,7 +777,7 @@ mod tests {
 
     #[test]
     fn test_parse_request_line() {
-        let request_line = r#"M-SEARCH * HTTP/1.1"#;
+        let request_line = "M-SEARCH * HTTP/1.1";
         let (method, request_target, protocol) = parse_request_line(request_line).unwrap();
         assert_eq!(method, "M-SEARCH");
         assert_eq!(request_target, "*");
@@ -786,19 +786,19 @@ mod tests {
 
     #[test]
     fn test_parse_request_line_with_invalid_method() {
-        let request_line = r#"HELLO * HTTP/1.1"#;
+        let request_line = "HELLO * HTTP/1.1";
         assert!(parse_request_line(request_line).is_err())
     }
 
     #[test]
     fn test_parse_request_line_with_invalid_target() {
-        let request_line = r#"M-SEARCH 1 HTTP/1.1"#;
+        let request_line = "M-SEARCH 1 HTTP/1.1";
         assert!(parse_request_line(request_line).is_err())
     }
 
     #[test]
     fn test_parse_request_line_with_invalid_protocol() {
-        let request_line = r#"M-SEARCH * HTTP/a.b"#;
+        let request_line = "M-SEARCH * HTTP/a.b";
         assert!(parse_request_line(request_line).is_err())
     }
 

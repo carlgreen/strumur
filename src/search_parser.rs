@@ -679,7 +679,7 @@ mod parse_tests {
     #[test]
     fn test_search_crit() {
         assert_eq!(
-            search_crit(&mut Scanner::new(r#"*"#)),
+            search_crit(&mut Scanner::new("*")),
             Ok(Some(SearchCrit::All))
         );
         assert_eq!(
