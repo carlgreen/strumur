@@ -748,7 +748,7 @@ mod parse_tests {
     }
 
     #[test]
-    fn test_real_searches() {
+    fn test_real_artist_search() {
         assert_eq!(
             parse_search_criteria(
                 r#"upnp:class = "object.container.person.musicArtist" and (upnp:artist contains "lo" or dc:title contains "lo")"#
@@ -775,7 +775,10 @@ mod parse_tests {
                 ))))
             ))))
         );
+    }
 
+    #[test]
+    fn test_real_album_search() {
         assert_eq!(
             parse_search_criteria(
                 r#"upnp:class = "object.container.album.musicAlbum" and (upnp:album contains "lo" or dc:title contains "lo" or upnp:artist contains "lo")"#,
@@ -810,7 +813,10 @@ mod parse_tests {
                 )))),
             ))))
         );
+    }
 
+    #[test]
+    fn test_real_track_search() {
         assert_eq!(
             parse_search_criteria(
                 r#"upnp:class derivedfrom "object.item.audioItem" and (dc:title contains "lo" or upnp:artist contains "lo" or dc:creator contains "lo")"#,
@@ -845,7 +851,10 @@ mod parse_tests {
                 )))),
             ))))
         );
+    }
 
+    #[test]
+    fn test_real_playlist_search() {
         assert_eq!(
             parse_search_criteria(
                 r#"upnp:class = "object.container.playlistContainer" and dc:title contains "lo""#
