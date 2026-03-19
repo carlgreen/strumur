@@ -962,8 +962,8 @@ mod tests {
         assert_eq!(metadata.sample_rate, 48000);
         assert_eq!(metadata.channels, 2);
         assert_eq!(metadata.bits, 16);
-        assert_eq!(metadata.total, 274176);
-        assert_eq!(metadata.checksum, 0xebede16f6f0c2fc9259bc4724a78e101);
+        assert_eq!(metadata.total, 274_176);
+        assert_eq!(metadata.checksum, 0xebed_e16f_6f0c_2fc9_259b_c472_4a78_e101);
         assert_eq!(
             metadata.duration(),
             NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap()
@@ -1005,58 +1005,58 @@ mod tests {
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 20480,
+                    sample_number: 20_480,
                     offset: 34807,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 45056,
+                    sample_number: 45_056,
                     offset: 89597,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 69632,
-                    offset: 145375,
+                    sample_number: 69_632,
+                    offset: 145_375,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 94208,
-                    offset: 192402,
+                    sample_number: 94_208,
+                    offset: 192_402,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 118784,
-                    offset: 239699,
+                    sample_number: 118_784,
+                    offset: 239_699,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 143360,
-                    offset: 300422,
+                    sample_number: 143_360,
+                    offset: 300_422,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 167936,
-                    offset: 361855,
+                    sample_number: 167_936,
+                    offset: 361_855,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 188416,
-                    offset: 413037,
+                    sample_number: 188_416,
+                    offset: 413_037,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 212992,
-                    offset: 462389,
+                    sample_number: 212_992,
+                    offset: 462_389,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 237568,
-                    offset: 510317,
+                    sample_number: 237_568,
+                    offset: 510_317,
                     samples: 4096
                 },
                 FlacMetadataSeekPoint {
-                    sample_number: 262144,
-                    offset: 559113,
+                    sample_number: 262_144,
+                    offset: 559_113,
                     samples: 4096
                 },
             ]
@@ -1079,7 +1079,7 @@ mod tests {
         assert_eq!(
             metadata.application,
             vec![FlacMetadataApplication {
-                id: 0x41424344,
+                id: 0x4142_4344,
                 data: "this is fake application stuff for testing.\0\0\0\0\0\0\0".into(),
             }]
         );
@@ -1103,7 +1103,7 @@ mod tests {
                         },],
                     },
                     FlacMetadataCueSheetTrack {
-                        offset: 274176,
+                        offset: 274_176,
                         number: 255,
                         isrc: None,
                         is_audio: true,

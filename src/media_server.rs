@@ -3203,7 +3203,7 @@ mod tests {
             file: format!("Music/{artist_name}/{album_title}/{track_number:02} {track_title}.flac")
                 .replace(' ', "*20"),
             duration: NaiveTime::from_hms_milli_opt(0, 2, 18, 893).unwrap(),
-            size: 18323574,
+            size: 18_323_574,
             bits_per_sample: 16,
             sample_frequency: 44100,
             channels: 2,

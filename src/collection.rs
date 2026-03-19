@@ -559,7 +559,7 @@ mod tests {
                         artist: "carl".to_string(),
                         file: "./testdata/collection/riff.flac".to_string(),
                         duration: NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap(),
-                        size: 664150,
+                        size: 664_150,
                         bits_per_sample: 16,
                         sample_frequency: 48000,
                         channels: 2,
