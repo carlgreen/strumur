@@ -996,8 +996,64 @@ mod tests {
             ]
         );
 
+        test_extract_flac_metadata_seek_table(&metadata.seek_table);
+
         assert_eq!(
-            metadata.seek_table,
+            metadata.picture,
+            vec![FlacMetadataPicture {
+                picture_type: FlacMetadataPictureType::FrontCover,
+                media_type: "image/jpeg".to_string(),
+                description: String::new(),
+                width: 1024,
+                height: 768,
+                depth: 24,
+                colors: 0,
+                picture: include_bytes!("cover.jpg").into(),
+            }]
+        );
+
+        assert_eq!(
+            metadata.application,
+            vec![FlacMetadataApplication {
+                id: 0x4142_4344,
+                data: "this is fake application stuff for testing.\0\0\0\0\0\0\0".into(),
+            }]
+        );
+
+        assert_eq!(
+            metadata.cue_sheet,
+            Some(FlacMetadataCueSheet {
+                catalog_number: "1234567890123".to_string(),
+                lead_in_samples: 0,
+                is_cdda: false,
+                tracks: vec![
+                    FlacMetadataCueSheetTrack {
+                        offset: 0,
+                        number: 1,
+                        isrc: Some("AA6662500001".to_string()),
+                        is_audio: true,
+                        preemphasis_flag: false,
+                        index_points: vec![FlacMetadataCueSheetTrackIndexPoint {
+                            offset: 0,
+                            number: 1,
+                        },],
+                    },
+                    FlacMetadataCueSheetTrack {
+                        offset: 274_176,
+                        number: 255,
+                        isrc: None,
+                        is_audio: true,
+                        preemphasis_flag: false,
+                        index_points: vec![],
+                    }
+                ],
+            })
+        );
+    }
+
+    fn test_extract_flac_metadata_seek_table(seek_table: &[FlacMetadataSeekPoint]) {
+        assert_eq!(
+            seek_table,
             vec![
                 FlacMetadataSeekPoint {
                     sample_number: 0,
@@ -1060,58 +1116,6 @@ mod tests {
                     samples: 4096
                 },
             ]
-        );
-
-        assert_eq!(
-            metadata.picture,
-            vec![FlacMetadataPicture {
-                picture_type: FlacMetadataPictureType::FrontCover,
-                media_type: "image/jpeg".to_string(),
-                description: String::new(),
-                width: 1024,
-                height: 768,
-                depth: 24,
-                colors: 0,
-                picture: include_bytes!("cover.jpg").into(),
-            }]
-        );
-
-        assert_eq!(
-            metadata.application,
-            vec![FlacMetadataApplication {
-                id: 0x4142_4344,
-                data: "this is fake application stuff for testing.\0\0\0\0\0\0\0".into(),
-            }]
-        );
-
-        assert_eq!(
-            metadata.cue_sheet,
-            Some(FlacMetadataCueSheet {
-                catalog_number: "1234567890123".to_string(),
-                lead_in_samples: 0,
-                is_cdda: false,
-                tracks: vec![
-                    FlacMetadataCueSheetTrack {
-                        offset: 0,
-                        number: 1,
-                        isrc: Some("AA6662500001".to_string()),
-                        is_audio: true,
-                        preemphasis_flag: false,
-                        index_points: vec![FlacMetadataCueSheetTrackIndexPoint {
-                            offset: 0,
-                            number: 1,
-                        },],
-                    },
-                    FlacMetadataCueSheetTrack {
-                        offset: 274_176,
-                        number: 255,
-                        isrc: None,
-                        is_audio: true,
-                        preemphasis_flag: false,
-                        index_points: vec![],
-                    }
-                ],
-            })
         );
     }
 }
