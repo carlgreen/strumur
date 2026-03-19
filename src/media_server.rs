@@ -530,12 +530,6 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
 
     debug!("browse options: {options:?}");
 
-    match options.browse_flag {
-        BrowseFlag::Metadata => warn!("browse metadata"),
-        BrowseFlag::DirectChildren => info!("direct children. simple."),
-    }
-    warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-
     Ok(options)
 }
 
@@ -2506,14 +2500,6 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionEr
     let options = builder.build()?;
 
     debug!("search options: {options:?}");
-
-    match &options.search_criteria {
-        SearchCrit::All => info!("search all. nothing to do"),
-        SearchCrit::SearchExp(search_exp) => {
-            warn!("search criteria: {search_exp:?}. what's up");
-        }
-    }
-    warn!("sort criteria: {:?}. what's up", options.sort_criteria);
 
     Ok(options)
 }
