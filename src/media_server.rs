@@ -2932,6 +2932,7 @@ fn handle_device_connection(
                 .expect("no soap action");
             http_request_headers.get(soap_action_key).map_or_else(
                 || {
+                    // this must be unreachable? should return the nice error above instead of expect, and use expect here
                     warn!("control: no soap action");
                     (String::new(), "400 BAD REQUEST")
                 },
@@ -5216,6 +5217,211 @@ mod tests {
     </s:Body>
 </s:Envelope>"#,
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "no soap action")] // because i'm not doing it right
+    fn test_handle_device_connection_with_no_soap_action() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_bad_soap_quoting() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse"#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
+
+        compare_xml(
+            &body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Invalid Action</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_bad_soap_separator() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1_Browse""#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
+
+        compare_xml(
+            &body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Invalid Action</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_unknown_soap_action() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
+
+        compare_xml(
+            &body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Invalid Service</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_unknown_request() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
+        let input = "POST /ContentDestruction/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, _) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 404 NOT FOUND");
     }
 
     fn generate_search_request(
