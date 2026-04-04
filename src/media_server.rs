@@ -9,14 +9,17 @@ use std::io::Read;
 use std::net::SocketAddrV4;
 use std::net::TcpListener;
 use std::thread;
+use std::time::Instant;
 
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use log::{debug, error, info, trace, warn};
+use opentelemetry::metrics::Histogram;
 use uuid::Uuid;
 use xmltree::Element;
 
 use crate::collection::{Album, Artist, Collection, Track};
+use crate::get_meter;
 use crate::search_parser::{
     BinOp, BoolVal, Error, ExistsOp, LogOp, QuotedVal, RelExp, SearchCrit, SearchExp, StringOp,
     parse_search_criteria,
@@ -78,7 +81,6 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
             trace!("incoming request from {peer_addr}");
             let collection = collection.clone(); // TODO i don't want to clone this.
-
             thread::spawn(move || {
                 handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
             });
@@ -2867,6 +2869,18 @@ fn include_by_search_exp(
     }
 }
 
+fn build_http_duration_meter() -> Histogram<f64> {
+    let meter = get_meter();
+    meter
+        .f64_histogram("http.server.request.duration")
+        .with_unit("s")
+        .with_description("Duration of HTTP server requests")
+        .with_boundaries(vec![
+            0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+        ])
+        .build()
+}
+
 fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
@@ -2874,6 +2888,9 @@ fn handle_device_connection(
     input_stream: impl std::io::Read,
     mut output_stream: impl std::io::Write,
 ) {
+    let latency = build_http_duration_meter();
+    let start = Instant::now();
+
     let mut buf_reader = BufReader::new(input_stream);
 
     let request_line = match parse_some_request_line(&mut buf_reader) {
@@ -2893,6 +2910,10 @@ fn handle_device_connection(
                 content.as_bytes(),
                 &mut output_stream,
             );
+
+            let duration = start.elapsed();
+            latency.record(duration.as_secs_f64(), &[]);
+
             return;
         }
     };
@@ -2930,25 +2951,20 @@ fn handle_device_connection(
                 .keys()
                 .find(|k| k.eq_ignore_ascii_case("Soapaction"))
                 .expect("no soap action");
-            http_request_headers.get(soap_action_key).map_or_else(
-                || {
-                    // this must be unreachable? should return the nice error above instead of expect, and use expect here
-                    warn!("control: no soap action");
-                    (String::new(), "400 BAD REQUEST")
-                },
-                |soap_action| {
+            if let Some(soap_action) = http_request_headers.get(soap_action_key) {
+                'content_soap_action: {
                     let soap_action = if soap_action.starts_with('"') && soap_action.ends_with('"')
                     {
                         soap_action.trim_matches('"')
                     } else {
                         warn!("expected soap action to be enclosed in '\"': {soap_action}");
                         // not just an invalid action, something worse?
-                        return soap_upnp_error(401, "Invalid Action");
+                        break 'content_soap_action soap_upnp_error(401, "Invalid Action");
                     };
                     let Some((service, action)) = soap_action.split_once('#') else {
                         warn!("received soap action without '#': {soap_action}");
                         // not just an invalid action, something worse?
-                        return soap_upnp_error(401, "Invalid Action");
+                        break 'content_soap_action soap_upnp_error(401, "Invalid Action");
                     };
 
                     if service == CONTENT_DIRECTORY_SERVICE_TYPE {
@@ -2958,11 +2974,19 @@ fn handle_device_connection(
                         info!("we got {service}, we got {action}");
                         soap_upnp_error(401, "Invalid Service")
                     }
-                },
-            )
+                }
+            } else {
+                // this must be unreachable? should return the nice error above instead of expect, and use expect here
+                warn!("control: no soap action");
+                (String::new(), "400 BAD REQUEST")
+            }
         }
         something if something.starts_with("GET /Content/") => {
             content_handler(something, collection, output_stream);
+
+            let duration = start.elapsed();
+            latency.record(duration.as_secs_f64(), &[]);
+
             return;
         }
         _ => {
@@ -2978,6 +3002,9 @@ fn handle_device_connection(
         content.as_bytes(),
         &mut output_stream,
     );
+
+    let duration = start.elapsed();
+    latency.record(duration.as_secs_f64(), &[]);
 }
 
 fn handle_content_directory_actions<'a>(

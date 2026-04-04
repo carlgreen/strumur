@@ -13,9 +13,14 @@ use std::io::Write as _;
 use std::net::Ipv4Addr;
 use std::net::SocketAddrV4;
 use std::process;
+use std::sync::OnceLock;
 
 use get_if_addrs::IfAddr;
 use log::{Level, info};
+use opentelemetry::global;
+use opentelemetry::metrics::Meter;
+use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use stderrlog::Timestamp;
 use uuid::Uuid;
 
@@ -37,6 +42,8 @@ fn main() {
         .timestamp(Timestamp::Second)
         .init()
         .unwrap();
+
+    init_meter_provider();
 
     if let Err(e) = run(&config) {
         eprintln!("Application error: {e}");
@@ -150,6 +157,20 @@ fn get_device_uuid(deviceid_file: &str) -> Result<Uuid, DeviceUuidError> {
             }
         }
     }
+}
+
+fn init_meter_provider() {
+    let exporter = opentelemetry_stdout::MetricExporterBuilder::default().build();
+    let provider = SdkMeterProvider::builder()
+        .with_periodic_exporter(exporter)
+        .with_resource(Resource::builder().with_service_name("strumur").build())
+        .build();
+    global::set_meter_provider(provider);
+}
+
+pub fn get_meter() -> &'static Meter {
+    static TRACER: OnceLock<Meter> = OnceLock::new();
+    TRACER.get_or_init(|| global::meter("strumur"))
 }
 
 #[cfg(test)]
