@@ -2912,7 +2912,7 @@ fn handle_device_connection(
     input_stream: impl std::io::Read,
     mut output_stream: impl std::io::Write,
 ) {
-    let _meter = HttpDurationMeter::new();
+    let _latency = HttpDurationMeter::new();
 
     let mut buf_reader = BufReader::new(input_stream);
 
