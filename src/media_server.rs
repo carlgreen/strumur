@@ -8,6 +8,7 @@ use std::io::BufReader;
 use std::io::Read;
 use std::net::SocketAddrV4;
 use std::net::TcpListener;
+use std::sync::OnceLock;
 use std::thread;
 use std::time::Instant;
 
@@ -2869,16 +2870,39 @@ fn include_by_search_exp(
     }
 }
 
-fn build_http_duration_meter() -> Histogram<f64> {
-    let meter = get_meter();
-    meter
-        .f64_histogram("http.server.request.duration")
-        .with_unit("s")
-        .with_description("Duration of HTTP server requests")
-        .with_boundaries(vec![
-            0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
-        ])
-        .build()
+fn build_http_duration_meter() -> &'static Histogram<f64> {
+    static TRACER: OnceLock<Histogram<f64>> = OnceLock::new();
+    TRACER.get_or_init(|| {
+        get_meter()
+            .f64_histogram("http.server.request.duration")
+            .with_unit("s")
+            .with_description("Duration of HTTP server requests")
+            .with_boundaries(vec![
+                0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+            ])
+            .build()
+    })
+}
+
+struct HttpDurationMeter {
+    latency: &'static Histogram<f64>,
+    start: Instant,
+}
+
+impl HttpDurationMeter {
+    fn new() -> Self {
+        let latency = build_http_duration_meter();
+        let start = Instant::now();
+
+        Self { latency, start }
+    }
+}
+
+impl Drop for HttpDurationMeter {
+    fn drop(&mut self) {
+        let duration = self.start.elapsed();
+        self.latency.record(duration.as_secs_f64(), &[]);
+    }
 }
 
 fn handle_device_connection(
@@ -2888,8 +2912,7 @@ fn handle_device_connection(
     input_stream: impl std::io::Read,
     mut output_stream: impl std::io::Write,
 ) {
-    let latency = build_http_duration_meter();
-    let start = Instant::now();
+    let _meter = HttpDurationMeter::new();
 
     let mut buf_reader = BufReader::new(input_stream);
 
@@ -2910,9 +2933,6 @@ fn handle_device_connection(
                 content.as_bytes(),
                 &mut output_stream,
             );
-
-            let duration = start.elapsed();
-            latency.record(duration.as_secs_f64(), &[]);
 
             return;
         }
@@ -2984,9 +3004,6 @@ fn handle_device_connection(
         something if something.starts_with("GET /Content/") => {
             content_handler(something, collection, output_stream);
 
-            let duration = start.elapsed();
-            latency.record(duration.as_secs_f64(), &[]);
-
             return;
         }
         _ => {
@@ -3002,9 +3019,6 @@ fn handle_device_connection(
         content.as_bytes(),
         &mut output_stream,
     );
-
-    let duration = start.elapsed();
-    latency.record(duration.as_secs_f64(), &[]);
 }
 
 fn handle_content_directory_actions<'a>(
