@@ -222,10 +222,11 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
                     ReallySocketToMe::new(socket.try_clone().expect("could not clone socket"));
                 let location = location.clone();
 
-                let span = tracer
-                    .span_builder(format!("search_listener {location}"))
+                let mut span = tracer
+                    .span_builder("search_listener")
                     .with_kind(SpanKind::Consumer)
                     .start(tracer);
+                span.set_attribute(KeyValue::new("server", server.to_string()));
                 let cx = Context::current_with_span(span);
 
                 thread::spawn(move || {

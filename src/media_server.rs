@@ -93,10 +93,11 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
             trace!("incoming request from {peer_addr}");
             let collection = collection.clone(); // TODO i don't want to clone this.
 
-            let span = tracer
-                .span_builder(format!("media_server {peer_addr}"))
+            let mut span = tracer
+                .span_builder("media_server")
                 .with_kind(SpanKind::Server)
                 .start(tracer);
+            span.set_attribute(KeyValue::new("peer address", peer_addr));
             let cx = Context::current_with_span(span);
 
             thread::spawn(move || {
