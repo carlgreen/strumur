@@ -176,6 +176,7 @@ fn get_device_uuid(deviceid_file: &str) -> Result<Uuid, DeviceUuidError> {
 fn init_tracer_provider() -> SdkTracerProvider {
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(SpanExporter::default())
+        .with_resource(Resource::builder().with_service_name("strumur").build())
         .build();
     global::set_tracer_provider(provider.clone());
     provider
