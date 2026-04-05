@@ -18,8 +18,11 @@ use std::sync::OnceLock;
 use get_if_addrs::IfAddr;
 use log::{Level, info};
 use opentelemetry::global;
+use opentelemetry::global::BoxedSpan;
 use opentelemetry::global::BoxedTracer;
 use opentelemetry::metrics::Meter;
+use opentelemetry::trace::Span;
+use opentelemetry::trace::Status;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
@@ -186,6 +189,11 @@ fn init_tracer_provider() -> SdkTracerProvider {
 pub fn get_tracer() -> &'static BoxedTracer {
     static TRACER: OnceLock<BoxedTracer> = OnceLock::new();
     TRACER.get_or_init(|| global::tracer("strumur"))
+}
+
+fn fail_span(mut span: BoxedSpan, description: impl Into<String>) {
+    span.set_status(Status::error(description.into()));
+    span.end();
 }
 
 fn init_meter_provider() -> SdkMeterProvider {

@@ -24,6 +24,7 @@ use rand::rngs::ThreadRng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use uuid::Uuid;
 
+use crate::fail_span;
 use crate::get_tracer;
 
 const NAME: &str = env!("CARGO_PKG_NAME");
@@ -560,11 +561,10 @@ fn handle_search_message(
     if ssdp_message.request_line
         == format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}")
     {
-        span.set_status(Status::error(format!(
-            "unhandled request line: {}",
-            ssdp_message.request_line
-        )));
-        span.end();
+        fail_span(
+            span,
+            format!("unhandled request line: {}", ssdp_message.request_line),
+        );
         return Err(HandleSearchMessageError::UnhandledRequestLine(
             ssdp_message.request_line,
         ));
@@ -604,8 +604,7 @@ fn handle_search_message(
                 Err(HandleSearchMessageError::MissingUserAgentHeader) => cp_ip,
                 Err(err) => {
                     span.record_error(&err);
-                    span.set_status(Status::error(format!("SSDP search message error: {err}")));
-                    span.end();
+                    fail_span(span, format!("SSDP search message error: {err}"));
                     return Err(err);
                 }
             };
@@ -625,8 +624,7 @@ fn handle_search_message(
 
             // if multicast and contains TCPPORT.UPNP.ORG header then TODO
             if multicast && ssdp_message.headers.contains_key("TCPPORT.UPNP.ORG") {
-                span.set_status(Status::error("TCPPORT.UPNP.ORG handling not implemented"));
-                span.end();
+                fail_span(span, "TCPPORT.UPNP.ORG handling not implemented");
                 unimplemented!("TCPPORT.UPNP.ORG handling not implemented");
             }
 
@@ -660,12 +658,10 @@ fn handle_search_message(
             } else if st.starts_with(&uuid_urn) {
                 warn!("unexpected search target format: {st}");
             } else if st.starts_with("uuid:") {
-                span.set_status(Status::error(format!("search target UUID mismatch: {st}")));
-                span.end();
+                fail_span(span, format!("search target UUID mismatch: {st}"));
                 return Err(HandleSearchMessageError::SearchTargetUuidMismatch(st));
             } else {
-                span.set_status(Status::error(format!("search target unknown: {st}")));
-                span.end();
+                fail_span(span, format!("search target unknown: {st}"));
                 return Err(HandleSearchMessageError::SearchTargetUnknown(st));
             }
 
@@ -731,10 +727,7 @@ fn handle_search_message(
             Ok(())
         }
         unknown_method => {
-            span.set_status(Status::error(format!(
-                "SSDP method unknown: {unknown_method}"
-            )));
-            span.end();
+            fail_span(span, format!("SSDP method unknown: {unknown_method}"));
             Err(HandleSearchMessageError::MethodUnknown(
                 ssdp_message.request_line,
             ))

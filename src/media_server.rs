@@ -27,6 +27,7 @@ use uuid::Uuid;
 use xmltree::Element;
 
 use crate::collection::{Album, Artist, Collection, Track};
+use crate::fail_span;
 use crate::get_meter;
 use crate::get_tracer;
 use crate::search_parser::{
@@ -3005,8 +3006,7 @@ fn handle_device_connection(
             (content, HTTP_RESPONSE_OK)
         }
         "GET /ConnectionManager.xml HTTP/1.1" => {
-            span.set_status(Status::error("GET /ConnectionManager.xml not implemented"));
-            span.end();
+            fail_span(span, "GET /ConnectionManager.xml not implemented");
             unimplemented!("GET /ConnectionManager.xml not implemented");
         }
         "GET /ContentDirectory.xml HTTP/1.1" => {
