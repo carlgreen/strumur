@@ -245,6 +245,7 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
                         span.set_status(Status::error(err.to_string()));
                         handle_search_error(&err);
                     }
+                    span.end();
                 });
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => {} // keep waiting
@@ -614,6 +615,7 @@ fn handle_search_message(
 
             // if multicast and contains TCPPORT.UPNP.ORG header then TODO
             if multicast && ssdp_message.headers.contains_key("TCPPORT.UPNP.ORG") {
+                span.end();
                 unimplemented!("TCPPORT.UPNP.ORG handling not implemented");
             }
 

@@ -2997,6 +2997,7 @@ fn handle_device_connection(
         }
         "GET /ConnectionManager.xml HTTP/1.1" => {
             span.set_status(Status::error("GET /ConnectionManager.xml not implemented"));
+            span.end();
             unimplemented!("GET /ConnectionManager.xml not implemented");
         }
         "GET /ContentDirectory.xml HTTP/1.1" => {
