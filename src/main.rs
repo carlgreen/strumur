@@ -46,10 +46,20 @@ fn main() {
         .init()
         .unwrap();
 
-    init_tracer_provider();
-    init_meter_provider();
+    let tracer_provider = init_tracer_provider();
+    let meter_provider = init_meter_provider();
 
-    if let Err(e) = run(&config) {
+    let result = run(&config);
+
+    if let Err(e) = tracer_provider.shutdown() {
+        eprintln!("Tracer shutdown error: {e}");
+    }
+
+    if let Err(e) = meter_provider.shutdown() {
+        eprintln!("Meter shutdown error: {e}");
+    }
+
+    if let Err(e) = result {
         eprintln!("Application error: {e}");
         process::exit(1);
     }
@@ -163,11 +173,12 @@ fn get_device_uuid(deviceid_file: &str) -> Result<Uuid, DeviceUuidError> {
     }
 }
 
-fn init_tracer_provider() {
+fn init_tracer_provider() -> SdkTracerProvider {
     let provider = SdkTracerProvider::builder()
         .with_simple_exporter(SpanExporter::default())
         .build();
-    global::set_tracer_provider(provider);
+    global::set_tracer_provider(provider.clone());
+    provider
 }
 
 pub fn get_tracer() -> &'static BoxedTracer {
@@ -175,13 +186,14 @@ pub fn get_tracer() -> &'static BoxedTracer {
     TRACER.get_or_init(|| global::tracer("strumur"))
 }
 
-fn init_meter_provider() {
+fn init_meter_provider() -> SdkMeterProvider {
     let exporter = opentelemetry_stdout::MetricExporterBuilder::default().build();
     let provider = SdkMeterProvider::builder()
         .with_periodic_exporter(exporter)
         .with_resource(Resource::builder().with_service_name("strumur").build())
         .build();
-    global::set_meter_provider(provider);
+    global::set_meter_provider(provider.clone());
+    provider
 }
 
 pub fn get_meter() -> &'static Meter {
