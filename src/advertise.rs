@@ -226,7 +226,7 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
                     .span_builder("search_listener")
                     .with_kind(SpanKind::Consumer)
                     .start(tracer);
-                span.set_attribute(KeyValue::new("server", server.to_string()));
+                span.set_attribute(KeyValue::new("network.local.address", server.to_string()));
                 let cx = Context::current_with_span(span);
 
                 thread::spawn(move || {
@@ -536,7 +536,10 @@ fn handle_search_message(
         .span_builder("handle_search_message")
         .with_kind(SpanKind::Internal)
         .start_with_context(tracer, cx);
-    span.set_attribute(KeyValue::new("device uuid", device_uuid.to_string()));
+    span.set_attribute(KeyValue::new(
+        "service.instance.id",
+        device_uuid.to_string(),
+    ));
 
     // When a new control point is added to the network, it is allowed to multicast a discovery
     // message searching for interesting devices, services, or both.
@@ -550,7 +553,7 @@ fn handle_search_message(
 
     let ssdp_message = parse_ssdp_message(data)?;
     span.set_attribute(KeyValue::new(
-        "request line",
+        "ssdp.request",
         ssdp_message.request_line.clone(),
     ));
 
@@ -565,7 +568,7 @@ fn handle_search_message(
     let (method, _request_target, _protocol) =
         parse_request_line(&ssdp_message.request_line).unwrap();
 
-    span.set_attribute(KeyValue::new("method", method.clone()));
+    span.set_attribute(KeyValue::new("ssdp.request.method", method.clone()));
     match method.as_str() {
         HTTP_METHOD_NOTIFY => Err(HandleSearchMessageError::MethodNotSupported(
             HTTP_METHOD_NOTIFY.to_string(),
@@ -601,8 +604,8 @@ fn handle_search_message(
                 }
             };
             span.set_attributes(vec![
-                KeyValue::new("search from", display_name.clone()),
-                KeyValue::new("st", st.clone()),
+                KeyValue::new("ssdp.request.search_from", display_name.clone()),
+                KeyValue::new("ssdp.request.search_target", st.clone()),
             ]);
             info!("search from {display_name}: {st}");
 
@@ -610,8 +613,8 @@ fn handle_search_message(
             let host = extract_host(&ssdp_message)?;
             let multicast = is_multicast(&host);
             span.set_attributes(vec![
-                KeyValue::new("host", host),
-                KeyValue::new("multicast", multicast),
+                KeyValue::new("network.peer.address", host), // TODO ip and port
+                KeyValue::new("network.multicast", multicast),
             ]);
 
             // if multicast and contains TCPPORT.UPNP.ORG header then TODO

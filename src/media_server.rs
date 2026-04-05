@@ -97,7 +97,12 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
                 .span_builder("media_server")
                 .with_kind(SpanKind::Server)
                 .start(tracer);
-            span.set_attribute(KeyValue::new("peer address", peer_addr));
+            if let Ok(peer_addr) = stream.peer_addr() {
+                span.set_attributes(vec![
+                    KeyValue::new("network.peer.address", peer_addr.ip().to_string()),
+                    KeyValue::new("network.peer.port", i64::from(peer_addr.port())),
+                ]);
+            }
             let cx = Context::current_with_span(span);
 
             thread::spawn(move || {
@@ -2936,10 +2941,10 @@ fn handle_device_connection(
         .span_builder("handle_device_connection")
         .with_kind(SpanKind::Internal)
         .start_with_context(tracer, cx);
-    span.set_attributes(vec![
-        KeyValue::new("device uuid", device_uuid.to_string()),
-        KeyValue::new("address", addr.to_string()),
-    ]);
+    span.set_attribute(KeyValue::new(
+        "service.instance.id",
+        device_uuid.to_string(),
+    ));
 
     let _latency = HttpDurationMeter::new();
 
@@ -2972,14 +2977,15 @@ fn handle_device_connection(
             return;
         }
     };
-    span.set_attribute(KeyValue::new("request line", request_line.clone()));
+    // TODO parse this to be more granular attributes
+    span.set_attribute(KeyValue::new("http.request", request_line.clone()));
 
     let http_request_headers = parse_some_headers(&mut buf_reader);
     debug!("Headers: {http_request_headers:?}");
 
     let content_length = get_content_length(&request_line, &http_request_headers);
     span.set_attribute(KeyValue::new(
-        "content length",
+        "http.request.body.size",
         i64::try_from(content_length).expect("content length too large"),
     ));
 
@@ -3033,9 +3039,8 @@ fn handle_device_connection(
                         break 'content_soap_action soap_upnp_error(401, "Invalid Action");
                     };
                     span.set_attributes(vec![
-                        KeyValue::new("soap action", soap_action.to_string()),
-                        KeyValue::new("service", service.to_string()),
-                        KeyValue::new("action", action.to_string()),
+                        KeyValue::new("upnp.soap.service", service.to_string()),
+                        KeyValue::new("upnp.soap.action", action.to_string()),
                     ]);
 
                     if service == CONTENT_DIRECTORY_SERVICE_TYPE {
