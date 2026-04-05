@@ -182,6 +182,7 @@ fn init_tracer_provider() -> SdkTracerProvider {
     provider
 }
 
+/// if `init_tracer_provider`, or something equivalent in test code, is not called first then bad stuff might happen
 pub fn get_tracer() -> &'static BoxedTracer {
     static TRACER: OnceLock<BoxedTracer> = OnceLock::new();
     TRACER.get_or_init(|| global::tracer("strumur"))
@@ -197,6 +198,7 @@ fn init_meter_provider() -> SdkMeterProvider {
     provider
 }
 
+/// if `init_meter_provider`, or something equivalent in test code, is not called first then bad stuff might happen
 pub fn get_meter() -> &'static Meter {
     static METER: OnceLock<Meter> = OnceLock::new();
     METER.get_or_init(|| global::meter("strumur"))
