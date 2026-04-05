@@ -224,7 +224,7 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
 
                 let span = tracer
                     .span_builder(format!("search_listener {location}"))
-                    .with_kind(SpanKind::Server)
+                    .with_kind(SpanKind::Consumer)
                     .start(tracer);
                 let cx = Context::current_with_span(span);
 
