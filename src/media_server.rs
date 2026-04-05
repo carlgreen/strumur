@@ -93,6 +93,8 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
             trace!("incoming request from {peer_addr}");
             let collection = collection.clone(); // TODO i don't want to clone this.
 
+            // TODO extract context from incoming headers
+
             let mut span = tracer
                 .span_builder("media_server")
                 .with_kind(SpanKind::Server)
