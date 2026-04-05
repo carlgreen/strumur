@@ -199,14 +199,17 @@ fn parse_some_headers(buf_reader: &mut BufReader<impl Read>) -> HashMap<String, 
     http_request_headers
 }
 
-fn get_content_length(request_line: &str, http_request_headers: &HashMap<String, String>) -> usize {
+fn get_content_length(
+    request_method: &str,
+    http_request_headers: &HashMap<String, String>,
+) -> usize {
     http_request_headers
         .keys()
         .find(|k| k.eq_ignore_ascii_case("Content-Length"))
         .and_then(|content_length_key| http_request_headers.get(content_length_key))
         .map_or_else(
             || {
-                if request_line.starts_with("GET ") {
+                if request_method == "GET" {
                     // assume no body
                     0
                 } else {
@@ -2985,13 +2988,17 @@ fn handle_device_connection(
             return;
         }
     };
-    // TODO parse this to be more granular attributes
-    span.set_attribute(KeyValue::new("http.request", request_line.clone()));
+    let (method, path, version) = parse_request_line(&request_line);
+    span.set_attributes(vec![
+        KeyValue::new("http.request.method", method.to_string()),
+        KeyValue::new("url.path", path.to_string()),
+        KeyValue::new("network.protocol.version", version.to_string()),
+    ]);
 
     let http_request_headers = parse_some_headers(&mut buf_reader);
     debug!("Headers: {http_request_headers:?}");
 
-    let content_length = get_content_length(&request_line, &http_request_headers);
+    let content_length = get_content_length(method, &http_request_headers);
     span.set_attribute(KeyValue::new(
         "http.request.body.size",
         i64::try_from(content_length).expect("content length too large"),
@@ -3004,22 +3011,22 @@ fn handle_device_connection(
         body
     });
 
-    let (content, result) = match &request_line[..] {
-        "GET /Device.xml HTTP/1.1" => {
+    let (content, result) = match (method, path) {
+        ("GET", "/Device.xml") => {
             let content = format!(include_str!("Device.xml"), device_uuid);
 
             (content, HTTP_RESPONSE_OK)
         }
-        "GET /ConnectionManager.xml HTTP/1.1" => {
+        ("GET", "/ConnectionManager.xml") => {
             fail_span(span, "GET /ConnectionManager.xml not implemented");
             unimplemented!("GET /ConnectionManager.xml not implemented");
         }
-        "GET /ContentDirectory.xml HTTP/1.1" => {
+        ("GET", "/ContentDirectory.xml") => {
             let content = include_str!("ContentDirectory.xml");
 
             (content.to_string(), HTTP_RESPONSE_OK)
         }
-        "POST /ContentDirectory/Control HTTP/1.1" => {
+        ("POST", "/ContentDirectory/Control") => {
             let soap_action_key = http_request_headers
                 .keys()
                 .find(|k| k.eq_ignore_ascii_case("Soapaction"))
@@ -3068,8 +3075,8 @@ fn handle_device_connection(
                 (String::new(), "400 BAD REQUEST")
             }
         }
-        something if something.starts_with("GET /Content/") => {
-            content_handler(something, collection, output_stream);
+        ("GET", some_path) if some_path.starts_with("/Content/") => {
+            content_handler(some_path, collection, output_stream);
 
             span.end();
             return;
@@ -3089,6 +3096,18 @@ fn handle_device_connection(
     );
 
     span.end();
+}
+
+fn parse_request_line(request_line: &str) -> (&str, &str, &str) {
+    let mut parts = request_line.split(' ');
+    let method = parts.next().expect("expected a method");
+    let path = parts.next().expect("expected a path");
+    let version = parts
+        .next()
+        .expect("expected a version")
+        .strip_prefix("HTTP/")
+        .expect("version should be like HTTP/x.x");
+    (method, path, version)
 }
 
 fn handle_content_directory_actions<'a>(
@@ -3216,18 +3235,12 @@ fn write_response(
 }
 
 fn content_handler(
-    request_line: &str,
+    request_path: &str,
     collection: &Collection,
     mut output_stream: impl std::io::Write,
 ) {
-    let request_path = urlencoding::decode(
-        request_line
-            .strip_prefix("GET /Content/")
-            .unwrap()
-            .strip_suffix(" HTTP/1.1")
-            .unwrap(),
-    )
-    .unwrap();
+    let request_path =
+        urlencoding::decode(request_path.strip_prefix("/Content/").unwrap()).unwrap();
     let content_type = if request_path.ends_with(".jpg") {
         Some("image/jpeg")
     } else if request_path.ends_with(".flac") {
@@ -5778,6 +5791,24 @@ mod tests {
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
         assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_parse_request_line() {
+        assert_eq!(
+            parse_request_line("GET /Device.xml HTTP/1.1"),
+            ("GET", "/Device.xml", "1.1")
+        );
+
+        assert_eq!(
+            parse_request_line("POST /ContentDirectory/Control HTTP/1.1"),
+            ("POST", "/ContentDirectory/Control", "1.1")
+        );
+
+        assert_eq!(
+            parse_request_line("GET /Content/whatever HTTP/1.1"),
+            ("GET", "/Content/whatever", "1.1")
+        );
     }
 
     fn read_status_and_body(cursor: Cursor<Vec<u8>>) -> (String, String) {
