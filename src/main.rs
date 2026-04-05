@@ -185,8 +185,8 @@ fn init_meter_provider() {
 }
 
 pub fn get_meter() -> &'static Meter {
-    static TRACER: OnceLock<Meter> = OnceLock::new();
-    TRACER.get_or_init(|| global::meter("strumur"))
+    static METER: OnceLock<Meter> = OnceLock::new();
+    METER.get_or_init(|| global::meter("strumur"))
 }
 
 #[cfg(test)]
