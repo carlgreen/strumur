@@ -9,7 +9,7 @@ get_if_addrs = "0.5"
 log = "0.4"
 opentelemetry = "0.31.0"
 opentelemetry-stdout = "0.31.0"
-opentelemetry_sdk = { version = "0.31.0", features = ["metrics"] }
+opentelemetry_sdk = { version = "0.31.0", features = ["trace", "metrics"] }
 os_info = "3.13.0"
 rand = "0.9.2"
 socket2 = { version = "0.6" }

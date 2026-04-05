@@ -18,9 +18,12 @@ use std::sync::OnceLock;
 use get_if_addrs::IfAddr;
 use log::{Level, info};
 use opentelemetry::global;
+use opentelemetry::global::BoxedTracer;
 use opentelemetry::metrics::Meter;
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_stdout::SpanExporter;
 use stderrlog::Timestamp;
 use uuid::Uuid;
 
@@ -43,6 +46,7 @@ fn main() {
         .init()
         .unwrap();
 
+    init_tracer_provider();
     init_meter_provider();
 
     if let Err(e) = run(&config) {
@@ -157,6 +161,18 @@ fn get_device_uuid(deviceid_file: &str) -> Result<Uuid, DeviceUuidError> {
             }
         }
     }
+}
+
+fn init_tracer_provider() {
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(SpanExporter::default())
+        .build();
+    global::set_tracer_provider(provider);
+}
+
+pub fn get_tracer() -> &'static BoxedTracer {
+    static TRACER: OnceLock<BoxedTracer> = OnceLock::new();
+    TRACER.get_or_init(|| global::tracer("strumur"))
 }
 
 fn init_meter_provider() {

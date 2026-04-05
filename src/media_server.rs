@@ -15,12 +15,20 @@ use std::time::Instant;
 use chrono::NaiveDate;
 use chrono::NaiveTime;
 use log::{debug, error, info, trace, warn};
+use opentelemetry::Context;
+use opentelemetry::KeyValue;
 use opentelemetry::metrics::Histogram;
+use opentelemetry::trace::Span;
+use opentelemetry::trace::SpanKind;
+use opentelemetry::trace::Status;
+use opentelemetry::trace::TraceContextExt;
+use opentelemetry::trace::Tracer;
 use uuid::Uuid;
 use xmltree::Element;
 
 use crate::collection::{Album, Artist, Collection, Track};
 use crate::get_meter;
+use crate::get_tracer;
 use crate::search_parser::{
     BinOp, BoolVal, Error, ExistsOp, LogOp, QuotedVal, RelExp, SearchCrit, SearchExp, StringOp,
     parse_search_criteria,
@@ -72,6 +80,8 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
             listener.local_addr().expect("could not get local address")
         );
         for stream in listener.incoming() {
+            let tracer = get_tracer();
+
             let stream = stream.expect("could not get TCP stream");
             let addr = format!(
                 "http://{}/Content",
@@ -82,8 +92,15 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
             trace!("incoming request from {peer_addr}");
             let collection = collection.clone(); // TODO i don't want to clone this.
+
+            let span = tracer
+                .span_builder(format!("media_server {peer_addr}"))
+                .with_kind(SpanKind::Server)
+                .start(tracer);
+            let cx = Context::current_with_span(span);
+
             thread::spawn(move || {
-                handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
+                handle_device_connection(device_uuid, &addr, &collection, &stream, &stream, &cx);
             });
         }
     });
@@ -2911,7 +2928,18 @@ fn handle_device_connection(
     collection: &Collection,
     input_stream: impl std::io::Read,
     mut output_stream: impl std::io::Write,
+    cx: &Context,
 ) {
+    let tracer = get_tracer();
+    let mut span = tracer
+        .span_builder("handle_device_connection")
+        .with_kind(SpanKind::Internal)
+        .start_with_context(tracer, cx);
+    span.set_attributes(vec![
+        KeyValue::new("device uuid", device_uuid.to_string()),
+        KeyValue::new("address", addr.to_string()),
+    ]);
+
     let _latency = HttpDurationMeter::new();
 
     let mut buf_reader = BufReader::new(input_stream);
@@ -2919,10 +2947,15 @@ fn handle_device_connection(
     let request_line = match parse_some_request_line(&mut buf_reader) {
         Ok(request_line) => request_line,
         Err(e) => {
+            span.record_error(&e);
             let (error_code, error_description) = match e {
-                ParseRequestError::EmptyRequest => (401_u16, "Missing Request"),
+                ParseRequestError::EmptyRequest => {
+                    span.set_status(Status::error("missing request"));
+                    (401_u16, "Missing Request")
+                }
                 ParseRequestError::IoError(err) => {
                     warn!("could not parse request line: {err}");
+                    span.set_status(Status::error("could not parse request line"));
                     (604_u16, "IO Error")
                 }
             };
@@ -2934,16 +2967,20 @@ fn handle_device_connection(
                 &mut output_stream,
             );
 
+            span.end();
             return;
         }
     };
-    debug!("Request: {request_line}");
+    span.set_attribute(KeyValue::new("request line", request_line.clone()));
 
     let http_request_headers = parse_some_headers(&mut buf_reader);
     debug!("Headers: {http_request_headers:?}");
 
     let content_length = get_content_length(&request_line, &http_request_headers);
-    debug!("content length: {content_length}");
+    span.set_attribute(KeyValue::new(
+        "content length",
+        i64::try_from(content_length).expect("content length too large"),
+    ));
 
     let body = parse_body(content_length, &mut buf_reader);
 
@@ -2959,6 +2996,7 @@ fn handle_device_connection(
             (content, HTTP_RESPONSE_OK)
         }
         "GET /ConnectionManager.xml HTTP/1.1" => {
+            span.set_status(Status::error("GET /ConnectionManager.xml not implemented"));
             unimplemented!("GET /ConnectionManager.xml not implemented");
         }
         "GET /ContentDirectory.xml HTTP/1.1" => {
@@ -2977,26 +3015,41 @@ fn handle_device_connection(
                     {
                         soap_action.trim_matches('"')
                     } else {
+                        span.set_status(Status::error(format!(
+                            "expected soap action to be enclosed in '\"': {soap_action}"
+                        )));
                         warn!("expected soap action to be enclosed in '\"': {soap_action}");
                         // not just an invalid action, something worse?
                         break 'content_soap_action soap_upnp_error(401, "Invalid Action");
                     };
                     let Some((service, action)) = soap_action.split_once('#') else {
+                        span.set_status(Status::error(format!(
+                            "received soap action without '#': {soap_action}"
+                        )));
                         warn!("received soap action without '#': {soap_action}");
                         // not just an invalid action, something worse?
                         break 'content_soap_action soap_upnp_error(401, "Invalid Action");
                     };
+                    span.set_attributes(vec![
+                        KeyValue::new("soap action", soap_action.to_string()),
+                        KeyValue::new("service", service.to_string()),
+                        KeyValue::new("action", action.to_string()),
+                    ]);
 
                     if service == CONTENT_DIRECTORY_SERVICE_TYPE {
                         handle_content_directory_actions(action, addr, collection, body)
                     } else {
                         // TODO here, handle ConnectionManager, etc.
+                        span.set_status(Status::error(format!(
+                            "Invalid Service: we got {service}, we got {action}"
+                        )));
                         info!("we got {service}, we got {action}");
                         soap_upnp_error(401, "Invalid Service")
                     }
                 }
             } else {
                 // this must be unreachable? should return the nice error above instead of expect, and use expect here
+                span.set_status(Status::error("control: no soap action"));
                 warn!("control: no soap action");
                 (String::new(), "400 BAD REQUEST")
             }
@@ -3004,6 +3057,7 @@ fn handle_device_connection(
         something if something.starts_with("GET /Content/") => {
             content_handler(something, collection, output_stream);
 
+            span.end();
             return;
         }
         _ => {
@@ -3019,6 +3073,8 @@ fn handle_device_connection(
         content.as_bytes(),
         &mut output_stream,
     );
+
+    span.end();
 }
 
 fn handle_content_directory_actions<'a>(
@@ -3337,6 +3393,7 @@ mod tests {
         let input = "GET /Device.xml HTTP/1.1\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3344,6 +3401,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3363,6 +3421,7 @@ mod tests {
         let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3370,6 +3429,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3426,6 +3486,7 @@ mod tests {
         let input = generate_get_system_update_id_request();
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3433,6 +3494,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3486,6 +3548,7 @@ mod tests {
         let input = generate_get_search_capabilities_request();
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3493,6 +3556,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3546,6 +3610,7 @@ mod tests {
         let input = generate_get_sort_capabilities_request();
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3553,6 +3618,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3688,6 +3754,7 @@ mod tests {
         let input = generate_browse_request("0", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3695,6 +3762,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3737,6 +3805,7 @@ mod tests {
         let input = generate_browse_request("0$albums", 0, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3744,6 +3813,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3816,6 +3886,7 @@ mod tests {
         let input = generate_browse_request("0$albums$*a9", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3823,6 +3894,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3886,6 +3958,7 @@ mod tests {
         let input = generate_browse_request("0$albums$*a200", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3893,6 +3966,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -3912,6 +3986,7 @@ mod tests {
         let input = generate_browse_request("0$items", 3, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -3919,6 +3994,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4006,6 +4082,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist", 0, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4013,6 +4090,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4059,6 +4137,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$28", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4066,6 +4145,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4100,6 +4180,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$280", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4107,6 +4188,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4126,6 +4208,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$28$albums", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4133,6 +4216,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4186,6 +4270,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$280$albums", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4193,6 +4278,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4212,6 +4298,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$28$albums$9", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4219,6 +4306,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4278,6 +4366,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$280$albums$9", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4285,6 +4374,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4304,6 +4394,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$3$albums$90", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4311,6 +4402,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4330,6 +4422,7 @@ mod tests {
         let input = generate_browse_request("0$=Artist$28$items", 1, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4337,6 +4430,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4419,6 +4513,7 @@ mod tests {
         let input = generate_browse_request("0$=All Artists", 0, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4426,6 +4521,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4473,6 +4569,7 @@ mod tests {
         let input = generate_browse_request("0$=All Artists$28", 0, 8);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4480,6 +4577,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4588,6 +4686,7 @@ mod tests {
         let input = generate_browse_request("0$=All Artists$28$*a9", 0, 500);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4595,6 +4694,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4684,6 +4784,7 @@ mod tests {
         let input = generate_browse_metadata_request("0");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4691,6 +4792,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4718,6 +4820,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$albums");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4725,6 +4828,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4752,6 +4856,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$albums$*a9");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4759,6 +4864,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4786,6 +4892,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$items");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4793,6 +4900,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4820,6 +4928,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=Artist");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4827,6 +4936,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4854,6 +4964,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=Artist$25");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4861,6 +4972,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4888,6 +5000,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=Artist$25$albums");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4895,6 +5008,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4922,6 +5036,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=Artist$28$albums$*a17");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4929,6 +5044,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4956,6 +5072,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=Artist$28$items");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4963,6 +5080,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -4990,6 +5108,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=All Artists");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -4997,6 +5116,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -5024,6 +5144,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=All Artists$25");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5031,6 +5152,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -5058,6 +5180,7 @@ mod tests {
         let input = generate_browse_metadata_request("0$=All Artists$28$*a17");
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5065,6 +5188,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -5092,6 +5216,7 @@ mod tests {
         let input = "GET /Content/src/cover.jpg HTTP/1.1\r\n\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5099,6 +5224,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let mut line = Vec::new();
@@ -5164,6 +5290,7 @@ mod tests {
         let input = "GET /Content/src/riff.flac HTTP/1.1\r\n\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5171,6 +5298,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let mut line = Vec::new();
@@ -5227,6 +5355,7 @@ mod tests {
         let input = "";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5234,6 +5363,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -5274,6 +5404,7 @@ mod tests {
             + "\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5281,6 +5412,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
     }
 
@@ -5301,6 +5433,7 @@ mod tests {
             + "\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5308,6 +5441,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -5351,6 +5485,7 @@ mod tests {
             + "\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5358,6 +5493,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -5401,6 +5537,7 @@ mod tests {
             + "\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5408,6 +5545,8 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            // &get_test_span_context(),
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);
@@ -5451,6 +5590,7 @@ mod tests {
             + "\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5458,6 +5598,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, _) = read_status_and_body(cursor);
@@ -5550,6 +5691,7 @@ mod tests {
         let input = generate_search_request("g", 0, 5);
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
+        let cx = Context::current();
 
         handle_device_connection(
             test_device_uuid,
@@ -5557,6 +5699,7 @@ mod tests {
             &collection,
             input.as_bytes(),
             &mut cursor,
+            &cx,
         );
 
         let (status, body) = read_status_and_body(cursor);

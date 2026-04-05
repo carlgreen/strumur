@@ -12,10 +12,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::Utc;
 use log::debug;
 use log::{error, info, trace, warn};
+use opentelemetry::Context;
+use opentelemetry::KeyValue;
+use opentelemetry::trace::Span;
+use opentelemetry::trace::SpanKind;
+use opentelemetry::trace::Status;
+use opentelemetry::trace::TraceContextExt;
+use opentelemetry::trace::Tracer;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use uuid::Uuid;
+
+use crate::get_tracer;
 
 const NAME: &str = env!("CARGO_PKG_NAME");
 
@@ -201,6 +210,8 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
         let mut buffer = Vec::with_capacity(1024);
         match socket.recv_from(buffer.spare_capacity_mut()) {
             Ok((received, src)) => {
+                let tracer = get_tracer();
+
                 unsafe {
                     buffer.set_len(received);
                 }
@@ -210,8 +221,16 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
                 let mut socket =
                     ReallySocketToMe::new(socket.try_clone().expect("could not clone socket"));
                 let location = location.clone();
+
+                let span = tracer
+                    .span_builder(format!("search_listener {location}"))
+                    .with_kind(SpanKind::Server)
+                    .start(tracer);
+                let cx = Context::current_with_span(span);
+
                 thread::spawn(move || {
                     let mut rng = rand::rng();
+                    let span = cx.span();
 
                     if let Err(err) = handle_search_message(
                         &sys_info,
@@ -221,7 +240,9 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
                         &buffer,
                         &src,
                         &mut socket,
+                        &cx,
                     ) {
+                        span.set_status(Status::error(err.to_string()));
                         handle_search_error(&err);
                     }
                 });
@@ -505,8 +526,15 @@ fn handle_search_message(
     data: &[u8],
     src: &SockAddr,
     socket: &mut dyn SocketToMe,
+    cx: &Context,
 ) -> std::result::Result<(), HandleSearchMessageError> {
     let device_uuid = sys_info.device_uuid;
+    let tracer = get_tracer();
+    let mut span = tracer
+        .span_builder("handle_search_message")
+        .with_kind(SpanKind::Internal)
+        .start_with_context(tracer, cx);
+    span.set_attribute(KeyValue::new("device uuid", device_uuid.to_string()));
 
     // When a new control point is added to the network, it is allowed to multicast a discovery
     // message searching for interesting devices, services, or both.
@@ -519,16 +547,23 @@ fn handle_search_message(
     // discovery message.
 
     let ssdp_message = parse_ssdp_message(data)?;
+    span.set_attribute(KeyValue::new(
+        "request line",
+        ssdp_message.request_line.clone(),
+    ));
 
     if ssdp_message.request_line
         == format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {HTTP_RESPONSE_OK}")
     {
+        span.end();
         return Err(HandleSearchMessageError::UnhandledRequestLine(
             ssdp_message.request_line,
         ));
     }
     let (method, _request_target, _protocol) =
         parse_request_line(&ssdp_message.request_line).unwrap();
+
+    span.set_attribute(KeyValue::new("method", method.clone()));
     match method.as_str() {
         HTTP_METHOD_NOTIFY => Err(HandleSearchMessageError::MethodNotSupported(
             HTTP_METHOD_NOTIFY.to_string(),
@@ -558,13 +593,24 @@ fn handle_search_message(
                     format!("{display_name} ({cp_ip})")
                 }
                 Err(HandleSearchMessageError::MissingUserAgentHeader) => cp_ip,
-                Err(err) => return Err(err),
+                Err(err) => {
+                    span.end();
+                    return Err(err);
+                }
             };
+            span.set_attributes(vec![
+                KeyValue::new("search from", display_name.clone()),
+                KeyValue::new("st", st.clone()),
+            ]);
             info!("search from {display_name}: {st}");
 
             // either 239.255.255.250:1900 for multicast or unicast to this ip address and port
             let host = extract_host(&ssdp_message)?;
             let multicast = is_multicast(&host);
+            span.set_attributes(vec![
+                KeyValue::new("host", host),
+                KeyValue::new("multicast", multicast),
+            ]);
 
             // if multicast and contains TCPPORT.UPNP.ORG header then TODO
             if multicast && ssdp_message.headers.contains_key("TCPPORT.UPNP.ORG") {
@@ -601,8 +647,10 @@ fn handle_search_message(
             } else if st.starts_with(&uuid_urn) {
                 warn!("unexpected search target format: {st}");
             } else if st.starts_with("uuid:") {
+                span.end();
                 return Err(HandleSearchMessageError::SearchTargetUuidMismatch(st));
             } else {
+                span.end();
                 return Err(HandleSearchMessageError::SearchTargetUnknown(st));
             }
 
@@ -664,11 +712,15 @@ fn handle_search_message(
             //     }
             // }
 
+            span.end();
             Ok(())
         }
-        _ => Err(HandleSearchMessageError::MethodUnknown(
-            ssdp_message.request_line,
-        )),
+        _ => {
+            span.end();
+            Err(HandleSearchMessageError::MethodUnknown(
+                ssdp_message.request_line,
+            ))
+        }
     }
 }
 
@@ -905,6 +957,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut test_socket = DontReallySocketToMe::new();
 
         let mut rng = rand::rng();
+        let cx = Context::new();
 
         handle_search_message(
             &sys_info,
@@ -914,6 +967,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
+            &cx,
         )
         .unwrap();
 
@@ -955,6 +1009,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut test_socket = DontReallySocketToMe::new();
 
         let mut rng = rand::rng();
+        let cx = Context::new();
 
         handle_search_message(
             &sys_info,
@@ -964,6 +1019,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
+            &cx,
         )
         .unwrap();
 
@@ -1005,6 +1061,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut test_socket = DontReallySocketToMe::new();
 
         let mut rng = rand::rng();
+        let cx = Context::new();
 
         handle_search_message(
             &sys_info,
@@ -1014,6 +1071,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
+            &cx,
         )
         .unwrap();
 
@@ -1055,6 +1113,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
         let mut test_socket = DontReallySocketToMe::new();
 
         let mut rng = rand::rng();
+        let cx = Context::new();
 
         handle_search_message(
             &sys_info,
@@ -1064,6 +1123,7 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             buffer,
             &src,
             &mut test_socket,
+            &cx,
         )
         .unwrap();
 
