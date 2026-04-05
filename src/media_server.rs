@@ -82,6 +82,14 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
         );
         for stream in listener.incoming() {
             let tracer = get_tracer();
+            let mut span = tracer
+                .span_builder("media_server")
+                .with_kind(SpanKind::Server)
+                .with_attributes(vec![KeyValue::new(
+                    "service.instance.id",
+                    device_uuid.to_string(),
+                )])
+                .start(tracer);
 
             let stream = stream.expect("could not get TCP stream");
             let addr = format!(
@@ -92,18 +100,21 @@ pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
                 .peer_addr()
                 .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
             trace!("incoming request from {peer_addr}");
-            let collection = collection.clone(); // TODO i don't want to clone this.
-
-            let mut span = tracer
-                .span_builder("media_server")
-                .with_kind(SpanKind::Server)
-                .start(tracer);
+            if let Ok(local_addr) = stream.local_addr() {
+                span.set_attributes(vec![
+                    KeyValue::new("network.local.address", local_addr.ip().to_string()),
+                    KeyValue::new("network.local.port", i64::from(local_addr.port())),
+                ]);
+            }
             if let Ok(peer_addr) = stream.peer_addr() {
                 span.set_attributes(vec![
                     KeyValue::new("network.peer.address", peer_addr.ip().to_string()),
                     KeyValue::new("network.peer.port", i64::from(peer_addr.port())),
                 ]);
             }
+
+            let collection = collection.clone(); // TODO i don't want to clone this.
+
             let cx = Context::current_with_span(span);
 
             thread::spawn(move || {
@@ -2942,10 +2953,6 @@ fn handle_device_connection(
         .span_builder("handle_device_connection")
         .with_kind(SpanKind::Internal)
         .start_with_context(tracer, cx);
-    span.set_attribute(KeyValue::new(
-        "service.instance.id",
-        device_uuid.to_string(),
-    ));
 
     let _latency = HttpDurationMeter::new();
 
