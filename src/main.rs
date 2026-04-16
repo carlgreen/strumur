@@ -10,9 +10,11 @@ use std::fs::File;
 use std::fs::read_to_string;
 use std::io::ErrorKind;
 use std::io::Write as _;
-use std::net::Ipv4Addr;
-use std::net::SocketAddrV4;
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::process;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 use get_if_addrs::IfAddr;
 use log::{Level, info};
@@ -45,11 +47,20 @@ fn main() {
 }
 
 fn run(config: &Config) -> Result<(), Box<dyn Error>> {
+    let quitting: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+
+    let handle_quitting = quitting.clone();
+    ctrlc::set_handler(move || {
+        info!("received Ctrl+C, beginning shutdown");
+
+        handle_quitting.store(true, Ordering::Relaxed);
+    })?;
+
     let collection = Collection::populate(&config.location);
 
     media_server::listen(config.device_uuid, config.server, collection);
 
-    advertise::advertisement_loop(config.device_uuid, config.server)?;
+    advertise::advertisement_loop(config.device_uuid, config.server, &quitting)?;
 
     Ok(())
 }
