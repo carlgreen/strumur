@@ -5,9 +5,13 @@ use std::fmt::Write;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::io::ErrorKind;
 use std::io::Read;
 use std::net::SocketAddrV4;
 use std::net::TcpListener;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::thread;
 
 use chrono::NaiveDate;
@@ -60,28 +64,47 @@ const CDS_DELETE_RESOURCE_ACTION: &str = "DeleteResource";
 
 const CDS_CREATE_REFERENCE_ACTION: &str = "CreateReference";
 
-pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
+pub fn listen(
+    device_uuid: Uuid,
+    server: SocketAddrV4,
+    collection: Collection,
+    quitting: &Arc<AtomicBool>,
+) {
     let listener = TcpListener::bind(server).unwrap();
+    let next_quitting = Arc::clone(quitting);
+    listener
+        .set_nonblocking(true)
+        .expect("Cannot set non-blocking");
     thread::spawn(move || {
         info!(
             "listening on {}",
             listener.local_addr().expect("could not get local address")
         );
         for stream in listener.incoming() {
-            let stream = stream.expect("could not get TCP stream");
-            let addr = format!(
-                "http://{}/Content",
-                stream.local_addr().expect("could not get stream address")
-            );
-            let peer_addr = stream
-                .peer_addr()
-                .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
-            trace!("incoming request from {peer_addr}");
-            let collection = collection.clone(); // TODO i don't want to clone this.
+            if next_quitting.load(Ordering::Relaxed) {
+                break;
+            }
+            match stream {
+                Ok(stream) => {
+                    let addr = format!(
+                        "http://{}/Content",
+                        stream.local_addr().expect("could not get stream address")
+                    );
+                    let peer_addr = stream
+                        .peer_addr()
+                        .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
+                    trace!("incoming request from {peer_addr}");
+                    let collection = collection.clone(); // TODO i don't want to clone this.
 
-            thread::spawn(move || {
-                handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
-            });
+                    thread::spawn(move || {
+                        handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
+                    });
+                }
+                Err(err) if err.kind() == ErrorKind::WouldBlock => {} // keep waiting
+                Err(err) => {
+                    warn!("could not get TCP stream: {err}");
+                }
+            }
         }
     });
 }

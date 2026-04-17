@@ -58,7 +58,7 @@ fn run(config: &Config) -> Result<(), Box<dyn Error>> {
 
     let collection = Collection::populate(&config.location);
 
-    media_server::listen(config.device_uuid, config.server, collection);
+    media_server::listen(config.device_uuid, config.server, collection, &quitting);
 
     advertise::advertisement_loop(config.device_uuid, config.server, &quitting)?;
 
