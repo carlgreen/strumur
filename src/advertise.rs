@@ -5,6 +5,9 @@ use std::io::ErrorKind;
 use std::io::Result;
 use std::net::SocketAddrV4;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -64,6 +67,8 @@ const HTTP_HEADER_ST: &str = "ST";
 const HTTP_HEADER_USN: &str = "USN";
 
 const NTS_ALIVE: &str = "ssdp:alive";
+
+const NTS_BYEBYE: &str = "ssdp:byebye";
 
 const ALL_SEARCH_TARGET: &str = "ssdp:all";
 
@@ -135,7 +140,11 @@ fn handle_search_error(err: &HandleSearchMessageError) {
     }
 }
 
-pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()> {
+pub fn advertisement_loop(
+    device_uuid: Uuid,
+    server: SocketAddrV4,
+    quitting: &Arc<AtomicBool>,
+) -> Result<()> {
     let mut rng = rand::rng();
 
     let addr: SocketAddr = SSDP_IPV4_MULTICAST_ADDRESS
@@ -198,6 +207,11 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
     advertise_discovery_messages(&sys_info, &location, max_age, addr, &socket);
 
     loop {
+        if quitting.load(Ordering::Relaxed) {
+            debug!("stopping advertising");
+            break;
+        }
+
         let mut buffer = Vec::with_capacity(1024);
         match socket.recv_from(buffer.spare_capacity_mut()) {
             Ok((received, src)) => {
@@ -226,17 +240,18 @@ pub fn advertisement_loop(device_uuid: Uuid, server: SocketAddrV4) -> Result<()>
                     }
                 });
             }
-            Err(err) if err.kind() == ErrorKind::WouldBlock => {} // keep waiting
+            Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(2));
+            }
             Err(err) => {
                 warn!("error receiving from socket: {err}");
             }
         }
     }
 
-    // TODO
-    // When a device is removed from the network, it should, if possible, multicast a number of
-    // discovery messages revoking its earlier announcements, effectively declaring that its root
-    // devices, embedded devices and services will no longer be available.
+    device_unavailable_messages(&sys_info, addr, &socket);
+
+    Ok(())
 }
 
 fn advertise_discovery_messages(
@@ -319,6 +334,78 @@ fn advertise_discovery_messages(
     // }
 
     // TODO above messages should be resent periodically
+}
+
+fn device_unavailable_messages(sys_info: &SysInfo, addr: SocketAddr, socket: &Socket) {
+    debug!("announcing unavailability of device");
+
+    let device_uuid = sys_info.device_uuid;
+    let boot_id = sys_info.boot_id;
+
+    let uuid_urn = &format!("uuid:{device_uuid}");
+
+    // To advertise its capabilities, a device multicasts a number of discovery messages. Specifically,
+    // a root device shall multicast:
+
+    // Three discovery messages for the root device.
+
+    let nt = ROOT_DEVICE_TYPE;
+    let usn = format!("{uuid_urn}::{ROOT_DEVICE_TYPE}");
+    let byebye = format!(
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_BYEBYE}\r\n{HTTP_HEADER_USN}: {usn}\r\n\r\n",
+    );
+    if let Err(err) = socket.send_to(byebye.as_bytes(), &SockAddr::from(addr)) {
+        error!("error sending bye: {err}");
+    }
+
+    let nt = uuid_urn;
+    let usn = uuid_urn;
+    let byebye = format!(
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_BYEBYE}\r\n{HTTP_HEADER_USN}: {usn}\r\n\r\n",
+    );
+    if let Err(err) = socket.send_to(byebye.as_bytes(), &SockAddr::from(addr)) {
+        error!("error sending bye: {err}");
+    }
+
+    let device_type = "MediaServer";
+    let ver = 1;
+    let nt = format!("urn:schemas-upnp-org:device:{device_type}:{ver}");
+    let usn = format!("{uuid_urn}::urn:schemas-upnp-org:device:{device_type}:{ver}");
+    let byebye = format!(
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_BYEBYE}\r\n{HTTP_HEADER_USN}: {usn}\r\n\r\n",
+    );
+    if let Err(err) = socket.send_to(byebye.as_bytes(), &SockAddr::from(addr)) {
+        error!("error sending bye: {err}");
+    }
+
+    // - Two discovery messages for each embedded device - I don't have any embedded devices
+
+    // - Once for each service type in each device.
+
+    let service_type = "ContentDirectory";
+    let ver = 1;
+    let nt = format!("urn:schemas-upnp-org:service:{service_type}:{ver}");
+    let usn = format!("{uuid_urn}::urn:schemas-upnp-org:service:{service_type}:{ver}");
+    let byebye = format!(
+        "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_BYEBYE}\r\n{HTTP_HEADER_USN}: {usn}\r\n\r\n",
+    );
+    if let Err(err) = socket.send_to(byebye.as_bytes(), &SockAddr::from(addr)) {
+        error!("error sending bye: {err}");
+    }
+
+    // TODO ConnectionManager service
+    // let service_type = "ConnectionManager";
+    // let ver = 1;
+    // let nt = format!("urn:schemas-upnp-org:service:{service_type}:{ver}");
+    // let usn = format!("{uuid_urn}::urn:schemas-upnp-org:service:{service_type}:{ver}");
+    // let byebye = format!(
+    //     "{HTTP_METHOD_NOTIFY} {HTTP_MATCH_ANY_RESOURCE} {HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION}\r\n{HTTP_HEADER_HOST}: {SSDP_IPV4_MULTICAST_ADDRESS}\r\n{HTTP_HEADER_BOOTID}: {boot_id}\r\n{HTTP_HEADER_CONFIGID}: 1\r\n{HTTP_HEADER_NT}: {nt}\r\n{HTTP_HEADER_NTS}: {NTS_BYEBYE}\r\n{HTTP_HEADER_USN}: {usn}\r\n\r\n",
+    // );
+    // if let Err(err) = socket.send_to(byebye.as_bytes(), &SockAddr::from(addr)) {
+    //     error!("error sending bye: {err}");
+    // }
+
+    debug!("finished announcing unavailability of device");
 }
 
 fn extract_display_name(
