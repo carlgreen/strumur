@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::thread;
+use std::time::Duration;
 
 use chrono::NaiveDate;
 use chrono::NaiveTime;
@@ -82,6 +83,7 @@ pub fn listen(
         );
         for stream in listener.incoming() {
             if next_quitting.load(Ordering::Relaxed) {
+                debug!("stopping listening");
                 break;
             }
             match stream {
@@ -100,7 +102,9 @@ pub fn listen(
                         handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
                     });
                 }
-                Err(err) if err.kind() == ErrorKind::WouldBlock => {} // keep waiting
+                Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(2));
+                }
                 Err(err) => {
                     warn!("could not get TCP stream: {err}");
                 }

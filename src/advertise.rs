@@ -208,6 +208,7 @@ pub fn advertisement_loop(
 
     loop {
         if quitting.load(Ordering::Relaxed) {
+            debug!("stopping advertising");
             break;
         }
 
@@ -239,7 +240,9 @@ pub fn advertisement_loop(
                     }
                 });
             }
-            Err(err) if err.kind() == ErrorKind::WouldBlock => {} // keep waiting
+            Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(2));
+            }
             Err(err) => {
                 warn!("error receiving from socket: {err}");
             }
