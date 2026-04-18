@@ -206,6 +206,30 @@ fn get_content_length(request_line: &str, http_request_headers: &HashMap<String,
         )
 }
 
+#[derive(Debug)]
+enum PersistentConnection {
+    KeepAlive,
+    Close,
+}
+
+impl PersistentConnection {
+    fn parse(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_ref() {
+            "keep-alive" => Self::KeepAlive,
+            "close" => Self::Close,
+            _ => panic!("unsupported connection header: {s}"),
+        }
+    }
+}
+
+fn get_connection(http_request_headers: &HashMap<String, String>) -> Option<PersistentConnection> {
+    http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("Connection"))
+        .and_then(|connection_key| http_request_headers.get(connection_key))
+        .map(|connection| PersistentConnection::parse(connection))
+}
+
 fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> Option<String> {
     if content_length > 0 {
         let mut buf = vec![0; content_length];
@@ -2927,6 +2951,16 @@ fn handle_device_connection(
 
     let http_request_headers = parse_some_headers(&mut buf_reader);
     debug!("Headers: {http_request_headers:?}");
+
+    let connection = get_connection(&http_request_headers);
+    if let Some(connection) = connection {
+        match connection {
+            PersistentConnection::KeepAlive => warn!("HTTP keep-alive not implemented"),
+            PersistentConnection::Close => {
+                warn!("HTTP keep-alive not implemented, close is the default");
+            }
+        }
+    }
 
     let content_length = get_content_length(&request_line, &http_request_headers);
     debug!("content length: {content_length}");
