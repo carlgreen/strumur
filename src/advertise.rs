@@ -189,7 +189,7 @@ pub fn advertisement_loop(
     // order.
 
     let location = format!("http://{server}/Device.xml");
-    let max_age = Duration::from_secs(1800);
+    let max_age = Duration::from_mins(30);
 
     let info = os_info::get();
 
