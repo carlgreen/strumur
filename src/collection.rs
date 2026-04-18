@@ -297,7 +297,7 @@ fn process_flac(
     let track_number = metadata.get_field("TRACKNUMBER").map_or_else(
         || {
             warn!("no track number found in {display_file_name}");
-            debug!("fields in {display_file_name}: {field_names:?}",);
+            debug!("fields in {display_file_name}: {field_names:?}");
             0
         },
         |number| parse_number(&number, 0),
