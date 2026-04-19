@@ -5790,7 +5790,7 @@ mod tests {
 
         let mut headers = HashMap::new();
         loop {
-            let l = lines.next().unwrap(); //.unwrap();
+            let l = lines.next().unwrap();
             if l.is_empty() || l == b"\r" {
                 break;
             }
