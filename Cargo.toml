@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 chrono = "0.4.42"
 ctrlc = "3.5.1"
+flate2 = { version = "1.1.9", features = ["zlib-rs"] }
 get_if_addrs = "0.5"
 log = "0.4"
 os_info = "3.13.0"
