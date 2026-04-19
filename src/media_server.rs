@@ -308,6 +308,14 @@ fn get_accept_encoding(
     ))
 }
 
+fn get_friendly_name(http_request_headers: &HashMap<String, String>) -> Option<String> {
+    http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("CPFN.UPNP.ORG"))
+        .and_then(|cpfn_key| http_request_headers.get(cpfn_key))
+        .cloned()
+}
+
 fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> Option<String> {
     if content_length > 0 {
         let mut buf = vec![0; content_length];
@@ -3056,6 +3064,12 @@ fn handle_device_connection(
         }
     };
     debug!("accepted encodings: {accept_encoding:?}");
+
+    // i've never seen this come in here, but maybe one day?
+    let friendly_name = get_friendly_name(&http_request_headers);
+    if let Some(friendly_name) = friendly_name {
+        info!("control point name: {friendly_name}");
+    }
 
     let content_length = get_content_length(&request_line, &http_request_headers);
     debug!("content length: {content_length}");
