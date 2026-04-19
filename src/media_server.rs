@@ -3250,7 +3250,9 @@ fn write_response(
     output_stream: &mut impl std::io::Write,
 ) {
     let mut encoded_content = Vec::new();
-    let (content_encoding, content) = if accept_encodings.contains(&AcceptEncoding::Gzip) {
+    let (content_encoding, content) = if accept_encodings.contains(&AcceptEncoding::Gzip)
+        || accept_encodings.contains(&AcceptEncoding::Wildcard)
+    {
         let mut encoder = GzEncoder::new(content, Compression::default());
         if let Err(err) = encoder.read_to_end(&mut encoded_content) {
             error!("could not compress content: {err}");
@@ -3469,7 +3471,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = "GET /Device.xml HTTP/1.1\r\n";
+        let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -3495,7 +3497,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
+        let input = "GET /ContentDirectory.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -3529,6 +3531,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3591,6 +3594,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3652,6 +3656,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3731,6 +3736,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -4803,6 +4809,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -5403,6 +5410,7 @@ mod tests {
         let collection = generate_test_collection();
 
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: 0"
             + "\r\n"
@@ -5427,7 +5435,8 @@ mod tests {
 
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
             + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
@@ -5480,6 +5489,7 @@ mod tests {
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: 0"
             + "\r\n"
@@ -5527,7 +5537,8 @@ mod tests {
 
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
             + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
@@ -5577,7 +5588,8 @@ mod tests {
 
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
-        let input = "POST /ContentDestruction/Control HTTP/1.1\r\n".to_string()
+        let input = "POST /ContentDestruction/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
             + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
@@ -5627,6 +5639,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
