@@ -17,6 +17,8 @@ use std::time::Duration;
 
 use chrono::NaiveDate;
 use chrono::NaiveTime;
+use flate2::Compression;
+use flate2::bufread::GzEncoder;
 use log::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use xmltree::Element;
@@ -228,6 +230,82 @@ fn get_connection(http_request_headers: &HashMap<String, String>) -> Option<Pers
         .find(|k| k.eq_ignore_ascii_case("Connection"))
         .and_then(|connection_key| http_request_headers.get(connection_key))
         .map(|connection| PersistentConnection::parse(connection))
+}
+
+/// see `<https://httpwg.org/specs/rfc9110.html#field.accept-encoding>`
+#[derive(Debug, PartialEq, PartialOrd)]
+enum AcceptEncoding {
+    /// A compression format that uses the Lempel-Ziv coding (LZ77) with a 32-bit CRC.
+    Gzip,
+
+    /// Indicates the identity function (that is, without modification or compression). This value is always considered as acceptable, even if omitted.
+    Identity,
+
+    /// Matches any content encoding not already listed in the header. This is the default value if the header is not present. This directive does not suggest that any algorithm is supported but indicates that no preference is expressed.
+    Wildcard,
+}
+
+#[derive(Debug, PartialEq, PartialOrd)]
+enum AcceptEncodingError {
+    Unsupported(String),
+}
+
+impl std::fmt::Display for AcceptEncodingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Unsupported(s) => write!(f, "unsuppored accept encoding {s}"),
+        }
+    }
+}
+
+impl std::error::Error for AcceptEncodingError {}
+
+impl AcceptEncoding {
+    fn parse(s: &str) -> Result<Self, AcceptEncodingError> {
+        // TODO quality value weight
+        match s.to_ascii_lowercase().as_ref() {
+            "gzip" => Ok(Self::Gzip),
+            "identity" => Ok(Self::Identity),
+            "*" => Ok(Self::Wildcard),
+            _ => Err(AcceptEncodingError::Unsupported(s.to_string())),
+        }
+    }
+}
+
+fn get_accept_encoding(
+    http_request_headers: &HashMap<String, String>,
+) -> Result<Vec<AcceptEncoding>, AcceptEncodingError> {
+    let accepted_encodings = http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("Accept-Encoding"))
+        .and_then(|accept_encoding_key| http_request_headers.get(accept_encoding_key))
+        .map(|s| {
+            s.split(',')
+                .map(str::trim)
+                .map(|s| if s.is_empty() { "identity" } else { s })
+                .map(AcceptEncoding::parse)
+                .collect::<Result<Vec<AcceptEncoding>, AcceptEncodingError>>()
+        });
+
+    // this shouldn't be this hard?
+    let accepted_encodings = match accepted_encodings {
+        Some(accepted_encodings) => match accepted_encodings {
+            Ok(accepted_encodings) => Some(accepted_encodings),
+            Err(err) => return Err(err),
+        },
+        None => None,
+    };
+
+    // if no accepted encodings, default is wildcard. identity is always accepted (unless not), so add if necessary
+    Ok(accepted_encodings.map_or_else(
+        || vec![AcceptEncoding::Wildcard],
+        |mut v| {
+            if !v.contains(&AcceptEncoding::Identity) {
+                v.push(AcceptEncoding::Identity);
+            }
+            v
+        },
+    ))
 }
 
 fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> Option<String> {
@@ -2939,6 +3017,7 @@ fn handle_device_connection(
             };
             let (content, result) = soap_upnp_error(error_code, error_description);
             write_response(
+                &[],
                 result,
                 Some("text/xml; charset=utf-8"),
                 content.as_bytes(),
@@ -2961,6 +3040,22 @@ fn handle_device_connection(
             }
         }
     }
+
+    let accept_encoding = match get_accept_encoding(&http_request_headers) {
+        Ok(accept_encoding) => accept_encoding,
+        Err(err) => {
+            write_response(
+                &[],
+                "415 UNSUPPORTED MEDIA TYPE",
+                Some("text/plain; charset=utf-8"),
+                err.to_string().as_bytes(),
+                &mut output_stream,
+            );
+
+            return;
+        }
+    };
+    debug!("accepted encodings: {accept_encoding:?}");
 
     let content_length = get_content_length(&request_line, &http_request_headers);
     debug!("content length: {content_length}");
@@ -3034,6 +3129,7 @@ fn handle_device_connection(
     };
 
     write_response(
+        &accept_encoding,
         result,
         Some("text/xml; charset=utf-8"),
         content.as_bytes(),
@@ -3147,18 +3243,36 @@ fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &'stati
 }
 
 fn write_response(
+    accept_encodings: &[AcceptEncoding],
     result: &str,
     content_type: Option<&str>,
     content: &[u8],
     output_stream: &mut impl std::io::Write,
 ) {
+    let mut encoded_content = Vec::new();
+    let (content_encoding, content) = if accept_encodings.contains(&AcceptEncoding::Gzip)
+        || accept_encodings.contains(&AcceptEncoding::Wildcard)
+    {
+        let mut encoder = GzEncoder::new(content, Compression::default());
+        if let Err(err) = encoder.read_to_end(&mut encoded_content) {
+            error!("could not compress content: {err}");
+        }
+
+        (Some("gzip"), &encoded_content[..])
+    } else {
+        (None, content)
+    };
     let length = content.len();
     let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {result}");
     let content_type_header = content_type.map_or_else(String::new, |content_type| {
         format!("\r\nContent-Type: {content_type}")
     });
-    let response_headers =
-        format!("{status_line}{content_type_header}\r\nContent-Length: {length}\r\n\r\n");
+    let content_encoding_header = content_encoding.map_or_else(String::new, |content_encoding| {
+        format!("\r\nContent-Encoding: {content_encoding}")
+    });
+    let response_headers = format!(
+        "{status_line}{content_type_header}{content_encoding_header}\r\nContent-Length: {length}\r\n\r\n"
+    );
     let response = [response_headers.as_bytes(), content].concat();
     if let Err(err) = output_stream.write_all(&response[..]) {
         error!("error writing response: {err}");
@@ -3191,7 +3305,7 @@ fn content_handler(
         let content = match fs::read(&file) {
             Ok(content) => content,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                write_response("404 NOT FOUND", None, &[], &mut output_stream);
+                write_response(&[], "404 NOT FOUND", None, &[], &mut output_stream);
                 return;
             }
             Err(err) => {
@@ -3200,6 +3314,7 @@ fn content_handler(
         };
 
         write_response(
+            &[AcceptEncoding::Identity],
             HTTP_RESPONSE_OK,
             Some(content_type),
             &content,
@@ -3208,6 +3323,7 @@ fn content_handler(
     } else {
         let content = format!("unsupported /Content request for {request_path}");
         write_response(
+            &[],
             "501 NOT IMPLEMENTED",
             Some("text/plain; charset=utf-8"),
             content.as_bytes(),
@@ -3220,6 +3336,7 @@ fn content_handler(
 mod tests {
     use std::{io::Cursor, path::PathBuf};
 
+    use flate2::bufread::GzDecoder;
     use test_log::test;
     use xmldiff::diff;
 
@@ -3354,7 +3471,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = "GET /Device.xml HTTP/1.1\r\n";
+        let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -3380,7 +3497,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
+        let input = "GET /ContentDirectory.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -3414,6 +3531,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3476,6 +3594,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3537,6 +3656,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3616,6 +3736,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -4688,6 +4809,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -5288,6 +5410,7 @@ mod tests {
         let collection = generate_test_collection();
 
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: 0"
             + "\r\n"
@@ -5312,7 +5435,8 @@ mod tests {
 
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse"#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
             + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
@@ -5365,6 +5489,7 @@ mod tests {
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: 0"
             + "\r\n"
@@ -5412,7 +5537,8 @@ mod tests {
 
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
-        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
             + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
@@ -5462,7 +5588,8 @@ mod tests {
 
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
-        let input = "POST /ContentDestruction/Control HTTP/1.1\r\n".to_string()
+        let input = "POST /ContentDestruction/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
             + soap_action_header
             + "\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
@@ -5512,6 +5639,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -5644,22 +5772,67 @@ mod tests {
     }
 
     fn read_status_and_body(cursor: Cursor<Vec<u8>>) -> (String, String) {
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, _, body) = read_status_headers_and_body(cursor);
 
-        let status = lines.next().unwrap().to_string();
+        (status, String::from_utf8(body).unwrap())
+    }
 
-        // skip headers
+    #[derive(Debug)]
+    pub struct SomeLines<B> {
+        buf: B,
+    }
+
+    impl<B: BufRead> Iterator for SomeLines<B> {
+        type Item = std::io::Result<String>;
+
+        fn next(&mut self) -> Option<std::io::Result<String>> {
+            let mut buf = String::new();
+            match self.buf.read_line(&mut buf) {
+                Ok(0) => None,
+                Ok(_n) => {
+                    if buf.ends_with('\n') {
+                        buf.pop();
+                        if buf.ends_with('\r') {
+                            buf.pop();
+                        }
+                    }
+                    Some(Ok(buf))
+                }
+                Err(e) => Some(Err(e)),
+            }
+        }
+    }
+
+    impl<B: BufRead> SomeLines<B> {
+        fn rest(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+            self.buf.read_to_end(buf)
+        }
+    }
+
+    fn read_status_headers_and_body(
+        mut cursor: Cursor<Vec<u8>>,
+    ) -> (String, HashMap<String, String>, Vec<u8>) {
+        cursor.set_position(0);
+        let mut lines = SomeLines { buf: cursor };
+
+        let status = lines.next().unwrap().unwrap().trim_end().to_string();
+
+        let mut headers = HashMap::new();
         loop {
-            let l = lines.next().unwrap();
+            let l = lines.next().unwrap().unwrap();
             if l.is_empty() {
                 break;
             }
+
+            let (k, v) = l.split_once(": ").unwrap();
+
+            headers.insert(String::from(k), String::from(v));
         }
 
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        let mut body = Vec::new();
+        lines.rest(&mut body).unwrap();
 
-        (status, body)
+        (status, headers, body)
     }
 
     #[test]
@@ -6552,5 +6725,87 @@ mod tests {
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
         assert_eq!(update_id, "25");
+    }
+
+    #[test]
+    fn test_get_accept_encoding_none_specified() {
+        let headers = HashMap::from([(String::from("something"), String::from("else"))]);
+        let accept_encoding = get_accept_encoding(&headers).unwrap();
+        assert_eq!(accept_encoding, vec![AcceptEncoding::Wildcard]);
+    }
+
+    #[test]
+    fn test_get_accept_encoding_single_specified() {
+        let headers = HashMap::from([(String::from("accept-encoding"), String::from("gzip"))]);
+        let accept_encoding = get_accept_encoding(&headers).unwrap();
+        assert_eq!(
+            accept_encoding,
+            vec![AcceptEncoding::Gzip, AcceptEncoding::Identity]
+        );
+    }
+
+    // #[test]
+    // fn test_get_accept_encoding_multiple_specified() {
+    //     let headers = HashMap::from([(
+    //         String::from("accept-encoding"),
+    //         String::from("compress, gzip"),
+    //     )]);
+    //     let accept_encoding = get_accept_encoding(&headers).unwrap();
+    //     assert_eq!(
+    //         accept_encoding,
+    //         vec![
+    //             AcceptEncoding::Compress,
+    //             AcceptEncoding::Gzip,
+    //             AcceptEncoding::Identity,
+    //         ]
+    //     );
+    // }
+
+    #[test]
+    fn test_get_accept_encoding_empty() {
+        let headers = HashMap::from([(String::from("accept-encoding"), String::new())]);
+        let accept_encoding = get_accept_encoding(&headers).unwrap();
+        assert_eq!(accept_encoding, vec![AcceptEncoding::Identity]);
+    }
+
+    #[test]
+    fn test_get_accept_encoding_unknown() {
+        let headers = HashMap::from([(String::from("accept-encoding"), String::from("xyz"))]);
+        let accept_encoding = get_accept_encoding(&headers);
+        assert_eq!(
+            accept_encoding,
+            Err(AcceptEncodingError::Unsupported(String::from("xyz")))
+        );
+    }
+
+    #[test]
+    fn test_handle_with_accept_encoding() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: gzip\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, headers, encoded) = read_status_headers_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+        assert_eq!(headers.get("Content-Encoding").unwrap(), "gzip");
+
+        let mut decoder = GzDecoder::new(&encoded[..]);
+        let mut body = String::new();
+        decoder.read_to_string(&mut body).unwrap();
+
+        // check a couple of bits of the body rather than hard coding the whole thing
+        assert!(body.contains("<root xmlns=\"urn:schemas-upnp-org:device-1-0\" configId=\"1\">"));
+        assert!(body.contains("<UDN>uuid:5c863963-f2a2-491e-8b60-079cdadad147</UDN>"));
     }
 }
