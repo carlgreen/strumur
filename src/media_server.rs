@@ -5777,38 +5777,60 @@ mod tests {
         (status, String::from_utf8(body).unwrap())
     }
 
-    fn read_status_headers_and_body(
-        cursor: Cursor<Vec<u8>>,
-    ) -> (String, HashMap<String, String>, Vec<u8>) {
-        let cursor = cursor.into_inner();
-        let mut lines = cursor.split(|b| *b == b'\n');
+    #[derive(Debug)]
+    pub struct SomeLines<B> {
+        buf: B,
+    }
 
-        let status = String::from_utf8(lines.next().unwrap().to_vec())
-            .unwrap()
-            .trim_end()
-            .to_string();
+    impl<B: BufRead> Iterator for SomeLines<B> {
+        type Item = std::io::Result<String>;
+
+        fn next(&mut self) -> Option<std::io::Result<String>> {
+            let mut buf = String::new();
+            match self.buf.read_line(&mut buf) {
+                Ok(0) => None,
+                Ok(_n) => {
+                    if buf.ends_with('\n') {
+                        buf.pop();
+                        if buf.ends_with('\r') {
+                            buf.pop();
+                        }
+                    }
+                    Some(Ok(buf))
+                }
+                Err(e) => Some(Err(e)),
+            }
+        }
+    }
+
+    impl<B: BufRead> SomeLines<B> {
+        fn rest(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+            self.buf.read_to_end(buf)
+        }
+    }
+
+    fn read_status_headers_and_body(
+        mut cursor: Cursor<Vec<u8>>,
+    ) -> (String, HashMap<String, String>, Vec<u8>) {
+        cursor.set_position(0);
+        let mut lines = SomeLines { buf: cursor };
+
+        let status = lines.next().unwrap().unwrap().trim_end().to_string();
 
         let mut headers = HashMap::new();
         loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() || l == b"\r" {
+            let l = lines.next().unwrap().unwrap();
+            if l.is_empty() {
                 break;
             }
 
-            let mut iter = l.split(|b| *b == b':');
-            let k = iter.next().unwrap();
-            let v = iter.next().unwrap();
+            let (k, v) = l.split_once(": ").unwrap();
 
-            headers.insert(
-                String::from_utf8(k.to_vec()).unwrap(),
-                String::from_utf8(v.to_vec()).unwrap().trim().to_string(),
-            );
+            headers.insert(String::from(k), String::from(v));
         }
 
-        let body = lines
-            .map(|s| s.to_vec())
-            .collect::<Vec<Vec<u8>>>()
-            .join(&b'\n');
+        let mut body = Vec::new();
+        lines.rest(&mut body).unwrap();
 
         (status, headers, body)
     }
