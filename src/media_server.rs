@@ -68,6 +68,10 @@ const CDS_DELETE_RESOURCE_ACTION: &str = "DeleteResource";
 
 const CDS_CREATE_REFERENCE_ACTION: &str = "CreateReference";
 
+const XML_CONTENT_TYPE: &str = "text/xml; charset=utf-8";
+
+const TEXT_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+
 pub fn listen(
     device_uuid: Uuid,
     server: SocketAddrV4,
@@ -3020,7 +3024,7 @@ fn handle_device_connection(
             write_response(
                 &[],
                 result,
-                Some("text/xml; charset=utf-8"),
+                Some(XML_CONTENT_TYPE),
                 content.as_bytes(),
                 &mut output_stream,
             );
@@ -3048,7 +3052,7 @@ fn handle_device_connection(
             write_response(
                 &[],
                 "415 UNSUPPORTED MEDIA TYPE",
-                Some("text/plain; charset=utf-8"),
+                Some(TEXT_CONTENT_TYPE),
                 err.to_string().as_bytes(),
                 &mut output_stream,
             );
@@ -3074,7 +3078,7 @@ fn handle_device_connection(
         body
     });
 
-    let mut content_type = Some("text/xml; charset=utf-8");
+    let mut content_type = Some(XML_CONTENT_TYPE);
 
     let (content, result) = match &request_line[..] {
         "GET /Device.xml HTTP/1.1" => {
@@ -3311,7 +3315,7 @@ fn content_handler(
         write_response(
             &[],
             "501 NOT IMPLEMENTED",
-            Some("text/plain; charset=utf-8"),
+            Some(TEXT_CONTENT_TYPE),
             content.as_bytes(),
             &mut output_stream,
         );
