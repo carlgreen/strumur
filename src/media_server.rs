@@ -5345,6 +5345,32 @@ mod tests {
     }
 
     #[test]
+    fn test_request_icon() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = "GET /icon-16.png HTTP/1.1\r\n\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, headers, body) = read_status_headers_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+        assert_eq!(headers.get("Content-Encoding"), None);
+
+        let want = include_bytes!("strumur-icon-16.png");
+        assert_eq!(body.as_slice(), want);
+    }
+
+    #[test]
     fn test_handle_device_connection_with_bad_request_line() {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
