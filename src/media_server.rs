@@ -68,6 +68,10 @@ const CDS_DELETE_RESOURCE_ACTION: &str = "DeleteResource";
 
 const CDS_CREATE_REFERENCE_ACTION: &str = "CreateReference";
 
+const XML_CONTENT_TYPE: &str = "text/xml; charset=utf-8";
+
+const TEXT_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+
 pub fn listen(
     device_uuid: Uuid,
     server: SocketAddrV4,
@@ -3020,7 +3024,7 @@ fn handle_device_connection(
             write_response(
                 &[],
                 result,
-                Some("text/xml; charset=utf-8"),
+                Some(XML_CONTENT_TYPE),
                 content.as_bytes(),
                 &mut output_stream,
             );
@@ -3042,13 +3046,13 @@ fn handle_device_connection(
         }
     }
 
-    let accept_encoding = match get_accept_encoding(&http_request_headers) {
+    let mut accept_encoding = match get_accept_encoding(&http_request_headers) {
         Ok(accept_encoding) => accept_encoding,
         Err(err) => {
             write_response(
                 &[],
                 "415 UNSUPPORTED MEDIA TYPE",
-                Some("text/plain; charset=utf-8"),
+                Some(TEXT_CONTENT_TYPE),
                 err.to_string().as_bytes(),
                 &mut output_stream,
             );
@@ -3074,11 +3078,11 @@ fn handle_device_connection(
         body
     });
 
-    let (content, result) = match &request_line[..] {
+    let (content_type, content, result) = match &request_line[..] {
         "GET /Device.xml HTTP/1.1" => {
             let content = format!(include_str!("Device.xml"), device_uuid);
 
-            (content, HTTP_RESPONSE_OK)
+            (Some(XML_CONTENT_TYPE), content.into(), HTTP_RESPONSE_OK)
         }
         "GET /ConnectionManager.xml HTTP/1.1" => {
             unimplemented!("GET /ConnectionManager.xml not implemented");
@@ -3086,39 +3090,40 @@ fn handle_device_connection(
         "GET /ContentDirectory.xml HTTP/1.1" => {
             let content = include_str!("ContentDirectory.xml");
 
-            (content.to_string(), HTTP_RESPONSE_OK)
+            (Some(XML_CONTENT_TYPE), content.into(), HTTP_RESPONSE_OK)
         }
         "POST /ContentDirectory/Control HTTP/1.1" => {
-            handle_control(addr, collection, &http_request_headers, body)
+            let (content, status) = handle_control(addr, collection, &http_request_headers, body);
+
+            (Some(XML_CONTENT_TYPE), content.into(), status)
         }
         something if something.starts_with("GET /Content/") => {
-            content_handler(something, collection, output_stream);
-            return;
+            let (content_accept_encoding, content_type, content, status) =
+                content_handler(something, collection);
+
+            accept_encoding = content_accept_encoding;
+
+            (content_type, content, status)
         }
         something if something.starts_with("GET /icon-") => {
-            let (content_type, content) = handle_icon(&request_line);
+            let (icon_content_type, content) = handle_icon(&request_line);
 
-            write_response(
-                &[AcceptEncoding::Identity],
-                HTTP_RESPONSE_OK,
-                Some(content_type),
-                content,
-                &mut output_stream,
-            );
-            return;
+            accept_encoding = vec![AcceptEncoding::Identity];
+
+            (Some(icon_content_type), content.into(), HTTP_RESPONSE_OK)
         }
         _ => {
             warn!("unknown request line: {request_line}");
 
-            (String::new(), "404 NOT FOUND")
+            (None, Vec::new(), "404 NOT FOUND")
         }
     };
 
     write_response(
         &accept_encoding,
         result,
-        Some("text/xml; charset=utf-8"),
-        content.as_bytes(),
+        content_type,
+        &content,
         &mut output_stream,
     );
 }
@@ -3265,11 +3270,10 @@ fn write_response(
     }
 }
 
-fn content_handler(
+fn content_handler<'a>(
     request_line: &str,
     collection: &Collection,
-    mut output_stream: impl std::io::Write,
-) {
+) -> (Vec<AcceptEncoding>, Option<&'a str>, Vec<u8>, &'a str) {
     let request_path = urlencoding::decode(
         request_line
             .strip_prefix("GET /Content/")
@@ -3291,30 +3295,28 @@ fn content_handler(
         let content = match fs::read(&file) {
             Ok(content) => content,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                write_response(&[], "404 NOT FOUND", None, &[], &mut output_stream);
-                return;
+                return (Vec::new(), None, Vec::new(), "404 NOT FOUND");
             }
             Err(err) => {
                 panic!("could not read {}: {err}", file.display());
             }
         };
 
-        write_response(
-            &[AcceptEncoding::Identity],
-            HTTP_RESPONSE_OK,
+        (
+            vec![AcceptEncoding::Identity],
             Some(content_type),
-            &content,
-            &mut output_stream,
-        );
+            content,
+            HTTP_RESPONSE_OK,
+        )
     } else {
         let content = format!("unsupported /Content request for {request_path}");
-        write_response(
-            &[],
+
+        (
+            Vec::new(),
+            Some(TEXT_CONTENT_TYPE),
+            content.into(),
             "501 NOT IMPLEMENTED",
-            Some("text/plain; charset=utf-8"),
-            content.as_bytes(),
-            &mut output_stream,
-        );
+        )
     }
 }
 
@@ -5226,56 +5228,9 @@ mod tests {
             &mut cursor,
         );
 
-        let mut line = Vec::new();
-        cursor.set_position(0);
-        let mut prev = None;
-        loop {
-            let mut buf = [0u8; 1];
-            cursor.read_exact(&mut buf).unwrap();
-            if prev == Some(b'\r') && buf[0] == b'\n' {
-                line.pop().unwrap(); // get rid of the \r
-                break;
-            }
-            line.push(buf[0]);
-            prev = Some(buf[0]);
-        }
+        let (status, _, body) = read_status_headers_and_body(cursor);
 
-        assert_eq!(
-            String::from_utf8(line).unwrap(),
-            "HTTP/1.1 200 OK".to_string()
-        );
-
-        loop {
-            let mut line = Vec::new();
-            let mut prev = None;
-            loop {
-                let mut buf = [0u8; 1];
-                cursor.read_exact(&mut buf).unwrap();
-                if prev == Some(b'\r') && buf[0] == b'\n' {
-                    line.pop().unwrap(); // get rid of the \r
-                    break;
-                }
-                line.push(buf[0]);
-                prev = Some(buf[0]);
-            }
-            if line.is_empty() {
-                break;
-            }
-            // TODO check/use String::from_utf8(line).unwrap() ?
-        }
-
-        let mut body = Vec::new();
-        cursor.read_to_end(&mut body).unwrap();
-
-        // for now, can just check against the only image being returned
-
-        // let mut decoder = Decoder::new(&body[..]);
-        // let result = decoder.decode();
-        // assert!(
-        //     result.is_ok(),
-        //     "failed to decode image: {}",
-        //     result.err().unwrap()
-        // );
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let want = include_bytes!("cover.jpg");
         assert_eq!(body.as_slice(), want);
@@ -5298,49 +5253,38 @@ mod tests {
             &mut cursor,
         );
 
-        let mut line = Vec::new();
-        cursor.set_position(0);
-        let mut prev = None;
-        loop {
-            let mut buf = [0u8; 1];
-            cursor.read_exact(&mut buf).unwrap();
-            if prev == Some(b'\r') && buf[0] == b'\n' {
-                line.pop().unwrap(); // get rid of the \r
-                break;
-            }
-            line.push(buf[0]);
-            prev = Some(buf[0]);
-        }
+        let (status, _, body) = read_status_headers_and_body(cursor);
 
-        assert_eq!(
-            String::from_utf8(line).unwrap(),
-            "HTTP/1.1 200 OK".to_string()
-        );
-
-        loop {
-            let mut line = Vec::new();
-            let mut prev = None;
-            loop {
-                let mut buf = [0u8; 1];
-                cursor.read_exact(&mut buf).unwrap();
-                if prev == Some(b'\r') && buf[0] == b'\n' {
-                    line.pop().unwrap(); // get rid of the \r
-                    break;
-                }
-                line.push(buf[0]);
-                prev = Some(buf[0]);
-            }
-            if line.is_empty() {
-                break;
-            }
-            // TODO check/use String::from_utf8(line).unwrap() ?
-        }
-
-        let mut body = Vec::new();
-        cursor.read_to_end(&mut body).unwrap();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         // for now, can just check against the only song being returned
         let want = include_bytes!("riff.flac");
+        assert_eq!(body.as_slice(), want);
+    }
+
+    #[test]
+    fn test_request_icon() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = "GET /icon-16.png HTTP/1.1\r\n\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, headers, body) = read_status_headers_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+        assert_eq!(headers.get("Content-Encoding"), None);
+
+        let want = include_bytes!("strumur-icon-16.png");
         assert_eq!(body.as_slice(), want);
     }
 
