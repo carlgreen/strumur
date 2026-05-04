@@ -3078,13 +3078,11 @@ fn handle_device_connection(
         body
     });
 
-    let mut content_type = Some(XML_CONTENT_TYPE);
-
-    let (content, result) = match &request_line[..] {
+    let (content_type, content, result) = match &request_line[..] {
         "GET /Device.xml HTTP/1.1" => {
             let content = format!(include_str!("Device.xml"), device_uuid);
 
-            (content.into(), HTTP_RESPONSE_OK)
+            (Some(XML_CONTENT_TYPE), content.into(), HTTP_RESPONSE_OK)
         }
         "GET /ConnectionManager.xml HTTP/1.1" => {
             unimplemented!("GET /ConnectionManager.xml not implemented");
@@ -3092,12 +3090,12 @@ fn handle_device_connection(
         "GET /ContentDirectory.xml HTTP/1.1" => {
             let content = include_str!("ContentDirectory.xml");
 
-            (content.into(), HTTP_RESPONSE_OK)
+            (Some(XML_CONTENT_TYPE), content.into(), HTTP_RESPONSE_OK)
         }
         "POST /ContentDirectory/Control HTTP/1.1" => {
             let (content, status) = handle_control(addr, collection, &http_request_headers, body);
 
-            (content.into(), status)
+            (Some(XML_CONTENT_TYPE), content.into(), status)
         }
         something if something.starts_with("GET /Content/") => {
             content_handler(something, collection, output_stream);
@@ -3107,14 +3105,13 @@ fn handle_device_connection(
             let (icon_content_type, content) = handle_icon(&request_line);
 
             accept_encoding = vec![AcceptEncoding::Identity];
-            content_type = Some(icon_content_type);
 
-            (content.into(), HTTP_RESPONSE_OK)
+            (Some(icon_content_type), content.into(), HTTP_RESPONSE_OK)
         }
         _ => {
             warn!("unknown request line: {request_line}");
 
-            (Vec::new(), "404 NOT FOUND")
+            (None, Vec::new(), "404 NOT FOUND")
         }
     };
 
