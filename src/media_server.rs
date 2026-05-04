@@ -9,6 +9,7 @@ use std::io::ErrorKind;
 use std::io::Read;
 use std::net::SocketAddrV4;
 use std::net::TcpListener;
+use std::num::TryFromIntError;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -333,8 +334,8 @@ struct BrowseOptionsBuilder {
     object_id: Option<Vec<String>>,
     browse_flag: Option<BrowseFlag>,
     filter: Option<Filter>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    starting_index: Option<u32>,
+    requested_count: Option<u32>,
     sort_criteria: Option<SortCriteria>,
 }
 
@@ -373,12 +374,12 @@ impl BrowseOptionsBuilder {
         self
     }
 
-    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+    const fn starting_index(&mut self, starting_index: u32) -> &Self {
         self.starting_index = Some(starting_index);
         self
     }
 
-    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+    const fn requested_count(&mut self, requested_count: u32) -> &Self {
         self.requested_count = Some(requested_count);
         self
     }
@@ -425,8 +426,8 @@ struct BrowseOptions {
     object_id: Vec<String>,
     browse_flag: BrowseFlag,
     filter: Filter,
-    starting_index: u16,
-    requested_count: u16,
+    starting_index: u32,
+    requested_count: u32,
     sort_criteria: SortCriteria,
 }
 
@@ -673,6 +674,7 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
 #[derive(Debug)]
 enum UPNPError {
     NoSuchObject,
+    #[allow(unused)]
     GenerateResponseError(GenerateResponseError),
 }
 
@@ -688,6 +690,12 @@ impl UPNPError {
 impl From<GenerateResponseError> for UPNPError {
     fn from(value: GenerateResponseError) -> Self {
         Self::GenerateResponseError(value)
+    }
+}
+
+impl From<TryFromIntError> for UPNPError {
+    fn from(value: TryFromIntError) -> Self {
+        Self::GenerateResponseError(GenerateResponseError::Number(value))
     }
 }
 
@@ -770,9 +778,9 @@ fn generate_browse_albums_response(
     }
     let albums = albums.iter();
 
-    let total_matches = collection.get_albums().count();
-    let starting_index = options.starting_index.into();
-    let requested_count: usize = options.requested_count.into();
+    let total_matches = collection.get_albums().count().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album) in albums.skip(starting_index).take(requested_count) {
@@ -834,9 +842,9 @@ fn generate_browse_an_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = tracks.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -906,9 +914,9 @@ fn generate_browse_items_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = collection.get_tracks().count();
-    let starting_index: usize = options.starting_index.into();
-    let requested_count: usize = options.requested_count.into();
+    let total_matches = collection.get_tracks().count().try_into()?;
+    let starting_index: usize = options.starting_index.try_into()?;
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album, track) in tracks.skip(starting_index).take(requested_count) {
@@ -959,9 +967,9 @@ fn generate_browse_artists_response(
     }
     let artists = artists.iter();
 
-    let total_matches = artists.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = artists.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -980,9 +988,9 @@ fn generate_browse_an_artist_response(
     options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
     let things = ["albums", "items"];
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
-    let total_matches = things.len();
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
+    let total_matches = things.len().try_into()?;
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1064,9 +1072,9 @@ fn generate_browse_an_artist_albums_response(
     }
     let albums = albums.iter();
 
-    let total_matches = albums.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = albums.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let artist_id = artist.id;
     let mut result = String::new();
@@ -1133,9 +1141,9 @@ fn generate_browse_an_artist_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = tracks.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -1164,9 +1172,9 @@ fn generate_browse_an_artist_items_response(
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
-    let total_matches = artist.get_tracks().count();
-    let starting_index: usize = options.starting_index.into();
-    let requested_count: usize = options.requested_count.into();
+    let total_matches = artist.get_tracks().count().try_into()?;
+    let starting_index: usize = options.starting_index.try_into()?;
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -1223,9 +1231,9 @@ fn generate_browse_all_artists_response(
     }
     let artists = artists.iter();
 
-    let total_matches = artists.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = artists.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -1249,8 +1257,8 @@ fn generate_browse_an_all_artist_response(
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let mut starting_index = options.starting_index.into();
-    let mut requested_count = options.requested_count.into();
+    let mut starting_index = options.starting_index.try_into()?;
+    let mut requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -1334,11 +1342,15 @@ fn generate_browse_an_all_artist_response(
         };
 
         starting_index = starting_index.saturating_sub(sub_total_matches);
-        requested_count = requested_count.saturating_sub(number_returned);
+        requested_count = requested_count.saturating_sub(number_returned.try_into()?);
         total_matches += sub_total_matches;
     }
 
-    Ok(format_response(&result, number_returned, total_matches))
+    Ok(format_response(
+        &result,
+        number_returned,
+        total_matches.try_into()?,
+    ))
 }
 
 fn generate_browse_an_all_artist_response_album_part(
@@ -1348,7 +1360,7 @@ fn generate_browse_an_all_artist_response_album_part(
     addr: &str,
     starting_index: usize,
     requested_count: usize,
-    number_returned: &mut usize,
+    number_returned: &mut u32,
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
@@ -1407,7 +1419,7 @@ fn generate_browse_an_all_artist_response_track_part(
     addr: &str,
     starting_index: usize,
     requested_count: usize,
-    number_returned: &mut usize,
+    number_returned: &mut u32,
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
@@ -1514,9 +1526,9 @@ fn generate_browse_an_all_artist_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = tracks.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -1538,12 +1550,14 @@ fn generate_browse_an_all_artist_album_response(
 #[derive(Debug)]
 enum GenerateResponseError {
     Format(std::fmt::Error),
+    Number(std::num::TryFromIntError),
 }
 
 impl std::fmt::Display for GenerateResponseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Format(err) => write!(f, "could not write XML: {err}"),
+            Self::Number(err) => write!(f, "could not convert number: {err}"),
         }
     }
 }
@@ -1941,7 +1955,7 @@ fn create_album_art_element(addr: &str, cover: &str) -> String {
     format!("<upnp:albumArtURI dlna:profileID=\"JPEG_MED\">{cover}</upnp:albumArtURI>")
 }
 
-fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
+fn format_response(result: &str, number_returned: u32, total_matches: u32) -> String {
     let result = format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
 {result}</DIDL-Lite>"#
@@ -2335,8 +2349,8 @@ struct SearchOptionsBuilder {
     container_id: Option<Vec<String>>,
     search_criteria: Option<SearchCrit>,
     filter: Option<Filter>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    starting_index: Option<u32>,
+    requested_count: Option<u32>,
     sort_criteria: Option<SortCriteria>,
 }
 
@@ -2376,12 +2390,12 @@ impl SearchOptionsBuilder {
         self
     }
 
-    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+    const fn starting_index(&mut self, starting_index: u32) -> &Self {
         self.starting_index = Some(starting_index);
         self
     }
 
-    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+    const fn requested_count(&mut self, requested_count: u32) -> &Self {
         self.requested_count = Some(requested_count);
         self
     }
@@ -2428,8 +2442,8 @@ struct SearchOptions {
     container_id: Vec<String>,
     search_criteria: SearchCrit,
     filter: Filter,
-    starting_index: u16,
-    requested_count: u16,
+    starting_index: u32,
+    requested_count: u32,
     sort_criteria: SortCriteria,
 }
 
@@ -2572,8 +2586,8 @@ fn generate_search_root_response(
     class_order: &[&str],
     addr: &str,
 ) -> Result<String, UPNPError> {
-    let starting_index = options.starting_index.into();
-    let requested_count: usize = options.requested_count.into();
+    let starting_index = options.starting_index;
+    let requested_count = options.requested_count;
     let mut total_matches = 0;
     let mut number_returned = 0;
     let mut artist_result = String::new();
@@ -3498,12 +3512,12 @@ mod tests {
             + body
     }
 
-    fn extract_get_system_update_id_response(body: &str) -> u16 {
+    fn extract_get_system_update_id_response(body: &str) -> u32 {
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let get_system_update_id_response = body.get_child("GetSystemUpdateIDResponse").unwrap();
 
-        let id: u16 = get_system_update_id_response
+        let id: u32 = get_system_update_id_response
             .get_child("Id")
             .unwrap()
             .get_text()
@@ -3670,8 +3684,8 @@ mod tests {
 
     fn generate_browse_request(
         object_id: &str,
-        starting_index: u16,
-        requested_count: u16,
+        starting_index: u32,
+        requested_count: u32,
     ) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
@@ -3703,7 +3717,7 @@ mod tests {
             + &body
     }
 
-    fn extract_browse_response(body: &str) -> (String, u16, u16, String) {
+    fn extract_browse_response(body: &str) -> (String, u32, u32, u32) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -3715,7 +3729,7 @@ mod tests {
             .get_text()
             .unwrap();
 
-        let number_returned: u16 = browse_response
+        let number_returned: u32 = browse_response
             .get_child("NumberReturned")
             .unwrap()
             .get_text()
@@ -3723,7 +3737,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        let total_matches: u16 = browse_response
+        let total_matches: u32 = browse_response
             .get_child("TotalMatches")
             .unwrap()
             .get_text()
@@ -3735,14 +3749,11 @@ mod tests {
             .get_child("UpdateID")
             .unwrap()
             .get_text()
+            .unwrap()
+            .parse()
             .unwrap();
 
-        (
-            result.into(),
-            number_returned,
-            total_matches,
-            update_id.into(),
-        )
+        (result.into(), number_returned, total_matches, update_id)
     }
 
     fn extract_error_response(body: &str) -> (u16, String) {
@@ -3825,7 +3836,7 @@ mod tests {
         );
         assert_eq!(number_returned, 4);
         assert_eq!(total_matches, 4);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3904,7 +3915,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3974,7 +3985,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4094,7 +4105,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 13);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4147,7 +4158,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4188,7 +4199,7 @@ mod tests {
         );
         assert_eq!(number_returned, 2);
         assert_eq!(total_matches, 2);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4274,7 +4285,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4366,7 +4377,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4507,7 +4518,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 9);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4561,7 +4572,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4676,7 +4687,7 @@ mod tests {
         );
         assert_eq!(number_returned, 8);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4742,7 +4753,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     fn generate_browse_metadata_request(object_id: &str) -> String {
@@ -4807,7 +4818,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4841,7 +4852,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4875,7 +4886,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4909,7 +4920,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4943,7 +4954,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4977,7 +4988,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5011,7 +5022,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5045,7 +5056,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5079,7 +5090,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5113,7 +5124,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5147,7 +5158,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5181,7 +5192,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5572,8 +5583,8 @@ mod tests {
 
     fn generate_search_request(
         search_str: &str,
-        starting_index: u16,
-        requested_count: u16,
+        starting_index: u32,
+        requested_count: u32,
     ) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Search""#;
@@ -5606,7 +5617,7 @@ mod tests {
             + &body
     }
 
-    fn extract_search_response(body: &str) -> (String, u16, u16, String) {
+    fn extract_search_response(body: &str) -> (String, u32, u32, u32) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -5618,7 +5629,7 @@ mod tests {
             .get_text()
             .unwrap();
 
-        let number_returned: u16 = search_response
+        let number_returned: u32 = search_response
             .get_child("NumberReturned")
             .unwrap()
             .get_text()
@@ -5626,7 +5637,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        let total_matches: u16 = search_response
+        let total_matches: u32 = search_response
             .get_child("TotalMatches")
             .unwrap()
             .get_text()
@@ -5638,14 +5649,11 @@ mod tests {
             .get_child("UpdateID")
             .unwrap()
             .get_text()
+            .unwrap()
+            .parse()
             .unwrap();
 
-        (
-            result.into(),
-            number_returned,
-            total_matches,
-            update_id.into(),
-        )
+        (result.into(), number_returned, total_matches, update_id)
     }
 
     #[test]
@@ -5726,7 +5734,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     fn read_status_and_body(cursor: Cursor<Vec<u8>>) -> (String, String) {
@@ -6683,7 +6691,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]

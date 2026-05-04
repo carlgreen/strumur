@@ -122,14 +122,14 @@ impl Track {
 #[derive(Clone, Debug)]
 pub struct Collection {
     last_id: u128,
-    system_update_id: u16, // TODO maintain this value
+    system_update_id: u32, // TODO maintain this value
     pub base: PathBuf,
     artists: Vec<Artist>,
 }
 
 impl Collection {
     #[cfg(test)]
-    pub const fn new(system_update_id: u16, base: PathBuf, artists: Vec<Artist>) -> Self {
+    pub const fn new(system_update_id: u32, base: PathBuf, artists: Vec<Artist>) -> Self {
         Self {
             last_id: 0,
             system_update_id,
@@ -185,7 +185,7 @@ impl Collection {
         collection
     }
 
-    pub const fn get_system_update_id(&self) -> u16 {
+    pub const fn get_system_update_id(&self) -> u32 {
         self.system_update_id
     }
 
