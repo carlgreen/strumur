@@ -3135,6 +3135,31 @@ fn handle_device_connection(
             content_handler(something, collection, output_stream);
             return;
         }
+        something if something.starts_with("GET /icon-") => {
+            let icon_size = urlencoding::decode(
+                request_line
+                    .strip_prefix("GET /icon-")
+                    .unwrap()
+                    .strip_suffix(".png HTTP/1.1")
+                    .unwrap(),
+            )
+            .unwrap();
+
+            let content = match icon_size.as_ref() {
+                "16" => &include_bytes!("strumur-icon-16.png")[..],
+                _ => panic!("unknown icon size: {icon_size}"),
+            };
+            let content_type = "image/png";
+
+            write_response(
+                &[AcceptEncoding::Identity],
+                HTTP_RESPONSE_OK,
+                Some(content_type),
+                content,
+                &mut output_stream,
+            );
+            return;
+        }
         _ => {
             warn!("unknown request line: {request_line}");
 

@@ -12,6 +12,15 @@
         <modelDescription>Strumur media server</modelDescription>
         <modelName>Strumur</modelName>
         <modelURL>https://github.com/carlgreen/strumur/</modelURL>
+        <iconList>
+            <icon>
+                <mimetype>image/png</mimetype>
+                <width>16</width>
+                <height>16</height>
+                <depth>8</depth>
+                <url>/icon-16.png</url>
+            </icon>
+        </iconList>
         <serviceList>
             <!--service>
                 <serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType>
