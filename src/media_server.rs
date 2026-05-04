@@ -335,7 +335,7 @@ struct BrowseOptionsBuilder {
     browse_flag: Option<BrowseFlag>,
     filter: Option<Filter>,
     starting_index: Option<u32>,
-    requested_count: Option<u16>,
+    requested_count: Option<u32>,
     sort_criteria: Option<SortCriteria>,
 }
 
@@ -379,7 +379,7 @@ impl BrowseOptionsBuilder {
         self
     }
 
-    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+    const fn requested_count(&mut self, requested_count: u32) -> &Self {
         self.requested_count = Some(requested_count);
         self
     }
@@ -427,7 +427,7 @@ struct BrowseOptions {
     browse_flag: BrowseFlag,
     filter: Filter,
     starting_index: u32,
-    requested_count: u16,
+    requested_count: u32,
     sort_criteria: SortCriteria,
 }
 
@@ -780,7 +780,7 @@ fn generate_browse_albums_response(
 
     let total_matches = collection.get_albums().count().try_into()?;
     let starting_index = options.starting_index.try_into()?;
-    let requested_count: usize = options.requested_count.into();
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album) in albums.skip(starting_index).take(requested_count) {
@@ -844,7 +844,7 @@ fn generate_browse_an_album_response(
 
     let total_matches = tracks.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
-    let requested_count = options.requested_count.into();
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -916,7 +916,7 @@ fn generate_browse_items_response(
 
     let total_matches = collection.get_tracks().count().try_into()?;
     let starting_index: usize = options.starting_index.try_into()?;
-    let requested_count: usize = options.requested_count.into();
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album, track) in tracks.skip(starting_index).take(requested_count) {
@@ -969,7 +969,7 @@ fn generate_browse_artists_response(
 
     let total_matches = artists.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
-    let requested_count = options.requested_count.into();
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -989,7 +989,7 @@ fn generate_browse_an_artist_response(
 ) -> std::result::Result<String, UPNPError> {
     let things = ["albums", "items"];
     let starting_index = options.starting_index.try_into()?;
-    let requested_count = options.requested_count.into();
+    let requested_count = options.requested_count.try_into()?;
     let total_matches = things.len().try_into()?;
     let artist = collection
         .get_artists()
@@ -1074,7 +1074,7 @@ fn generate_browse_an_artist_albums_response(
 
     let total_matches = albums.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
-    let requested_count = options.requested_count.into();
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let artist_id = artist.id;
     let mut result = String::new();
@@ -1143,7 +1143,7 @@ fn generate_browse_an_artist_album_response(
 
     let total_matches = tracks.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
-    let requested_count = options.requested_count.into();
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -1174,7 +1174,7 @@ fn generate_browse_an_artist_items_response(
         .ok_or(UPNPError::NoSuchObject)?;
     let total_matches = artist.get_tracks().count().try_into()?;
     let starting_index: usize = options.starting_index.try_into()?;
-    let requested_count: usize = options.requested_count.into();
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -1233,7 +1233,7 @@ fn generate_browse_all_artists_response(
 
     let total_matches = artists.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
-    let requested_count = options.requested_count.into();
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -1258,7 +1258,7 @@ fn generate_browse_an_all_artist_response(
         .ok_or(UPNPError::NoSuchObject)?;
 
     let mut starting_index = options.starting_index.try_into()?;
-    let mut requested_count = options.requested_count.into();
+    let mut requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -1528,7 +1528,7 @@ fn generate_browse_an_all_artist_album_response(
 
     let total_matches = tracks.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
-    let requested_count = options.requested_count.into();
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
