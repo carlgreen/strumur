@@ -3717,7 +3717,7 @@ mod tests {
             + &body
     }
 
-    fn extract_browse_response(body: &str) -> (String, u32, u32, String) {
+    fn extract_browse_response(body: &str) -> (String, u32, u32, u32) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -3749,14 +3749,11 @@ mod tests {
             .get_child("UpdateID")
             .unwrap()
             .get_text()
+            .unwrap()
+            .parse()
             .unwrap();
 
-        (
-            result.into(),
-            number_returned,
-            total_matches,
-            update_id.into(),
-        )
+        (result.into(), number_returned, total_matches, update_id)
     }
 
     fn extract_error_response(body: &str) -> (u16, String) {
@@ -3839,7 +3836,7 @@ mod tests {
         );
         assert_eq!(number_returned, 4);
         assert_eq!(total_matches, 4);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3918,7 +3915,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3988,7 +3985,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4108,7 +4105,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 13);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4161,7 +4158,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4202,7 +4199,7 @@ mod tests {
         );
         assert_eq!(number_returned, 2);
         assert_eq!(total_matches, 2);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4288,7 +4285,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4380,7 +4377,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4521,7 +4518,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 9);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4575,7 +4572,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4690,7 +4687,7 @@ mod tests {
         );
         assert_eq!(number_returned, 8);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4756,7 +4753,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     fn generate_browse_metadata_request(object_id: &str) -> String {
@@ -4821,7 +4818,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4855,7 +4852,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4889,7 +4886,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4923,7 +4920,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4957,7 +4954,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4991,7 +4988,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5025,7 +5022,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5059,7 +5056,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5093,7 +5090,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5127,7 +5124,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5161,7 +5158,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5195,7 +5192,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -5620,7 +5617,7 @@ mod tests {
             + &body
     }
 
-    fn extract_search_response(body: &str) -> (String, u32, u32, String) {
+    fn extract_search_response(body: &str) -> (String, u32, u32, u32) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -5652,14 +5649,11 @@ mod tests {
             .get_child("UpdateID")
             .unwrap()
             .get_text()
+            .unwrap()
+            .parse()
             .unwrap();
 
-        (
-            result.into(),
-            number_returned,
-            total_matches,
-            update_id.into(),
-        )
+        (result.into(), number_returned, total_matches, update_id)
     }
 
     #[test]
@@ -5740,7 +5734,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     fn read_status_and_body(cursor: Cursor<Vec<u8>>) -> (String, String) {
@@ -6697,7 +6691,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
