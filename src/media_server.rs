@@ -778,7 +778,7 @@ fn generate_browse_albums_response(
     }
     let albums = albums.iter();
 
-    let total_matches = collection.get_albums().count();
+    let total_matches = collection.get_albums().count().try_into()?;
     let starting_index = options.starting_index.try_into()?;
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
@@ -842,7 +842,7 @@ fn generate_browse_an_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
+    let total_matches = tracks.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
@@ -914,7 +914,7 @@ fn generate_browse_items_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = collection.get_tracks().count();
+    let total_matches = collection.get_tracks().count().try_into()?;
     let starting_index: usize = options.starting_index.try_into()?;
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
@@ -967,7 +967,7 @@ fn generate_browse_artists_response(
     }
     let artists = artists.iter();
 
-    let total_matches = artists.len();
+    let total_matches = artists.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
@@ -990,7 +990,7 @@ fn generate_browse_an_artist_response(
     let things = ["albums", "items"];
     let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
-    let total_matches = things.len();
+    let total_matches = things.len().try_into()?;
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1072,7 +1072,7 @@ fn generate_browse_an_artist_albums_response(
     }
     let albums = albums.iter();
 
-    let total_matches = albums.len();
+    let total_matches = albums.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
@@ -1141,7 +1141,7 @@ fn generate_browse_an_artist_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
+    let total_matches = tracks.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
@@ -1172,7 +1172,7 @@ fn generate_browse_an_artist_items_response(
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
-    let total_matches = artist.get_tracks().count();
+    let total_matches = artist.get_tracks().count().try_into()?;
     let starting_index: usize = options.starting_index.try_into()?;
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
@@ -1231,7 +1231,7 @@ fn generate_browse_all_artists_response(
     }
     let artists = artists.iter();
 
-    let total_matches = artists.len();
+    let total_matches = artists.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
@@ -1346,7 +1346,11 @@ fn generate_browse_an_all_artist_response(
         total_matches += sub_total_matches;
     }
 
-    Ok(format_response(&result, number_returned, total_matches))
+    Ok(format_response(
+        &result,
+        number_returned,
+        total_matches.try_into()?,
+    ))
 }
 
 fn generate_browse_an_all_artist_response_album_part(
@@ -1522,7 +1526,7 @@ fn generate_browse_an_all_artist_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
+    let total_matches = tracks.len().try_into()?;
     let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
@@ -1951,7 +1955,7 @@ fn create_album_art_element(addr: &str, cover: &str) -> String {
     format!("<upnp:albumArtURI dlna:profileID=\"JPEG_MED\">{cover}</upnp:albumArtURI>")
 }
 
-fn format_response(result: &str, number_returned: u32, total_matches: usize) -> String {
+fn format_response(result: &str, number_returned: u32, total_matches: u32) -> String {
     let result = format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
 {result}</DIDL-Lite>"#
@@ -2582,8 +2586,8 @@ fn generate_search_root_response(
     class_order: &[&str],
     addr: &str,
 ) -> Result<String, UPNPError> {
-    let starting_index = options.starting_index.try_into()?;
-    let requested_count: usize = options.requested_count.try_into()?;
+    let starting_index = options.starting_index;
+    let requested_count = options.requested_count;
     let mut total_matches = 0;
     let mut number_returned = 0;
     let mut artist_result = String::new();
@@ -2764,11 +2768,7 @@ fn generate_search_root_response(
         }
     }
 
-    Ok(format_response(
-        &result,
-        number_returned.try_into()?,
-        total_matches,
-    ))
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_search_response(
@@ -3717,7 +3717,7 @@ mod tests {
             + &body
     }
 
-    fn extract_browse_response(body: &str) -> (String, u32, u16, String) {
+    fn extract_browse_response(body: &str) -> (String, u32, u32, String) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -3737,7 +3737,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        let total_matches: u16 = browse_response
+        let total_matches: u32 = browse_response
             .get_child("TotalMatches")
             .unwrap()
             .get_text()
@@ -5620,7 +5620,7 @@ mod tests {
             + &body
     }
 
-    fn extract_search_response(body: &str) -> (String, u32, u16, String) {
+    fn extract_search_response(body: &str) -> (String, u32, u32, String) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -5640,7 +5640,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        let total_matches: u16 = search_response
+        let total_matches: u32 = search_response
             .get_child("TotalMatches")
             .unwrap()
             .get_text()
