@@ -2571,7 +2571,7 @@ fn generate_search_root_response(
     sort_criteria: &SortCriteria,
     class_order: &[&str],
     addr: &str,
-) -> String {
+) -> Result<String, UPNPError> {
     let starting_index = options.starting_index.into();
     let requested_count: usize = options.requested_count.into();
     let mut total_matches = 0;
@@ -2621,12 +2621,7 @@ fn generate_search_root_response(
                     &options.filter,
                     (parent_id, &item_id),
                     artist,
-                )
-                .unwrap_or_else(|err| match err {
-                    GenerateResponseError::Format(err) => {
-                        panic!("should be a 500 response: {err}")
-                    }
-                });
+                )?;
 
                 number_returned += 1;
             }
@@ -2678,12 +2673,7 @@ fn generate_search_root_response(
                         (parent_id, &item_id),
                         (artist, album),
                         addr,
-                    )
-                    .unwrap_or_else(|err| match err {
-                        GenerateResponseError::Format(err) => {
-                            panic!("should be a 500 response: {err}")
-                        }
-                    });
+                    )?;
 
                     number_returned += 1;
                 }
@@ -2735,12 +2725,7 @@ fn generate_search_root_response(
                             (&parent_id, &item_id),
                             (artist, album, track),
                             addr,
-                        )
-                        .unwrap_or_else(|err| match err {
-                            GenerateResponseError::Format(err) => {
-                                panic!("should be a 500 response: {err}")
-                            }
-                        });
+                        )?;
 
                         number_returned += 1;
                     }
@@ -2769,7 +2754,7 @@ fn generate_search_root_response(
         }
     }
 
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_search_response(
@@ -2824,13 +2809,9 @@ fn generate_search_response(
 
     // TODO starting_index/requested_count don't work well with sorting
     let search_response = match options.container_id.as_slice() {
-        [root] if root == "0" => Ok(generate_search_root_response(
-            collection,
-            options,
-            &sort_criteria,
-            &class_order,
-            addr,
-        )),
+        [root] if root == "0" => {
+            generate_search_root_response(collection, options, &sort_criteria, &class_order, addr)
+        }
         container_id => {
             error!("control: unexpected container ID: {container_id:?}");
             Err(UPNPError::NoSuchObject)
