@@ -2228,105 +2228,218 @@ fn generate_browse_an_all_artist_album_metadata_response(
     Ok(format_response(&result, 1, 1))
 }
 
+fn generate_browse_root_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_root_metadata_response(),
+        BrowseFlag::DirectChildren => generate_browse_root_response(collection, options),
+    }
+}
+
+fn generate_browse_albums_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_albums_metadata_response(collection),
+        BrowseFlag::DirectChildren => generate_browse_albums_response(collection, options, addr),
+    }
+}
+
+fn generate_browse_an_album_type_response(
+    collection: &Collection,
+    album_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_album_metadata_response(collection, album_id, addr)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_album_response(collection, album_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_items_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_items_metadata_response(collection),
+        BrowseFlag::DirectChildren => generate_browse_items_response(collection, options, addr),
+    }
+}
+
+fn generate_browse_artists_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_artists_metadata_response(),
+        BrowseFlag::DirectChildren => generate_browse_artists_response(collection, options),
+    }
+}
+
+fn generate_browse_an_artist_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_an_artist_metadata_response(collection, artist_id),
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_response(collection, artist_id, options)
+        }
+    }
+}
+
+fn generate_browse_an_artist_albums_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_artist_albums_metadata_response(collection, artist_id)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_albums_response(collection, artist_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_an_artist_album_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_artist_album_metadata_response(collection, artist_id, album_id, addr)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_album_response(collection, artist_id, album_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_an_artist_items_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_artist_items_metadata_response(collection, artist_id)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_items_response(collection, artist_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_all_artists_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_all_artists_metadata_response(),
+        BrowseFlag::DirectChildren => generate_browse_all_artists_response(collection, options),
+    }
+}
+
+fn generate_browse_an_all_artist_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_all_artist_metadata_response(collection, artist_id)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_all_artist_response(collection, artist_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_an_all_artist_album_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_an_all_artist_album_metadata_response(
+            collection, artist_id, album_id, addr,
+        ),
+        BrowseFlag::DirectChildren => generate_browse_an_all_artist_album_response(
+            collection, artist_id, album_id, options, addr,
+        ),
+    }
+}
+
 fn generate_browse_response(
     collection: &Collection,
     options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
     let browse_response = match options.object_id.as_slice() {
-        [root] if root == "0" => match options.browse_flag {
-            BrowseFlag::Metadata => generate_browse_root_metadata_response(),
-            BrowseFlag::DirectChildren => generate_browse_root_response(collection, options),
-        },
-        [root, next] if root == "0" && next == "albums" => match options.browse_flag {
-            BrowseFlag::Metadata => generate_browse_albums_metadata_response(collection),
-            BrowseFlag::DirectChildren => {
-                generate_browse_albums_response(collection, options, addr)
-            }
-        },
-        [root, next, album_id] if root == "0" && next == "albums" => match options.browse_flag {
-            BrowseFlag::Metadata => {
-                generate_browse_an_album_metadata_response(collection, album_id, addr)
-            }
-            BrowseFlag::DirectChildren => {
-                generate_browse_an_album_response(collection, album_id, options, addr)
-            }
-        },
-        [root, next] if root == "0" && next == "items" => match options.browse_flag {
-            BrowseFlag::Metadata => generate_browse_items_metadata_response(collection),
-            BrowseFlag::DirectChildren => generate_browse_items_response(collection, options, addr),
-        },
-        [root, next] if root == "0" && next == "=Artist" => match options.browse_flag {
-            BrowseFlag::Metadata => generate_browse_artists_metadata_response(),
-            BrowseFlag::DirectChildren => generate_browse_artists_response(collection, options),
-        },
-        [root, next, artist_id] if root == "0" && next == "=Artist" => match options.browse_flag {
-            BrowseFlag::Metadata => {
-                generate_browse_an_artist_metadata_response(collection, artist_id)
-            }
-            BrowseFlag::DirectChildren => {
-                generate_browse_an_artist_response(collection, artist_id, options)
-            }
-        },
+        [root] if root == "0" => generate_browse_root_type_response(collection, options),
+        [root, next] if root == "0" && next == "albums" => {
+            generate_browse_albums_type_response(collection, options, addr)
+        }
+        [root, next, album_id] if root == "0" && next == "albums" => {
+            generate_browse_an_album_type_response(collection, album_id, options, addr)
+        }
+        [root, next] if root == "0" && next == "items" => {
+            generate_browse_items_type_response(collection, options, addr)
+        }
+        [root, next] if root == "0" && next == "=Artist" => {
+            generate_browse_artists_type_response(collection, options)
+        }
+        [root, next, artist_id] if root == "0" && next == "=Artist" => {
+            generate_browse_an_artist_type_response(collection, artist_id, options)
+        }
         [root, next, artist_id, artist_what]
             if root == "0" && next == "=Artist" && artist_what == "albums" =>
         {
-            match options.browse_flag {
-                BrowseFlag::Metadata => {
-                    generate_browse_an_artist_albums_metadata_response(collection, artist_id)
-                }
-                BrowseFlag::DirectChildren => {
-                    generate_browse_an_artist_albums_response(collection, artist_id, options, addr)
-                }
-            }
+            generate_browse_an_artist_albums_type_response(collection, artist_id, options, addr)
         }
         [root, next, artist_id, artist_what, album_id]
             if root == "0" && next == "=Artist" && artist_what == "albums" =>
         {
-            match options.browse_flag {
-                BrowseFlag::Metadata => generate_browse_an_artist_album_metadata_response(
-                    collection, artist_id, album_id, addr,
-                ),
-                BrowseFlag::DirectChildren => generate_browse_an_artist_album_response(
-                    collection, artist_id, album_id, options, addr,
-                ),
-            }
+            generate_browse_an_artist_album_type_response(
+                collection, artist_id, album_id, options, addr,
+            )
         }
         [root, next, artist_id, artist_what]
             if root == "0" && next == "=Artist" && artist_what == "items" =>
         {
-            match options.browse_flag {
-                BrowseFlag::Metadata => {
-                    generate_browse_an_artist_items_metadata_response(collection, artist_id)
-                }
-                BrowseFlag::DirectChildren => {
-                    generate_browse_an_artist_items_response(collection, artist_id, options, addr)
-                }
-            }
+            generate_browse_an_artist_items_type_response(collection, artist_id, options, addr)
         }
-        [root, next] if root == "0" && next == "=All Artists" => match options.browse_flag {
-            BrowseFlag::Metadata => generate_browse_all_artists_metadata_response(),
-            BrowseFlag::DirectChildren => generate_browse_all_artists_response(collection, options),
-        },
+        [root, next] if root == "0" && next == "=All Artists" => {
+            generate_browse_all_artists_type_response(collection, options)
+        }
         [root, next, artist_id] if root == "0" && next == "=All Artists" => {
-            match options.browse_flag {
-                BrowseFlag::Metadata => {
-                    generate_browse_an_all_artist_metadata_response(collection, artist_id)
-                }
-                BrowseFlag::DirectChildren => {
-                    generate_browse_an_all_artist_response(collection, artist_id, options, addr)
-                }
-            }
+            generate_browse_an_all_artist_type_response(collection, artist_id, options, addr)
         }
         [root, next, artist_id, album_id] if root == "0" && next == "=All Artists" => {
-            match options.browse_flag {
-                BrowseFlag::Metadata => generate_browse_an_all_artist_album_metadata_response(
-                    collection, artist_id, album_id, addr,
-                ),
-                BrowseFlag::DirectChildren => generate_browse_an_all_artist_album_response(
-                    collection, artist_id, album_id, options, addr,
-                ),
-            }
+            generate_browse_an_all_artist_album_type_response(
+                collection, artist_id, album_id, options, addr,
+            )
         }
         object_id => {
             error!("control: unexpected object ID: {object_id:?}");
