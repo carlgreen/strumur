@@ -3042,7 +3042,7 @@ fn handle_device_connection(
         }
     }
 
-    let accept_encoding = match get_accept_encoding(&http_request_headers) {
+    let mut accept_encoding = match get_accept_encoding(&http_request_headers) {
         Ok(accept_encoding) => accept_encoding,
         Err(err) => {
             write_response(
@@ -3074,6 +3074,8 @@ fn handle_device_connection(
         body
     });
 
+    let mut content_type = Some("text/xml; charset=utf-8");
+
     let (content, result) = match &request_line[..] {
         "GET /Device.xml HTTP/1.1" => {
             let content = format!(include_str!("Device.xml"), device_uuid);
@@ -3098,16 +3100,12 @@ fn handle_device_connection(
             return;
         }
         something if something.starts_with("GET /icon-") => {
-            let (content_type, content) = handle_icon(&request_line);
+            let (icon_content_type, content) = handle_icon(&request_line);
 
-            write_response(
-                &[AcceptEncoding::Identity],
-                HTTP_RESPONSE_OK,
-                Some(content_type),
-                content,
-                &mut output_stream,
-            );
-            return;
+            accept_encoding = vec![AcceptEncoding::Identity];
+            content_type = Some(icon_content_type);
+
+            (content.into(), HTTP_RESPONSE_OK)
         }
         _ => {
             warn!("unknown request line: {request_line}");
@@ -3119,7 +3117,7 @@ fn handle_device_connection(
     write_response(
         &accept_encoding,
         result,
-        Some("text/xml; charset=utf-8"),
+        content_type,
         &content,
         &mut output_stream,
     );
