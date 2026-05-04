@@ -2978,6 +2978,25 @@ fn handle_control<'a>(
     )
 }
 
+fn handle_icon<'a>(request_line: &str) -> (&'a str, &'a [u8]) {
+    let icon_size = urlencoding::decode(
+        request_line
+            .strip_prefix("GET /icon-")
+            .unwrap()
+            .strip_suffix(".png HTTP/1.1")
+            .unwrap(),
+    )
+    .unwrap();
+
+    let content = match icon_size.as_ref() {
+        "16" => &include_bytes!("strumur-icon-16.png")[..],
+        _ => panic!("unknown icon size: {icon_size}"),
+    };
+    let content_type = "image/png";
+
+    (content_type, content)
+}
+
 fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
@@ -3077,20 +3096,7 @@ fn handle_device_connection(
             return;
         }
         something if something.starts_with("GET /icon-") => {
-            let icon_size = urlencoding::decode(
-                request_line
-                    .strip_prefix("GET /icon-")
-                    .unwrap()
-                    .strip_suffix(".png HTTP/1.1")
-                    .unwrap(),
-            )
-            .unwrap();
-
-            let content = match icon_size.as_ref() {
-                "16" => &include_bytes!("strumur-icon-16.png")[..],
-                _ => panic!("unknown icon size: {icon_size}"),
-            };
-            let content_type = "image/png";
+            let (content_type, content) = handle_icon(&request_line);
 
             write_response(
                 &[AcceptEncoding::Identity],
