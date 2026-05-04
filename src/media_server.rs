@@ -1342,7 +1342,7 @@ fn generate_browse_an_all_artist_response(
         };
 
         starting_index = starting_index.saturating_sub(sub_total_matches);
-        requested_count = requested_count.saturating_sub(number_returned);
+        requested_count = requested_count.saturating_sub(number_returned.try_into()?);
         total_matches += sub_total_matches;
     }
 
@@ -1356,7 +1356,7 @@ fn generate_browse_an_all_artist_response_album_part(
     addr: &str,
     starting_index: usize,
     requested_count: usize,
-    number_returned: &mut usize,
+    number_returned: &mut u32,
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
@@ -1415,7 +1415,7 @@ fn generate_browse_an_all_artist_response_track_part(
     addr: &str,
     starting_index: usize,
     requested_count: usize,
-    number_returned: &mut usize,
+    number_returned: &mut u32,
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
@@ -1951,7 +1951,7 @@ fn create_album_art_element(addr: &str, cover: &str) -> String {
     format!("<upnp:albumArtURI dlna:profileID=\"JPEG_MED\">{cover}</upnp:albumArtURI>")
 }
 
-fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
+fn format_response(result: &str, number_returned: u32, total_matches: usize) -> String {
     let result = format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
 {result}</DIDL-Lite>"#
@@ -2764,7 +2764,11 @@ fn generate_search_root_response(
         }
     }
 
-    Ok(format_response(&result, number_returned, total_matches))
+    Ok(format_response(
+        &result,
+        number_returned.try_into()?,
+        total_matches,
+    ))
 }
 
 fn generate_search_response(
@@ -3713,7 +3717,7 @@ mod tests {
             + &body
     }
 
-    fn extract_browse_response(body: &str) -> (String, u16, u16, String) {
+    fn extract_browse_response(body: &str) -> (String, u32, u16, String) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -3725,7 +3729,7 @@ mod tests {
             .get_text()
             .unwrap();
 
-        let number_returned: u16 = browse_response
+        let number_returned: u32 = browse_response
             .get_child("NumberReturned")
             .unwrap()
             .get_text()
@@ -5616,7 +5620,7 @@ mod tests {
             + &body
     }
 
-    fn extract_search_response(body: &str) -> (String, u16, u16, String) {
+    fn extract_search_response(body: &str) -> (String, u32, u16, String) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -5628,7 +5632,7 @@ mod tests {
             .get_text()
             .unwrap();
 
-        let number_returned: u16 = search_response
+        let number_returned: u32 = search_response
             .get_child("NumberReturned")
             .unwrap()
             .get_text()
