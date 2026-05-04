@@ -2565,6 +2565,213 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionEr
     Ok(options)
 }
 
+fn generate_search_root_response(
+    collection: &Collection,
+    options: &SearchOptions,
+    sort_criteria: &SortCriteria,
+    class_order: &[&str],
+    addr: &str,
+) -> String {
+    let starting_index = options.starting_index.into();
+    let requested_count: usize = options.requested_count.into();
+    let mut total_matches = 0;
+    let mut number_returned = 0;
+    let mut artist_result = String::new();
+    let mut album_result = String::new();
+    let mut track_result = String::new();
+
+    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
+
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            artists.reverse();
+        }
+    }
+    let artists = artists.iter();
+
+    for artist in artists {
+        let artist_id = artist.id;
+        let include = include_this(
+            &options.search_criteria,
+            &SearchWhat::Artist,
+            None,
+            None,
+            artist,
+        );
+        if include {
+            if total_matches >= starting_index && number_returned < requested_count {
+                let parent_id = "0$=Artist";
+                let item_id = format!("{artist_id}");
+                write_music_artist(
+                    &mut artist_result,
+                    &options.filter,
+                    (parent_id, &item_id),
+                    artist,
+                )
+                .unwrap_or_else(|err| match err {
+                    GenerateResponseError::Format(err) => {
+                        panic!("should be a 500 response: {err}")
+                    }
+                });
+
+                number_returned += 1;
+            }
+            total_matches += 1;
+        }
+
+        let mut albums = artist.get_albums().collect::<Vec<&Album>>();
+
+        // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+        for c in sort_criteria.iter().rev() {
+            let (ascending, field) = match c {
+                Sort::Ascending(field) => (true, field),
+                Sort::Descending(field) => (false, field),
+            };
+            match field.as_str() {
+                "dc:title" => {
+                    albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
+                }
+                "dc:date" => {
+                    albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
+                }
+                other => {
+                    warn!("unsupported sort field: {other}");
+                    continue;
+                }
+            }
+            if !ascending {
+                albums.reverse();
+            }
+        }
+        let albums = albums.iter();
+
+        for album in albums {
+            let album_id = album.id;
+            let include = include_this(
+                &options.search_criteria,
+                &SearchWhat::Album,
+                None,
+                Some(album),
+                artist,
+            );
+            if include {
+                if total_matches >= starting_index && number_returned < requested_count {
+                    let parent_id = "0$albums";
+                    let item_id = format!("*a{album_id}");
+                    write_music_album(
+                        &mut album_result,
+                        &options.filter,
+                        (parent_id, &item_id),
+                        (artist, album),
+                        addr,
+                    )
+                    .unwrap_or_else(|err| match err {
+                        GenerateResponseError::Format(err) => {
+                            panic!("should be a 500 response: {err}")
+                        }
+                    });
+
+                    number_returned += 1;
+                }
+                total_matches += 1;
+            }
+
+            let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
+
+            // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+            for c in sort_criteria.iter().rev() {
+                let (ascending, field) = match c {
+                    Sort::Ascending(field) => (true, field),
+                    Sort::Descending(field) => (false, field),
+                };
+                match field.as_str() {
+                    "upnp:originalTrackNumber" => {
+                        tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
+                    }
+                    "dc:title" => {
+                        tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
+                    }
+                    other => {
+                        warn!("unsupported sort field: {other}");
+                        continue;
+                    }
+                }
+                if !ascending {
+                    tracks.reverse();
+                }
+            }
+            let tracks = tracks.iter();
+
+            for track in tracks {
+                let include = include_this(
+                    &options.search_criteria,
+                    &SearchWhat::Track,
+                    Some(track),
+                    Some(album),
+                    artist,
+                );
+                if include {
+                    if total_matches >= starting_index && number_returned < requested_count {
+                        let track_id = track.id;
+                        let parent_id = format!("0$albums$*a{album_id}");
+                        let item_id = format!("*i{track_id}");
+                        write_music_track(
+                            &mut track_result,
+                            &options.filter,
+                            (&parent_id, &item_id),
+                            (artist, album, track),
+                            addr,
+                        )
+                        .unwrap_or_else(|err| match err {
+                            GenerateResponseError::Format(err) => {
+                                panic!("should be a 500 response: {err}")
+                            }
+                        });
+
+                        number_returned += 1;
+                    }
+                    total_matches += 1;
+                }
+            }
+        }
+    }
+
+    let mut result = String::new();
+
+    for class in class_order {
+        match *class {
+            "object.container.person.musicArtist" => {
+                write!(result, "{artist_result}").expect("could not write to string");
+            }
+            "object.container.album.musicAlbum" => {
+                write!(result, "{album_result}").expect("could not write to string");
+            }
+            "object.item.audioItem.musicTrack" => {
+                write!(result, "{track_result}").expect("could not write to string");
+            }
+            _ => {
+                error!("unsupported class ordering: {class}");
+            }
+        }
+    }
+
+    format_response(&result, number_returned, total_matches)
+}
+
 fn generate_search_response(
     collection: &Collection,
     options: &SearchOptions,
@@ -2617,207 +2824,13 @@ fn generate_search_response(
 
     // TODO starting_index/requested_count don't work well with sorting
     let search_response = match options.container_id.as_slice() {
-        [root] if root == "0" => {
-            let starting_index = options.starting_index.into();
-            let requested_count: usize = options.requested_count.into();
-            let mut total_matches = 0;
-            let mut number_returned = 0;
-            let mut artist_result = String::new();
-            let mut album_result = String::new();
-            let mut track_result = String::new();
-
-            let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
-
-            // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-            for c in sort_criteria.iter().rev() {
-                let (ascending, field) = match c {
-                    Sort::Ascending(field) => (true, field),
-                    Sort::Descending(field) => (false, field),
-                };
-                match field.as_str() {
-                    "dc:title" => {
-                        artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
-                    }
-                    other => {
-                        warn!("unsupported sort field: {other}");
-                        continue;
-                    }
-                }
-                if !ascending {
-                    artists.reverse();
-                }
-            }
-            let artists = artists.iter();
-
-            for artist in artists {
-                let artist_id = artist.id;
-                let include = include_this(
-                    &options.search_criteria,
-                    &SearchWhat::Artist,
-                    None,
-                    None,
-                    artist,
-                );
-                if include {
-                    if total_matches >= starting_index && number_returned < requested_count {
-                        let parent_id = "0$=Artist";
-                        let item_id = format!("{artist_id}");
-                        write_music_artist(
-                            &mut artist_result,
-                            &options.filter,
-                            (parent_id, &item_id),
-                            artist,
-                        )
-                        .unwrap_or_else(|err| match err {
-                            GenerateResponseError::Format(err) => {
-                                panic!("should be a 500 response: {err}")
-                            }
-                        });
-
-                        number_returned += 1;
-                    }
-                    total_matches += 1;
-                }
-
-                let mut albums = artist.get_albums().collect::<Vec<&Album>>();
-
-                // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-                for c in sort_criteria.iter().rev() {
-                    let (ascending, field) = match c {
-                        Sort::Ascending(field) => (true, field),
-                        Sort::Descending(field) => (false, field),
-                    };
-                    match field.as_str() {
-                        "dc:title" => {
-                            albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
-                        }
-                        "dc:date" => {
-                            albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
-                        }
-                        other => {
-                            warn!("unsupported sort field: {other}");
-                            continue;
-                        }
-                    }
-                    if !ascending {
-                        albums.reverse();
-                    }
-                }
-                let albums = albums.iter();
-
-                for album in albums {
-                    let album_id = album.id;
-                    let include = include_this(
-                        &options.search_criteria,
-                        &SearchWhat::Album,
-                        None,
-                        Some(album),
-                        artist,
-                    );
-                    if include {
-                        if total_matches >= starting_index && number_returned < requested_count {
-                            let parent_id = "0$albums";
-                            let item_id = format!("*a{album_id}");
-                            write_music_album(
-                                &mut album_result,
-                                &options.filter,
-                                (parent_id, &item_id),
-                                (artist, album),
-                                addr,
-                            )
-                            .unwrap_or_else(|err| match err {
-                                GenerateResponseError::Format(err) => {
-                                    panic!("should be a 500 response: {err}")
-                                }
-                            });
-
-                            number_returned += 1;
-                        }
-                        total_matches += 1;
-                    }
-
-                    let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
-
-                    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-                    for c in sort_criteria.iter().rev() {
-                        let (ascending, field) = match c {
-                            Sort::Ascending(field) => (true, field),
-                            Sort::Descending(field) => (false, field),
-                        };
-                        match field.as_str() {
-                            "upnp:originalTrackNumber" => {
-                                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
-                            }
-                            "dc:title" => {
-                                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
-                            }
-                            other => {
-                                warn!("unsupported sort field: {other}");
-                                continue;
-                            }
-                        }
-                        if !ascending {
-                            tracks.reverse();
-                        }
-                    }
-                    let tracks = tracks.iter();
-
-                    for track in tracks {
-                        let include = include_this(
-                            &options.search_criteria,
-                            &SearchWhat::Track,
-                            Some(track),
-                            Some(album),
-                            artist,
-                        );
-                        if include {
-                            if total_matches >= starting_index && number_returned < requested_count
-                            {
-                                let track_id = track.id;
-                                let parent_id = format!("0$albums$*a{album_id}");
-                                let item_id = format!("*i{track_id}");
-                                write_music_track(
-                                    &mut track_result,
-                                    &options.filter,
-                                    (&parent_id, &item_id),
-                                    (artist, album, track),
-                                    addr,
-                                )
-                                .unwrap_or_else(|err| match err {
-                                    GenerateResponseError::Format(err) => {
-                                        panic!("should be a 500 response: {err}")
-                                    }
-                                });
-
-                                number_returned += 1;
-                            }
-                            total_matches += 1;
-                        }
-                    }
-                }
-            }
-
-            let mut result = String::new();
-
-            for class in class_order {
-                match class {
-                    "object.container.person.musicArtist" => {
-                        write!(result, "{artist_result}").expect("could not write to string");
-                    }
-                    "object.container.album.musicAlbum" => {
-                        write!(result, "{album_result}").expect("could not write to string");
-                    }
-                    "object.item.audioItem.musicTrack" => {
-                        write!(result, "{track_result}").expect("could not write to string");
-                    }
-                    _ => {
-                        error!("unsupported class ordering: {class}");
-                    }
-                }
-            }
-
-            Some(format_response(&result, number_returned, total_matches))
-        }
+        [root] if root == "0" => Some(generate_search_root_response(
+            collection,
+            options,
+            &sort_criteria,
+            &class_order,
+            addr,
+        )),
         container_id => {
             error!("control: unexpected container ID: {container_id:?}");
             None
