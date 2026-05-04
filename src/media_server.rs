@@ -3684,8 +3684,8 @@ mod tests {
 
     fn generate_browse_request(
         object_id: &str,
-        starting_index: u16,
-        requested_count: u16,
+        starting_index: u32,
+        requested_count: u32,
     ) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
@@ -5583,8 +5583,8 @@ mod tests {
 
     fn generate_search_request(
         search_str: &str,
-        starting_index: u16,
-        requested_count: u16,
+        starting_index: u32,
+        requested_count: u32,
     ) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Search""#;
