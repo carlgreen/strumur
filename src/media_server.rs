@@ -3098,8 +3098,12 @@ fn handle_device_connection(
             (Some(XML_CONTENT_TYPE), content.into(), status)
         }
         something if something.starts_with("GET /Content/") => {
-            content_handler(something, collection, output_stream);
-            return;
+            let (content_accept_encoding, content_type, content, status) =
+                content_handler(something, collection);
+
+            accept_encoding = content_accept_encoding;
+
+            (content_type, content, status)
         }
         something if something.starts_with("GET /icon-") => {
             let (icon_content_type, content) = handle_icon(&request_line);
@@ -3266,11 +3270,10 @@ fn write_response(
     }
 }
 
-fn content_handler(
+fn content_handler<'a>(
     request_line: &str,
     collection: &Collection,
-    mut output_stream: impl std::io::Write,
-) {
+) -> (Vec<AcceptEncoding>, Option<&'a str>, Vec<u8>, &'a str) {
     let request_path = urlencoding::decode(
         request_line
             .strip_prefix("GET /Content/")
@@ -3292,30 +3295,28 @@ fn content_handler(
         let content = match fs::read(&file) {
             Ok(content) => content,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                write_response(&[], "404 NOT FOUND", None, &[], &mut output_stream);
-                return;
+                return (Vec::new(), None, Vec::new(), "404 NOT FOUND");
             }
             Err(err) => {
                 panic!("could not read {}: {err}", file.display());
             }
         };
 
-        write_response(
-            &[AcceptEncoding::Identity],
-            HTTP_RESPONSE_OK,
+        (
+            vec![AcceptEncoding::Identity],
             Some(content_type),
-            &content,
-            &mut output_stream,
-        );
+            content,
+            HTTP_RESPONSE_OK,
+        )
     } else {
         let content = format!("unsupported /Content request for {request_path}");
-        write_response(
-            &[],
-            "501 NOT IMPLEMENTED",
+
+        (
+            Vec::new(),
             Some(TEXT_CONTENT_TYPE),
-            content.as_bytes(),
-            &mut output_stream,
-        );
+            content.into(),
+            "501 NOT IMPLEMENTED",
+        )
     }
 }
 
