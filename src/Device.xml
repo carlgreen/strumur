@@ -8,6 +8,7 @@
         <deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType>
         <UDN>uuid:{}</UDN>
         <friendlyName>strumur</friendlyName>
+        <manufacturer>strumur</manufacturer>
         <manufacturerURL>https://github.com/carlgreen/strumur/</manufacturerURL>
         <modelDescription>Strumur media server</modelDescription>
         <modelName>Strumur</modelName>
