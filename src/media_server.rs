@@ -5226,56 +5226,9 @@ mod tests {
             &mut cursor,
         );
 
-        let mut line = Vec::new();
-        cursor.set_position(0);
-        let mut prev = None;
-        loop {
-            let mut buf = [0u8; 1];
-            cursor.read_exact(&mut buf).unwrap();
-            if prev == Some(b'\r') && buf[0] == b'\n' {
-                line.pop().unwrap(); // get rid of the \r
-                break;
-            }
-            line.push(buf[0]);
-            prev = Some(buf[0]);
-        }
+        let (status, _, body) = read_status_headers_and_body(cursor);
 
-        assert_eq!(
-            String::from_utf8(line).unwrap(),
-            "HTTP/1.1 200 OK".to_string()
-        );
-
-        loop {
-            let mut line = Vec::new();
-            let mut prev = None;
-            loop {
-                let mut buf = [0u8; 1];
-                cursor.read_exact(&mut buf).unwrap();
-                if prev == Some(b'\r') && buf[0] == b'\n' {
-                    line.pop().unwrap(); // get rid of the \r
-                    break;
-                }
-                line.push(buf[0]);
-                prev = Some(buf[0]);
-            }
-            if line.is_empty() {
-                break;
-            }
-            // TODO check/use String::from_utf8(line).unwrap() ?
-        }
-
-        let mut body = Vec::new();
-        cursor.read_to_end(&mut body).unwrap();
-
-        // for now, can just check against the only image being returned
-
-        // let mut decoder = Decoder::new(&body[..]);
-        // let result = decoder.decode();
-        // assert!(
-        //     result.is_ok(),
-        //     "failed to decode image: {}",
-        //     result.err().unwrap()
-        // );
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let want = include_bytes!("cover.jpg");
         assert_eq!(body.as_slice(), want);
@@ -5298,46 +5251,9 @@ mod tests {
             &mut cursor,
         );
 
-        let mut line = Vec::new();
-        cursor.set_position(0);
-        let mut prev = None;
-        loop {
-            let mut buf = [0u8; 1];
-            cursor.read_exact(&mut buf).unwrap();
-            if prev == Some(b'\r') && buf[0] == b'\n' {
-                line.pop().unwrap(); // get rid of the \r
-                break;
-            }
-            line.push(buf[0]);
-            prev = Some(buf[0]);
-        }
+        let (status, _, body) = read_status_headers_and_body(cursor);
 
-        assert_eq!(
-            String::from_utf8(line).unwrap(),
-            "HTTP/1.1 200 OK".to_string()
-        );
-
-        loop {
-            let mut line = Vec::new();
-            let mut prev = None;
-            loop {
-                let mut buf = [0u8; 1];
-                cursor.read_exact(&mut buf).unwrap();
-                if prev == Some(b'\r') && buf[0] == b'\n' {
-                    line.pop().unwrap(); // get rid of the \r
-                    break;
-                }
-                line.push(buf[0]);
-                prev = Some(buf[0]);
-            }
-            if line.is_empty() {
-                break;
-            }
-            // TODO check/use String::from_utf8(line).unwrap() ?
-        }
-
-        let mut body = Vec::new();
-        cursor.read_to_end(&mut body).unwrap();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         // for now, can just check against the only song being returned
         let want = include_bytes!("riff.flac");
