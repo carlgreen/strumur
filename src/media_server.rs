@@ -2346,7 +2346,7 @@ struct SearchOptionsBuilder {
     search_criteria: Option<SearchCrit>,
     filter: Option<Filter>,
     starting_index: Option<u32>,
-    requested_count: Option<u16>,
+    requested_count: Option<u32>,
     sort_criteria: Option<SortCriteria>,
 }
 
@@ -2391,7 +2391,7 @@ impl SearchOptionsBuilder {
         self
     }
 
-    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+    const fn requested_count(&mut self, requested_count: u32) -> &Self {
         self.requested_count = Some(requested_count);
         self
     }
@@ -2439,7 +2439,7 @@ struct SearchOptions {
     search_criteria: SearchCrit,
     filter: Filter,
     starting_index: u32,
-    requested_count: u16,
+    requested_count: u32,
     sort_criteria: SortCriteria,
 }
 
@@ -2583,7 +2583,7 @@ fn generate_search_root_response(
     addr: &str,
 ) -> Result<String, UPNPError> {
     let starting_index = options.starting_index.try_into()?;
-    let requested_count: usize = options.requested_count.into();
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut total_matches = 0;
     let mut number_returned = 0;
     let mut artist_result = String::new();
