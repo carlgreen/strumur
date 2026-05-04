@@ -2937,6 +2937,47 @@ fn include_by_search_exp(
     }
 }
 
+fn handle_control<'a>(
+    addr: &str,
+    collection: &Collection,
+    http_request_headers: &HashMap<String, String>,
+    body: Option<String>,
+) -> (String, &'a str) {
+    let soap_action_key = http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("Soapaction"))
+        .expect("no soap action");
+    http_request_headers.get(soap_action_key).map_or_else(
+        || {
+            // this must be unreachable? should return the nice error above instead of expect, and use expect here
+            warn!("control: no soap action");
+            (String::new(), "400 BAD REQUEST")
+        },
+        |soap_action| {
+            let soap_action = if soap_action.starts_with('"') && soap_action.ends_with('"') {
+                soap_action.trim_matches('"')
+            } else {
+                warn!("expected soap action to be enclosed in '\"': {soap_action}");
+                // not just an invalid action, something worse?
+                return soap_upnp_error(401, "Invalid Action");
+            };
+            let Some((service, action)) = soap_action.split_once('#') else {
+                warn!("received soap action without '#': {soap_action}");
+                // not just an invalid action, something worse?
+                return soap_upnp_error(401, "Invalid Action");
+            };
+
+            if service == CONTENT_DIRECTORY_SERVICE_TYPE {
+                handle_content_directory_actions(action, addr, collection, body)
+            } else {
+                // TODO here, handle ConnectionManager, etc.
+                info!("we got {service}, we got {action}");
+                soap_upnp_error(401, "Invalid Service")
+            }
+        },
+    )
+}
+
 fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
@@ -3029,40 +3070,7 @@ fn handle_device_connection(
             (content.to_string(), HTTP_RESPONSE_OK)
         }
         "POST /ContentDirectory/Control HTTP/1.1" => {
-            let soap_action_key = http_request_headers
-                .keys()
-                .find(|k| k.eq_ignore_ascii_case("Soapaction"))
-                .expect("no soap action");
-            http_request_headers.get(soap_action_key).map_or_else(
-                || {
-                    // this must be unreachable? should return the nice error above instead of expect, and use expect here
-                    warn!("control: no soap action");
-                    (String::new(), "400 BAD REQUEST")
-                },
-                |soap_action| {
-                    let soap_action = if soap_action.starts_with('"') && soap_action.ends_with('"')
-                    {
-                        soap_action.trim_matches('"')
-                    } else {
-                        warn!("expected soap action to be enclosed in '\"': {soap_action}");
-                        // not just an invalid action, something worse?
-                        return soap_upnp_error(401, "Invalid Action");
-                    };
-                    let Some((service, action)) = soap_action.split_once('#') else {
-                        warn!("received soap action without '#': {soap_action}");
-                        // not just an invalid action, something worse?
-                        return soap_upnp_error(401, "Invalid Action");
-                    };
-
-                    if service == CONTENT_DIRECTORY_SERVICE_TYPE {
-                        handle_content_directory_actions(action, addr, collection, body)
-                    } else {
-                        // TODO here, handle ConnectionManager, etc.
-                        info!("we got {service}, we got {action}");
-                        soap_upnp_error(401, "Invalid Service")
-                    }
-                },
-            )
+            handle_control(addr, collection, &http_request_headers, body)
         }
         something if something.starts_with("GET /Content/") => {
             content_handler(something, collection, output_stream);
