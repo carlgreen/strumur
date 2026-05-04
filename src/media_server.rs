@@ -3078,7 +3078,7 @@ fn handle_device_connection(
         "GET /Device.xml HTTP/1.1" => {
             let content = format!(include_str!("Device.xml"), device_uuid);
 
-            (content, HTTP_RESPONSE_OK)
+            (content.into(), HTTP_RESPONSE_OK)
         }
         "GET /ConnectionManager.xml HTTP/1.1" => {
             unimplemented!("GET /ConnectionManager.xml not implemented");
@@ -3086,10 +3086,12 @@ fn handle_device_connection(
         "GET /ContentDirectory.xml HTTP/1.1" => {
             let content = include_str!("ContentDirectory.xml");
 
-            (content.to_string(), HTTP_RESPONSE_OK)
+            (content.into(), HTTP_RESPONSE_OK)
         }
         "POST /ContentDirectory/Control HTTP/1.1" => {
-            handle_control(addr, collection, &http_request_headers, body)
+            let (content, status) = handle_control(addr, collection, &http_request_headers, body);
+
+            (content.into(), status)
         }
         something if something.starts_with("GET /Content/") => {
             content_handler(something, collection, output_stream);
@@ -3110,7 +3112,7 @@ fn handle_device_connection(
         _ => {
             warn!("unknown request line: {request_line}");
 
-            (String::new(), "404 NOT FOUND")
+            (Vec::new(), "404 NOT FOUND")
         }
     };
 
@@ -3118,7 +3120,7 @@ fn handle_device_connection(
         &accept_encoding,
         result,
         Some("text/xml; charset=utf-8"),
-        content.as_bytes(),
+        &content,
         &mut output_stream,
     );
 }
