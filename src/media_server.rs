@@ -9,6 +9,7 @@ use std::io::ErrorKind;
 use std::io::Read;
 use std::net::SocketAddrV4;
 use std::net::TcpListener;
+use std::num::TryFromIntError;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -333,7 +334,7 @@ struct BrowseOptionsBuilder {
     object_id: Option<Vec<String>>,
     browse_flag: Option<BrowseFlag>,
     filter: Option<Filter>,
-    starting_index: Option<u16>,
+    starting_index: Option<u32>,
     requested_count: Option<u16>,
     sort_criteria: Option<SortCriteria>,
 }
@@ -373,7 +374,7 @@ impl BrowseOptionsBuilder {
         self
     }
 
-    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+    const fn starting_index(&mut self, starting_index: u32) -> &Self {
         self.starting_index = Some(starting_index);
         self
     }
@@ -425,7 +426,7 @@ struct BrowseOptions {
     object_id: Vec<String>,
     browse_flag: BrowseFlag,
     filter: Filter,
-    starting_index: u16,
+    starting_index: u32,
     requested_count: u16,
     sort_criteria: SortCriteria,
 }
@@ -673,6 +674,7 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
 #[derive(Debug)]
 enum UPNPError {
     NoSuchObject,
+    #[allow(unused)]
     GenerateResponseError(GenerateResponseError),
 }
 
@@ -688,6 +690,12 @@ impl UPNPError {
 impl From<GenerateResponseError> for UPNPError {
     fn from(value: GenerateResponseError) -> Self {
         Self::GenerateResponseError(value)
+    }
+}
+
+impl From<TryFromIntError> for UPNPError {
+    fn from(value: TryFromIntError) -> Self {
+        Self::GenerateResponseError(GenerateResponseError::Number(value))
     }
 }
 
@@ -771,7 +779,7 @@ fn generate_browse_albums_response(
     let albums = albums.iter();
 
     let total_matches = collection.get_albums().count();
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -835,7 +843,7 @@ fn generate_browse_an_album_response(
     let tracks = tracks.iter();
 
     let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -907,7 +915,7 @@ fn generate_browse_items_response(
     let tracks = tracks.iter();
 
     let total_matches = collection.get_tracks().count();
-    let starting_index: usize = options.starting_index.into();
+    let starting_index: usize = options.starting_index.try_into()?;
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -960,7 +968,7 @@ fn generate_browse_artists_response(
     let artists = artists.iter();
 
     let total_matches = artists.len();
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -980,7 +988,7 @@ fn generate_browse_an_artist_response(
     options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
     let things = ["albums", "items"];
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let total_matches = things.len();
     let artist = collection
@@ -1065,7 +1073,7 @@ fn generate_browse_an_artist_albums_response(
     let albums = albums.iter();
 
     let total_matches = albums.len();
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let artist_id = artist.id;
@@ -1134,7 +1142,7 @@ fn generate_browse_an_artist_album_response(
     let tracks = tracks.iter();
 
     let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -1165,7 +1173,7 @@ fn generate_browse_an_artist_items_response(
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
     let total_matches = artist.get_tracks().count();
-    let starting_index: usize = options.starting_index.into();
+    let starting_index: usize = options.starting_index.try_into()?;
     let requested_count: usize = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -1224,7 +1232,7 @@ fn generate_browse_all_artists_response(
     let artists = artists.iter();
 
     let total_matches = artists.len();
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -1249,7 +1257,7 @@ fn generate_browse_an_all_artist_response(
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let mut starting_index = options.starting_index.into();
+    let mut starting_index = options.starting_index.try_into()?;
     let mut requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -1515,7 +1523,7 @@ fn generate_browse_an_all_artist_album_response(
     let tracks = tracks.iter();
 
     let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count = options.requested_count.into();
     let mut number_returned = 0;
     let mut result = String::new();
@@ -1538,12 +1546,14 @@ fn generate_browse_an_all_artist_album_response(
 #[derive(Debug)]
 enum GenerateResponseError {
     Format(std::fmt::Error),
+    Number(std::num::TryFromIntError),
 }
 
 impl std::fmt::Display for GenerateResponseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Format(err) => write!(f, "could not write XML: {err}"),
+            Self::Number(err) => write!(f, "could not convert number: {err}"),
         }
     }
 }
@@ -2335,7 +2345,7 @@ struct SearchOptionsBuilder {
     container_id: Option<Vec<String>>,
     search_criteria: Option<SearchCrit>,
     filter: Option<Filter>,
-    starting_index: Option<u16>,
+    starting_index: Option<u32>,
     requested_count: Option<u16>,
     sort_criteria: Option<SortCriteria>,
 }
@@ -2376,7 +2386,7 @@ impl SearchOptionsBuilder {
         self
     }
 
-    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+    const fn starting_index(&mut self, starting_index: u32) -> &Self {
         self.starting_index = Some(starting_index);
         self
     }
@@ -2428,7 +2438,7 @@ struct SearchOptions {
     container_id: Vec<String>,
     search_criteria: SearchCrit,
     filter: Filter,
-    starting_index: u16,
+    starting_index: u32,
     requested_count: u16,
     sort_criteria: SortCriteria,
 }
@@ -2572,7 +2582,7 @@ fn generate_search_root_response(
     class_order: &[&str],
     addr: &str,
 ) -> Result<String, UPNPError> {
-    let starting_index = options.starting_index.into();
+    let starting_index = options.starting_index.try_into()?;
     let requested_count: usize = options.requested_count.into();
     let mut total_matches = 0;
     let mut number_returned = 0;
