@@ -3512,12 +3512,12 @@ mod tests {
             + body
     }
 
-    fn extract_get_system_update_id_response(body: &str) -> u16 {
+    fn extract_get_system_update_id_response(body: &str) -> u32 {
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let get_system_update_id_response = body.get_child("GetSystemUpdateIDResponse").unwrap();
 
-        let id: u16 = get_system_update_id_response
+        let id: u32 = get_system_update_id_response
             .get_child("Id")
             .unwrap()
             .get_text()
