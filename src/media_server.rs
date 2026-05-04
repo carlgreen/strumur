@@ -2824,7 +2824,7 @@ fn generate_search_response(
 
     // TODO starting_index/requested_count don't work well with sorting
     let search_response = match options.container_id.as_slice() {
-        [root] if root == "0" => Some(generate_search_root_response(
+        [root] if root == "0" => Ok(generate_search_root_response(
             collection,
             options,
             &sort_criteria,
@@ -2833,20 +2833,23 @@ fn generate_search_response(
         )),
         container_id => {
             error!("control: unexpected container ID: {container_id:?}");
-            None
+            Err(UPNPError::NoSuchObject)
         }
     };
-    search_response.map_or_else(
-        || (String::new(), "400 BAD REQUEST"),
-        |search_response| {
+    match search_response {
+        Ok(search_response) => {
             let body = format!(
                 r#"
         <u:SearchResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{search_response}
         </u:SearchResponse>"#
             );
             (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
-        },
-    )
+        }
+        Err(e) => {
+            let (code, description) = e.describe();
+            soap_upnp_error(code, description)
+        }
+    }
 }
 
 enum SearchWhat {
