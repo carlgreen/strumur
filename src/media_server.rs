@@ -544,6 +544,194 @@ impl TryFrom<String> for Sort {
     }
 }
 
+fn sort_artists<'a>(mut artists: Vec<&'a Artist>, sort_criteria: &[Sort]) -> Vec<&'a Artist> {
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            artists.reverse();
+        }
+    }
+
+    artists
+}
+
+fn sort_albums_with_artists<'a>(
+    mut albums: Vec<(&'a Artist, &'a Album)>,
+    sort_criteria: &[Sort],
+) -> Vec<(&'a Artist, &'a Album)> {
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                albums.sort_by(|(_, album1), (_, album2)| Album::title_sort(album1, album2));
+            }
+            "upnp:artist" => {
+                albums.sort_by(|(artist1, _), (artist2, _)| Artist::name_sort(artist1, artist2));
+            }
+            "dc:date" => {
+                albums.sort_by(|(_, album1), (_, album2)| Album::date_sort(album1, album2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            albums.reverse();
+        }
+    }
+
+    albums
+}
+
+fn sort_albums<'a>(mut albums: Vec<&'a Album>, sort_criteria: &[Sort]) -> Vec<&'a Album> {
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
+            }
+            "dc:date" => {
+                albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            albums.reverse();
+        }
+    }
+
+    albums
+}
+
+fn sort_tracks_with_artists_and_albums<'a>(
+    mut tracks: Vec<(&'a Artist, &'a Album, &'a Track)>,
+    sort_criteria: &[Sort],
+) -> Vec<(&'a Artist, &'a Album, &'a Track)> {
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "upnp:artist" => {
+                tracks.sort_by(|(artist1, _, _), (artist2, _, _)| {
+                    Artist::name_sort(artist1, artist2)
+                });
+            }
+            "upnp:album" => {
+                tracks.sort_by(|(_, album1, _), (_, album2, _)| Album::title_sort(album1, album2));
+            }
+            "dc:date" => {
+                tracks.sort_by(|(_, album1, _), (_, album2, _)| Album::date_sort(album1, album2));
+            }
+            "upnp:originalTrackNumber" => {
+                tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::number_sort(track1, track2));
+            }
+            "dc:title" => {
+                tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::title_sort(track1, track2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            tracks.reverse();
+        }
+    }
+
+    tracks
+}
+
+fn sort_tracks_with_albums<'a>(
+    mut tracks: Vec<(&'a Album, &'a Track)>,
+    sort_criteria: &[Sort],
+) -> Vec<(&'a Album, &'a Track)> {
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "upnp:album" => {
+                tracks.sort_by(|(album1, _), (album2, _)| Album::title_sort(album1, album2));
+            }
+            "dc:date" => {
+                tracks.sort_by(|(album1, _), (album2, _)| Album::date_sort(album1, album2));
+            }
+            "upnp:originalTrackNumber" => {
+                tracks.sort_by(|(_, track1), (_, track2)| Track::number_sort(track1, track2));
+            }
+            "dc:title" => {
+                tracks.sort_by(|(_, track1), (_, track2)| Track::title_sort(track1, track2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            tracks.reverse();
+        }
+    }
+
+    tracks
+}
+
+fn sort_tracks<'a>(mut tracks: Vec<&'a Track>, sort_criteria: &[Sort]) -> Vec<&'a Track> {
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "upnp:originalTrackNumber" => {
+                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
+            }
+            "dc:title" => {
+                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            tracks.reverse();
+        }
+    }
+
+    tracks
+}
+
 #[derive(Debug)]
 enum BrowseOptionsFields {
     ObjectID,
@@ -748,38 +936,14 @@ fn generate_browse_albums_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> Result<String, UPNPError> {
-    let mut albums = collection.get_albums().collect::<Vec<(&Artist, &Album)>>();
+    let albums = collection.get_albums().collect::<Vec<(&Artist, &Album)>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
         sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "dc:title" => {
-                albums.sort_by(|(_, album1), (_, album2)| Album::title_sort(album1, album2));
-            }
-            "upnp:artist" => {
-                albums.sort_by(|(artist1, _), (artist2, _)| Artist::name_sort(artist1, artist2));
-            }
-            "dc:date" => {
-                albums.sort_by(|(_, album1), (_, album2)| Album::date_sort(album1, album2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            albums.reverse();
-        }
-    }
+    let albums = sort_albums_with_artists(albums, &sort_criteria);
     let albums = albums.iter();
 
     let total_matches = collection.get_albums().count().try_into()?;
@@ -815,35 +979,14 @@ fn generate_browse_an_album_response(
         .find(|(_, album)| format!("*a{}", album.id) == album_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
+    let tracks = album.get_tracks().collect::<Vec<&Track>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
         sort_criteria.push(Sort::Ascending("upnp:originalTrackNumber".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "upnp:originalTrackNumber" => {
-                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
-            }
-            "dc:title" => {
-                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            tracks.reverse();
-        }
-    }
+    let tracks = sort_tracks(tracks, &sort_criteria);
     let tracks = tracks.iter();
 
     let total_matches = tracks.len().try_into()?;
@@ -872,7 +1015,7 @@ fn generate_browse_items_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> Result<String, UPNPError> {
-    let mut tracks = collection
+    let tracks = collection
         .get_tracks()
         .collect::<Vec<(&Artist, &Album, &Track)>>();
     let mut sort_criteria = options.sort_criteria.clone();
@@ -883,39 +1026,7 @@ fn generate_browse_items_response(
         sort_criteria.push(Sort::Ascending("upnp:originalTrackNumber".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "upnp:artist" => {
-                tracks.sort_by(|(artist1, _, _), (artist2, _, _)| {
-                    Artist::name_sort(artist1, artist2)
-                });
-            }
-            "upnp:album" => {
-                tracks.sort_by(|(_, album1, _), (_, album2, _)| Album::title_sort(album1, album2));
-            }
-            "dc:date" => {
-                tracks.sort_by(|(_, album1, _), (_, album2, _)| Album::date_sort(album1, album2));
-            }
-            "upnp:originalTrackNumber" => {
-                tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::number_sort(track1, track2));
-            }
-            "dc:title" => {
-                tracks.sort_by(|(_, _, track1), (_, _, track2)| Track::title_sort(track1, track2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            tracks.reverse();
-        }
-    }
+    let tracks = sort_tracks_with_artists_and_albums(tracks, &sort_criteria);
     let tracks = tracks.iter();
 
     let total_matches = collection.get_tracks().count().try_into()?;
@@ -943,32 +1054,14 @@ fn generate_browse_artists_response(
     collection: &Collection,
     options: &BrowseOptions,
 ) -> Result<String, UPNPError> {
-    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
+    let artists = collection.get_artists().collect::<Vec<&Artist>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
         sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "dc:title" => {
-                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            artists.reverse();
-        }
-    }
+    let artists = sort_artists(artists, &sort_criteria);
     let artists = artists.iter();
 
     let total_matches = artists.len().try_into()?;
@@ -1044,7 +1137,7 @@ fn generate_browse_an_artist_albums_response(
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let mut albums = artist.get_albums().collect::<Vec<&Album>>();
+    let albums = artist.get_albums().collect::<Vec<&Album>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
@@ -1052,28 +1145,7 @@ fn generate_browse_an_artist_albums_response(
         sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "dc:title" => {
-                albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
-            }
-            "dc:date" => {
-                albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            albums.reverse();
-        }
-    }
+    let albums = sort_albums(albums, &sort_criteria);
     let albums = albums.iter();
 
     let total_matches = albums.len().try_into()?;
@@ -1114,35 +1186,14 @@ fn generate_browse_an_artist_album_response(
         .find(|a| a.id.to_string() == album_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
+    let tracks = album.get_tracks().collect::<Vec<&Track>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
         sort_criteria.push(Sort::Ascending("upnp:originalTrackNumber".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "upnp:originalTrackNumber" => {
-                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
-            }
-            "dc:title" => {
-                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            tracks.reverse();
-        }
-    }
+    let tracks = sort_tracks(tracks, &sort_criteria);
     let tracks = tracks.iter();
 
     let total_matches = tracks.len().try_into()?;
@@ -1207,32 +1258,14 @@ fn generate_browse_all_artists_response(
     collection: &Collection,
     options: &BrowseOptions,
 ) -> Result<String, UPNPError> {
-    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
+    let artists = collection.get_artists().collect::<Vec<&Artist>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
         sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "dc:title" => {
-                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            artists.reverse();
-        }
-    }
+    let artists = sort_artists(artists, &sort_criteria);
     let artists = artists.iter();
 
     let total_matches = artists.len().try_into()?;
@@ -1368,35 +1401,14 @@ fn generate_browse_an_all_artist_response_album_part(
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
-    let mut albums = artist.get_albums().collect::<Vec<&Album>>();
+    let albums = artist.get_albums().collect::<Vec<&Album>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
         sort_criteria.push(Sort::Ascending("dc:title".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "dc:title" => {
-                albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
-            }
-            "dc:date" => {
-                albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            albums.reverse();
-        }
-    }
+    let albums = sort_albums(albums, &sort_criteria);
     let albums = albums.iter();
 
     for album in albums.skip(starting_index).take(requested_count) {
@@ -1427,7 +1439,7 @@ fn generate_browse_an_all_artist_response_track_part(
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
-    let mut tracks = artist.get_tracks().collect::<Vec<(&Album, &Track)>>();
+    let tracks = artist.get_tracks().collect::<Vec<(&Album, &Track)>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
@@ -1435,34 +1447,7 @@ fn generate_browse_an_all_artist_response_track_part(
         sort_criteria.push(Sort::Ascending("upnp:originalTrackNumber".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "upnp:album" => {
-                tracks.sort_by(|(album1, _), (album2, _)| Album::title_sort(album1, album2));
-            }
-            "dc:date" => {
-                tracks.sort_by(|(album1, _), (album2, _)| Album::date_sort(album1, album2));
-            }
-            "upnp:originalTrackNumber" => {
-                tracks.sort_by(|(_, track1), (_, track2)| Track::number_sort(track1, track2));
-            }
-            "dc:title" => {
-                tracks.sort_by(|(_, track1), (_, track2)| Track::title_sort(track1, track2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            tracks.reverse();
-        }
-    }
+    let tracks = sort_tracks_with_albums(tracks, &sort_criteria);
     let tracks = tracks.iter();
 
     for (album, track) in tracks.skip(starting_index).take(requested_count) {
@@ -1499,35 +1484,14 @@ fn generate_browse_an_all_artist_album_response(
         .find(|a| format!("*a{}", a.id) == album_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
+    let tracks = album.get_tracks().collect::<Vec<&Track>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
         // this is what i have decided should be the default, so make it so:
         sort_criteria.push(Sort::Ascending("upnp:originalTrackNumber".into()));
     }
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "upnp:originalTrackNumber" => {
-                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
-            }
-            "dc:title" => {
-                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            tracks.reverse();
-        }
-    }
+    let tracks = sort_tracks(tracks, &sort_criteria);
     let tracks = tracks.iter();
 
     let total_matches = tracks.len().try_into()?;
@@ -2711,27 +2675,9 @@ fn generate_search_root_response(
     let mut album_result = String::new();
     let mut track_result = String::new();
 
-    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
+    let artists = collection.get_artists().collect::<Vec<&Artist>>();
 
-    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-    for c in sort_criteria.iter().rev() {
-        let (ascending, field) = match c {
-            Sort::Ascending(field) => (true, field),
-            Sort::Descending(field) => (false, field),
-        };
-        match field.as_str() {
-            "dc:title" => {
-                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
-            }
-            other => {
-                warn!("unsupported sort field: {other}");
-                continue;
-            }
-        }
-        if !ascending {
-            artists.reverse();
-        }
-    }
+    let artists = sort_artists(artists, sort_criteria);
     let artists = artists.iter();
 
     for artist in artists {
@@ -2759,30 +2705,9 @@ fn generate_search_root_response(
             total_matches += 1;
         }
 
-        let mut albums = artist.get_albums().collect::<Vec<&Album>>();
+        let albums = artist.get_albums().collect::<Vec<&Album>>();
 
-        // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-        for c in sort_criteria.iter().rev() {
-            let (ascending, field) = match c {
-                Sort::Ascending(field) => (true, field),
-                Sort::Descending(field) => (false, field),
-            };
-            match field.as_str() {
-                "dc:title" => {
-                    albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
-                }
-                "dc:date" => {
-                    albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
-                }
-                other => {
-                    warn!("unsupported sort field: {other}");
-                    continue;
-                }
-            }
-            if !ascending {
-                albums.reverse();
-            }
-        }
+        let albums = sort_albums(albums, sort_criteria);
         let albums = albums.iter();
 
         for album in albums {
@@ -2811,30 +2736,9 @@ fn generate_search_root_response(
                 total_matches += 1;
             }
 
-            let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
+            let tracks = album.get_tracks().collect::<Vec<&Track>>();
 
-            // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-            for c in sort_criteria.iter().rev() {
-                let (ascending, field) = match c {
-                    Sort::Ascending(field) => (true, field),
-                    Sort::Descending(field) => (false, field),
-                };
-                match field.as_str() {
-                    "upnp:originalTrackNumber" => {
-                        tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
-                    }
-                    "dc:title" => {
-                        tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
-                    }
-                    other => {
-                        warn!("unsupported sort field: {other}");
-                        continue;
-                    }
-                }
-                if !ascending {
-                    tracks.reverse();
-                }
-            }
+            let tracks = sort_tracks(tracks, sort_criteria);
             let tracks = tracks.iter();
 
             for track in tracks {
