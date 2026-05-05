@@ -544,17 +544,19 @@ impl TryFrom<String> for Sort {
     }
 }
 
-fn is_ascending_field(c: &Sort) -> (bool, &str) {
-    match c {
-        Sort::Ascending(field) => (true, field),
-        Sort::Descending(field) => (false, field),
+impl Sort {
+    fn is_ascending_field(&self) -> (bool, &str) {
+        match self {
+            Self::Ascending(field) => (true, field),
+            Self::Descending(field) => (false, field),
+        }
     }
 }
 
 fn sort_artists<'a>(mut artists: Vec<&'a Artist>, sort_criteria: &[Sort]) -> Vec<&'a Artist> {
     // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
     for c in sort_criteria.iter().rev() {
-        let (ascending, field) = is_ascending_field(c);
+        let (ascending, field) = c.is_ascending_field();
         match field {
             "dc:title" => {
                 artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
@@ -578,7 +580,7 @@ fn sort_albums_with_artists<'a>(
 ) -> Vec<(&'a Artist, &'a Album)> {
     // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
     for c in sort_criteria.iter().rev() {
-        let (ascending, field) = is_ascending_field(c);
+        let (ascending, field) = c.is_ascending_field();
         match field {
             "dc:title" => {
                 albums.sort_by(|(_, album1), (_, album2)| Album::title_sort(album1, album2));
@@ -605,7 +607,7 @@ fn sort_albums_with_artists<'a>(
 fn sort_albums<'a>(mut albums: Vec<&'a Album>, sort_criteria: &[Sort]) -> Vec<&'a Album> {
     // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
     for c in sort_criteria.iter().rev() {
-        let (ascending, field) = is_ascending_field(c);
+        let (ascending, field) = c.is_ascending_field();
         match field {
             "dc:title" => {
                 albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
@@ -632,7 +634,7 @@ fn sort_tracks_with_artists_and_albums<'a>(
 ) -> Vec<(&'a Artist, &'a Album, &'a Track)> {
     // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
     for c in sort_criteria.iter().rev() {
-        let (ascending, field) = is_ascending_field(c);
+        let (ascending, field) = c.is_ascending_field();
         match field {
             "upnp:artist" => {
                 tracks.sort_by(|(artist1, _, _), (artist2, _, _)| {
@@ -670,7 +672,7 @@ fn sort_tracks_with_albums<'a>(
 ) -> Vec<(&'a Album, &'a Track)> {
     // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
     for c in sort_criteria.iter().rev() {
-        let (ascending, field) = is_ascending_field(c);
+        let (ascending, field) = c.is_ascending_field();
         match field {
             "upnp:album" => {
                 tracks.sort_by(|(album1, _), (album2, _)| Album::title_sort(album1, album2));
@@ -700,7 +702,7 @@ fn sort_tracks_with_albums<'a>(
 fn sort_tracks<'a>(mut tracks: Vec<&'a Track>, sort_criteria: &[Sort]) -> Vec<&'a Track> {
     // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
     for c in sort_criteria.iter().rev() {
-        let (ascending, field) = is_ascending_field(c);
+        let (ascending, field) = c.is_ascending_field();
         match field {
             "upnp:originalTrackNumber" => {
                 tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
