@@ -5,13 +5,21 @@ use std::fmt::Write;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::io::ErrorKind;
 use std::io::Read;
 use std::net::SocketAddrV4;
 use std::net::TcpListener;
+use std::num::TryFromIntError;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::thread;
+use std::time::Duration;
 
 use chrono::NaiveDate;
 use chrono::NaiveTime;
+use flate2::Compression;
+use flate2::bufread::GzEncoder;
 use log::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use xmltree::Element;
@@ -60,28 +68,54 @@ const CDS_DELETE_RESOURCE_ACTION: &str = "DeleteResource";
 
 const CDS_CREATE_REFERENCE_ACTION: &str = "CreateReference";
 
-pub fn listen(device_uuid: Uuid, server: SocketAddrV4, collection: Collection) {
+const XML_CONTENT_TYPE: &str = "text/xml; charset=utf-8";
+
+const TEXT_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+
+pub fn listen(
+    device_uuid: Uuid,
+    server: SocketAddrV4,
+    collection: Collection,
+    quitting: &Arc<AtomicBool>,
+) {
     let listener = TcpListener::bind(server).unwrap();
+    let next_quitting = Arc::clone(quitting);
+    listener
+        .set_nonblocking(true)
+        .expect("Cannot set non-blocking");
     thread::spawn(move || {
         info!(
             "listening on {}",
             listener.local_addr().expect("could not get local address")
         );
         for stream in listener.incoming() {
-            let stream = stream.expect("could not get TCP stream");
-            let addr = format!(
-                "http://{}/Content",
-                stream.local_addr().expect("could not get stream address")
-            );
-            let peer_addr = stream
-                .peer_addr()
-                .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
-            trace!("incoming request from {peer_addr}");
-            let collection = collection.clone(); // TODO i don't want to clone this.
+            if next_quitting.load(Ordering::Relaxed) {
+                debug!("stopping listening");
+                break;
+            }
+            match stream {
+                Ok(stream) => {
+                    let addr = format!(
+                        "http://{}/Content",
+                        stream.local_addr().expect("could not get stream address")
+                    );
+                    let peer_addr = stream
+                        .peer_addr()
+                        .map_or_else(|_| "unknown".to_string(), |a| a.to_string());
+                    trace!("incoming request from {peer_addr}");
+                    let collection = collection.clone(); // TODO i don't want to clone this.
 
-            thread::spawn(move || {
-                handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
-            });
+                    thread::spawn(move || {
+                        handle_device_connection(device_uuid, &addr, &collection, &stream, &stream);
+                    });
+                }
+                Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(2));
+                }
+                Err(err) => {
+                    warn!("could not get TCP stream: {err}");
+                }
+            }
         }
     });
 }
@@ -179,6 +213,114 @@ fn get_content_length(request_line: &str, http_request_headers: &HashMap<String,
         )
 }
 
+#[derive(Debug)]
+enum PersistentConnection {
+    KeepAlive,
+    Close,
+}
+
+impl PersistentConnection {
+    fn parse(s: &str) -> Self {
+        match s.to_ascii_lowercase().as_ref() {
+            "keep-alive" => Self::KeepAlive,
+            "close" => Self::Close,
+            _ => panic!("unsupported connection header: {s}"),
+        }
+    }
+}
+
+fn get_connection(http_request_headers: &HashMap<String, String>) -> Option<PersistentConnection> {
+    http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("Connection"))
+        .and_then(|connection_key| http_request_headers.get(connection_key))
+        .map(|connection| PersistentConnection::parse(connection))
+}
+
+/// see `<https://httpwg.org/specs/rfc9110.html#field.accept-encoding>`
+#[derive(Debug, PartialEq, PartialOrd)]
+enum AcceptEncoding {
+    /// A compression format that uses the Lempel-Ziv coding (LZ77) with a 32-bit CRC.
+    Gzip,
+
+    /// Indicates the identity function (that is, without modification or compression). This value is always considered as acceptable, even if omitted.
+    Identity,
+
+    /// Matches any content encoding not already listed in the header. This is the default value if the header is not present. This directive does not suggest that any algorithm is supported but indicates that no preference is expressed.
+    Wildcard,
+}
+
+#[derive(Debug, PartialEq, PartialOrd)]
+enum AcceptEncodingError {
+    Unsupported(String),
+}
+
+impl std::fmt::Display for AcceptEncodingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Unsupported(s) => write!(f, "unsuppored accept encoding {s}"),
+        }
+    }
+}
+
+impl std::error::Error for AcceptEncodingError {}
+
+impl AcceptEncoding {
+    fn parse(s: &str) -> Result<Self, AcceptEncodingError> {
+        // TODO quality value weight
+        match s.to_ascii_lowercase().as_ref() {
+            "gzip" => Ok(Self::Gzip),
+            "identity" => Ok(Self::Identity),
+            "*" => Ok(Self::Wildcard),
+            _ => Err(AcceptEncodingError::Unsupported(s.to_string())),
+        }
+    }
+}
+
+fn get_accept_encoding(
+    http_request_headers: &HashMap<String, String>,
+) -> Result<Vec<AcceptEncoding>, AcceptEncodingError> {
+    let accepted_encodings = http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("Accept-Encoding"))
+        .and_then(|accept_encoding_key| http_request_headers.get(accept_encoding_key))
+        .map(|s| {
+            s.split(',')
+                .map(str::trim)
+                .map(|s| if s.is_empty() { "identity" } else { s })
+                .map(AcceptEncoding::parse)
+                .collect::<Result<Vec<AcceptEncoding>, AcceptEncodingError>>()
+        });
+
+    // this shouldn't be this hard?
+    let accepted_encodings = match accepted_encodings {
+        Some(accepted_encodings) => match accepted_encodings {
+            Ok(accepted_encodings) => Some(accepted_encodings),
+            Err(err) => return Err(err),
+        },
+        None => None,
+    };
+
+    // if no accepted encodings, default is wildcard. identity is always accepted (unless not), so add if necessary
+    Ok(accepted_encodings.map_or_else(
+        || vec![AcceptEncoding::Wildcard],
+        |mut v| {
+            if !v.contains(&AcceptEncoding::Identity) {
+                v.push(AcceptEncoding::Identity);
+            }
+            v
+        },
+    ))
+}
+
+fn get_friendly_name(http_request_headers: &HashMap<String, String>) -> Option<String> {
+    http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("CPFN.UPNP.ORG"))
+        .and_then(|cpfn_key| http_request_headers.get(cpfn_key))
+        .cloned()
+}
+
 fn parse_body(content_length: usize, buf_reader: &mut BufReader<impl Read>) -> Option<String> {
     if content_length > 0 {
         let mut buf = vec![0; content_length];
@@ -196,8 +338,8 @@ struct BrowseOptionsBuilder {
     object_id: Option<Vec<String>>,
     browse_flag: Option<BrowseFlag>,
     filter: Option<Filter>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    starting_index: Option<u32>,
+    requested_count: Option<u32>,
     sort_criteria: Option<SortCriteria>,
 }
 
@@ -236,12 +378,12 @@ impl BrowseOptionsBuilder {
         self
     }
 
-    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+    const fn starting_index(&mut self, starting_index: u32) -> &Self {
         self.starting_index = Some(starting_index);
         self
     }
 
-    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+    const fn requested_count(&mut self, requested_count: u32) -> &Self {
         self.requested_count = Some(requested_count);
         self
     }
@@ -288,8 +430,8 @@ struct BrowseOptions {
     object_id: Vec<String>,
     browse_flag: BrowseFlag,
     filter: Filter,
-    starting_index: u16,
-    requested_count: u16,
+    starting_index: u32,
+    requested_count: u32,
     sort_criteria: SortCriteria,
 }
 
@@ -530,25 +672,34 @@ fn parse_soap_browse_request(body: &str) -> Result<BrowseOptions, BrowseOptionEr
 
     debug!("browse options: {options:?}");
 
-    match options.browse_flag {
-        BrowseFlag::Metadata => todo!("browse metadata"),
-        BrowseFlag::DirectChildren => info!("direct children. simple."),
-    }
-    warn!("sort criteria: {:?}. what's up", options.sort_criteria);
-
     Ok(options)
 }
 
 #[derive(Debug)]
 enum UPNPError {
     NoSuchObject,
+    #[allow(unused)]
+    GenerateResponseError(GenerateResponseError),
 }
 
 impl UPNPError {
     const fn describe(&self) -> (u16, &str) {
         match self {
             Self::NoSuchObject => (701, "No such object"),
+            Self::GenerateResponseError(_) => (500, "Internal error"),
         }
+    }
+}
+
+impl From<GenerateResponseError> for UPNPError {
+    fn from(value: GenerateResponseError) -> Self {
+        Self::GenerateResponseError(value)
+    }
+}
+
+impl From<TryFromIntError> for UPNPError {
+    fn from(value: TryFromIntError) -> Self {
+        Self::GenerateResponseError(GenerateResponseError::Number(value))
     }
 }
 
@@ -561,7 +712,10 @@ impl std::fmt::Display for UPNPError {
 
 impl std::error::Error for UPNPError {}
 
-fn generate_browse_root_response(collection: &Collection, options: &BrowseOptions) -> String {
+fn generate_browse_root_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
     let mut result = String::new();
     let album_count = collection.get_albums().count();
     write_container(
@@ -569,49 +723,31 @@ fn generate_browse_root_response(collection: &Collection, options: &BrowseOption
         &options.filter,
         ("0", "albums"),
         &format!("{album_count} albums"),
-    )
-    .unwrap_or_else(|err| match err {
-        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-    });
+    )?;
     let items_count = collection.get_tracks().count();
     write_container(
         &mut result,
         &options.filter,
         ("0", "items"),
         &format!("{items_count} items"),
-    )
-    .unwrap_or_else(|err| match err {
-        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-    });
+    )?;
 
     // how much of this do i even care about?
-    write_container(&mut result, &options.filter, ("0", "=Artist"), "Artist").unwrap_or_else(
-        |err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        },
-    );
+    write_container(&mut result, &options.filter, ("0", "=Artist"), "Artist")?;
     write_container(
         &mut result,
         &options.filter,
         ("0", "=All Artists"),
         "All Artists",
-    )
-    .unwrap_or_else(|err| match err {
-        GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-    });
-    format_response(&result, 4, 4)
+    )?;
+    Ok(format_response(&result, 4, 4))
 }
 
 fn generate_browse_albums_response(
     collection: &Collection,
     options: &BrowseOptions,
     addr: &str,
-) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
+) -> Result<String, UPNPError> {
     let mut albums = collection.get_albums().collect::<Vec<(&Artist, &Album)>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
@@ -646,9 +782,9 @@ fn generate_browse_albums_response(
     }
     let albums = albums.iter();
 
-    let total_matches = collection.get_albums().count();
-    let starting_index = options.starting_index.into();
-    let requested_count: usize = options.requested_count.into();
+    let total_matches = collection.get_albums().count().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album) in albums.skip(starting_index).take(requested_count) {
@@ -663,12 +799,9 @@ fn generate_browse_albums_response(
             (parent_id, &item_id),
             (artist, album),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_browse_an_album_response(
@@ -677,10 +810,6 @@ fn generate_browse_an_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
     let (artist, album) = collection
         .get_albums()
         .find(|(_, album)| format!("*a{}", album.id) == album_id)
@@ -717,9 +846,9 @@ fn generate_browse_an_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = tracks.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -733,10 +862,7 @@ fn generate_browse_an_album_response(
             (&parent_id, &item_id),
             (artist, album, track),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -745,12 +871,7 @@ fn generate_browse_items_response(
     collection: &Collection,
     options: &BrowseOptions,
     addr: &str,
-) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
+) -> Result<String, UPNPError> {
     let mut tracks = collection
         .get_tracks()
         .collect::<Vec<(&Artist, &Album, &Track)>>();
@@ -797,9 +918,9 @@ fn generate_browse_items_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = collection.get_tracks().count();
-    let starting_index: usize = options.starting_index.into();
-    let requested_count: usize = options.requested_count.into();
+    let total_matches = collection.get_tracks().count().try_into()?;
+    let starting_index: usize = options.starting_index.try_into()?;
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for (artist, album, track) in tracks.skip(starting_index).take(requested_count) {
@@ -813,20 +934,15 @@ fn generate_browse_items_response(
             (parent_id, &item_id),
             (artist, album, track),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
-fn generate_browse_artists_response(collection: &Collection, options: &BrowseOptions) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
+fn generate_browse_artists_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
     let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
@@ -855,9 +971,9 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
     }
     let artists = artists.iter();
 
-    let total_matches = artists.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = artists.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -865,12 +981,9 @@ fn generate_browse_artists_response(collection: &Collection, options: &BrowseOpt
         let id = artist.id;
         let parent_id = "0$=Artist";
         let item_id = format!("{id}");
-        write_music_artist(&mut result, &options.filter, (parent_id, &item_id), artist)
-            .unwrap_or_else(|err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            });
+        write_music_artist(&mut result, &options.filter, (parent_id, &item_id), artist)?;
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_browse_an_artist_response(
@@ -878,14 +991,10 @@ fn generate_browse_an_artist_response(
     artist_id: &str,
     options: &BrowseOptions,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
     let things = ["albums", "items"];
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
-    let total_matches = things.len();
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
+    let total_matches = things.len().try_into()?;
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -919,10 +1028,7 @@ fn generate_browse_an_artist_response(
             &options.filter,
             (&format!("0$=Artist${artist_id}"), &sub_id.clone()),
             &title,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -933,10 +1039,6 @@ fn generate_browse_an_artist_albums_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -974,9 +1076,9 @@ fn generate_browse_an_artist_albums_response(
     }
     let albums = albums.iter();
 
-    let total_matches = albums.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = albums.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let artist_id = artist.id;
     let mut result = String::new();
@@ -991,10 +1093,7 @@ fn generate_browse_an_artist_albums_response(
             (&parent_id, &item_id),
             (artist, album),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -1006,10 +1105,6 @@ fn generate_browse_an_artist_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1050,9 +1145,9 @@ fn generate_browse_an_artist_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = tracks.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -1066,10 +1161,7 @@ fn generate_browse_an_artist_album_response(
             (&parent_id, &item_id),
             (artist, album, track),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -1084,9 +1176,9 @@ fn generate_browse_an_artist_items_response(
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
-    let total_matches = artist.get_tracks().count();
-    let starting_index: usize = options.starting_index.into();
-    let requested_count: usize = options.requested_count.into();
+    let total_matches = artist.get_tracks().count().try_into()?;
+    let starting_index: usize = options.starting_index.try_into()?;
+    let requested_count: usize = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -1105,10 +1197,7 @@ fn generate_browse_an_artist_items_response(
             (&parent_id, &item_id),
             (artist, album, track),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
 
     Ok(format_response(&result, number_returned, total_matches))
@@ -1117,12 +1206,7 @@ fn generate_browse_an_artist_items_response(
 fn generate_browse_all_artists_response(
     collection: &Collection,
     options: &BrowseOptions,
-) -> String {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
-
+) -> Result<String, UPNPError> {
     let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
     let mut sort_criteria = options.sort_criteria.clone();
     if sort_criteria.is_empty() {
@@ -1151,9 +1235,9 @@ fn generate_browse_all_artists_response(
     }
     let artists = artists.iter();
 
-    let total_matches = artists.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = artists.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for artist in artists.skip(starting_index).take(requested_count) {
@@ -1161,12 +1245,9 @@ fn generate_browse_all_artists_response(
         let id = artist.id;
         let parent_id = "0$=All Artists";
         let item_id = format!("{id}");
-        write_music_artist(&mut result, &options.filter, (parent_id, &item_id), artist)
-            .unwrap_or_else(|err| match err {
-                GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-            });
+        write_music_artist(&mut result, &options.filter, (parent_id, &item_id), artist)?;
     }
-    format_response(&result, number_returned, total_matches)
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_browse_an_all_artist_response(
@@ -1175,17 +1256,13 @@ fn generate_browse_an_all_artist_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
         .ok_or(UPNPError::NoSuchObject)?;
 
-    let mut starting_index = options.starting_index.into();
-    let mut requested_count = options.requested_count.into();
+    let mut starting_index = options.starting_index.try_into()?;
+    let mut requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
 
@@ -1246,10 +1323,7 @@ fn generate_browse_an_all_artist_response(
                     starting_index,
                     requested_count,
                     &mut number_returned,
-                )
-                .unwrap_or_else(|err| match err {
-                    GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-                });
+                )?;
 
                 artist.get_albums().len()
             }
@@ -1262,10 +1336,7 @@ fn generate_browse_an_all_artist_response(
                     starting_index,
                     requested_count,
                     &mut number_returned,
-                )
-                .unwrap_or_else(|err| match err {
-                    GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-                });
+                )?;
 
                 artist.get_tracks().count()
             }
@@ -1275,11 +1346,15 @@ fn generate_browse_an_all_artist_response(
         };
 
         starting_index = starting_index.saturating_sub(sub_total_matches);
-        requested_count = requested_count.saturating_sub(number_returned);
+        requested_count = requested_count.saturating_sub(number_returned.try_into()?);
         total_matches += sub_total_matches;
     }
 
-    Ok(format_response(&result, number_returned, total_matches))
+    Ok(format_response(
+        &result,
+        number_returned,
+        total_matches.try_into()?,
+    ))
 }
 
 fn generate_browse_an_all_artist_response_album_part(
@@ -1289,7 +1364,7 @@ fn generate_browse_an_all_artist_response_album_part(
     addr: &str,
     starting_index: usize,
     requested_count: usize,
-    number_returned: &mut usize,
+    number_returned: &mut u32,
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
@@ -1348,7 +1423,7 @@ fn generate_browse_an_all_artist_response_track_part(
     addr: &str,
     starting_index: usize,
     requested_count: usize,
-    number_returned: &mut usize,
+    number_returned: &mut u32,
 ) -> std::result::Result<(), GenerateResponseError> {
     let artist_id = artist.id;
 
@@ -1415,10 +1490,6 @@ fn generate_browse_an_all_artist_album_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> std::result::Result<String, UPNPError> {
-    // TODO do this stuff
-    if matches!(options.browse_flag, BrowseFlag::Metadata) {
-        warn!("browse metadata. what's up");
-    }
     let artist = collection
         .get_artists()
         .find(|a| a.id.to_string() == artist_id)
@@ -1459,9 +1530,9 @@ fn generate_browse_an_all_artist_album_response(
     }
     let tracks = tracks.iter();
 
-    let total_matches = tracks.len();
-    let starting_index = options.starting_index.into();
-    let requested_count = options.requested_count.into();
+    let total_matches = tracks.len().try_into()?;
+    let starting_index = options.starting_index.try_into()?;
+    let requested_count = options.requested_count.try_into()?;
     let mut number_returned = 0;
     let mut result = String::new();
     for track in tracks.skip(starting_index).take(requested_count) {
@@ -1475,10 +1546,7 @@ fn generate_browse_an_all_artist_album_response(
             (&parent_id, &item_id),
             (artist, album, track),
             addr,
-        )
-        .unwrap_or_else(|err| match err {
-            GenerateResponseError::Format(err) => panic!("should be a 500 response: {err}"),
-        });
+        )?;
     }
     Ok(format_response(&result, number_returned, total_matches))
 }
@@ -1486,12 +1554,14 @@ fn generate_browse_an_all_artist_album_response(
 #[derive(Debug)]
 enum GenerateResponseError {
     Format(std::fmt::Error),
+    Number(std::num::TryFromIntError),
 }
 
 impl std::fmt::Display for GenerateResponseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Format(err) => write!(f, "could not write XML: {err}"),
+            Self::Number(err) => write!(f, "could not convert number: {err}"),
         }
     }
 }
@@ -1598,7 +1668,13 @@ fn write_container(
 
     write!(result, r"<container")?;
     if included_properties.contains(&"id") {
-        write!(result, r#" id="{parent_id}${container_id}""#)?;
+        // special case if parent ID is -1 then its not really a thing at all
+        let id_prefix = if parent_id == "-1" {
+            String::new()
+        } else {
+            format!("{parent_id}$")
+        };
+        write!(result, r#" id="{id_prefix}{container_id}""#)?;
     }
     if included_properties.contains(&"parentID") {
         write!(result, r#" parentID="{parent_id}""#)?;
@@ -1883,7 +1959,7 @@ fn create_album_art_element(addr: &str, cover: &str) -> String {
     format!("<upnp:albumArtURI dlna:profileID=\"JPEG_MED\">{cover}</upnp:albumArtURI>")
 }
 
-fn format_response(result: &str, number_returned: usize, total_matches: usize) -> String {
+fn format_response(result: &str, number_returned: u32, total_matches: u32) -> String {
     let result = format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
 {result}</DIDL-Lite>"#
@@ -1941,51 +2017,427 @@ fn wrap_with_envelope_body(body: &str) -> String {
     )
 }
 
+fn generate_browse_root_metadata_response() -> Result<String, UPNPError> {
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(&mut result, &filter, ("-1", "0"), "root")?;
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_albums_metadata_response(collection: &Collection) -> Result<String, UPNPError> {
+    let album_count = collection.get_albums().count();
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        ("0", "albums"),
+        &format!("{album_count} albums"),
+    )?;
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_album_metadata_response(
+    collection: &Collection,
+    album_id: &str,
+    addr: &str,
+) -> std::result::Result<String, UPNPError> {
+    let (artist, album) = collection
+        .get_albums()
+        .find(|(_, album)| format!("*a{}", album.id) == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let album_id = album.id;
+    let parent_id = "0$albums";
+    let item_id = format!("*a{album_id}");
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_album(
+        &mut result,
+        &filter,
+        (parent_id, &item_id),
+        (artist, album),
+        addr,
+    )?;
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_items_metadata_response(collection: &Collection) -> Result<String, UPNPError> {
+    let album_count = collection.get_tracks().count();
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        ("0", "items"),
+        &format!("{album_count} items"),
+    )?;
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_artists_metadata_response() -> Result<String, UPNPError> {
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(&mut result, &filter, ("0", "=Artist"), "Artist")?;
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_artist_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = "0$=Artist";
+    let item_id = format!("{}", artist.id);
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_artist(&mut result, &filter, (parent_id, &item_id), artist)?;
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_artist_albums_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = format!("0$=Artist${artist_id}");
+    let item_id = "albums";
+    let album_count = artist.get_albums().count();
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        (&parent_id, item_id),
+        &format!("{album_count} albums"),
+    )?;
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_artist_album_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    addr: &str,
+) -> std::result::Result<String, UPNPError> {
+    let (artist, album) = collection
+        .get_albums()
+        .find(|(_, album)| format!("*a{}", album.id) == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let id = album.id;
+    let parent_id = format!("0$=Artist${artist_id}$albums");
+    let item_id = format!("{id}");
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_album(
+        &mut result,
+        &filter,
+        (&parent_id, &item_id),
+        (artist, album),
+        addr,
+    )?;
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_artist_items_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = format!("0$=Artist${artist_id}");
+    let item_id = "items";
+    let item_count = artist.get_tracks().count();
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(
+        &mut result,
+        &filter,
+        (&parent_id, item_id),
+        &format!("{item_count} items"),
+    )?;
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_all_artists_metadata_response() -> Result<String, UPNPError> {
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_container(&mut result, &filter, ("0", "=All Artists"), "All Artists")?;
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_all_artist_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+) -> std::result::Result<String, UPNPError> {
+    let artist = collection
+        .get_artists()
+        .find(|a| a.id.to_string() == artist_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let parent_id = "0$=All Artists";
+    let item_id = format!("{}", artist.id);
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_artist(&mut result, &filter, (parent_id, &item_id), artist)?;
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_an_all_artist_album_metadata_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    addr: &str,
+) -> std::result::Result<String, UPNPError> {
+    let (artist, album) = collection
+        .get_albums()
+        .find(|(_, album)| format!("*a{}", album.id) == album_id)
+        .ok_or(UPNPError::NoSuchObject)?;
+    let id = album.id;
+    let parent_id = format!("0$=All Artists${artist_id}");
+    let item_id = format!("*a{id}");
+
+    let mut result = String::new();
+    let filter = Filter::All;
+    write_music_album(
+        &mut result,
+        &filter,
+        (&parent_id, &item_id),
+        (artist, album),
+        addr,
+    )?;
+
+    Ok(format_response(&result, 1, 1))
+}
+
+fn generate_browse_root_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_root_metadata_response(),
+        BrowseFlag::DirectChildren => generate_browse_root_response(collection, options),
+    }
+}
+
+fn generate_browse_albums_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_albums_metadata_response(collection),
+        BrowseFlag::DirectChildren => generate_browse_albums_response(collection, options, addr),
+    }
+}
+
+fn generate_browse_an_album_type_response(
+    collection: &Collection,
+    album_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_album_metadata_response(collection, album_id, addr)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_album_response(collection, album_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_items_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_items_metadata_response(collection),
+        BrowseFlag::DirectChildren => generate_browse_items_response(collection, options, addr),
+    }
+}
+
+fn generate_browse_artists_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_artists_metadata_response(),
+        BrowseFlag::DirectChildren => generate_browse_artists_response(collection, options),
+    }
+}
+
+fn generate_browse_an_artist_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_an_artist_metadata_response(collection, artist_id),
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_response(collection, artist_id, options)
+        }
+    }
+}
+
+fn generate_browse_an_artist_albums_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_artist_albums_metadata_response(collection, artist_id)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_albums_response(collection, artist_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_an_artist_album_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_artist_album_metadata_response(collection, artist_id, album_id, addr)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_album_response(collection, artist_id, album_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_an_artist_items_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_artist_items_metadata_response(collection, artist_id)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_artist_items_response(collection, artist_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_all_artists_type_response(
+    collection: &Collection,
+    options: &BrowseOptions,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_all_artists_metadata_response(),
+        BrowseFlag::DirectChildren => generate_browse_all_artists_response(collection, options),
+    }
+}
+
+fn generate_browse_an_all_artist_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => {
+            generate_browse_an_all_artist_metadata_response(collection, artist_id)
+        }
+        BrowseFlag::DirectChildren => {
+            generate_browse_an_all_artist_response(collection, artist_id, options, addr)
+        }
+    }
+}
+
+fn generate_browse_an_all_artist_album_type_response(
+    collection: &Collection,
+    artist_id: &str,
+    album_id: &str,
+    options: &BrowseOptions,
+    addr: &str,
+) -> Result<String, UPNPError> {
+    match options.browse_flag {
+        BrowseFlag::Metadata => generate_browse_an_all_artist_album_metadata_response(
+            collection, artist_id, album_id, addr,
+        ),
+        BrowseFlag::DirectChildren => generate_browse_an_all_artist_album_response(
+            collection, artist_id, album_id, options, addr,
+        ),
+    }
+}
+
 fn generate_browse_response(
     collection: &Collection,
     options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
     let browse_response = match options.object_id.as_slice() {
-        [root] if root == "0" => Ok(generate_browse_root_response(collection, options)),
+        [root] if root == "0" => generate_browse_root_type_response(collection, options),
         [root, next] if root == "0" && next == "albums" => {
-            Ok(generate_browse_albums_response(collection, options, addr))
+            generate_browse_albums_type_response(collection, options, addr)
         }
         [root, next, album_id] if root == "0" && next == "albums" => {
-            generate_browse_an_album_response(collection, album_id, options, addr)
+            generate_browse_an_album_type_response(collection, album_id, options, addr)
         }
         [root, next] if root == "0" && next == "items" => {
-            Ok(generate_browse_items_response(collection, options, addr))
+            generate_browse_items_type_response(collection, options, addr)
         }
         [root, next] if root == "0" && next == "=Artist" => {
-            Ok(generate_browse_artists_response(collection, options))
+            generate_browse_artists_type_response(collection, options)
         }
         [root, next, artist_id] if root == "0" && next == "=Artist" => {
-            generate_browse_an_artist_response(collection, artist_id, options)
+            generate_browse_an_artist_type_response(collection, artist_id, options)
         }
         [root, next, artist_id, artist_what]
             if root == "0" && next == "=Artist" && artist_what == "albums" =>
         {
-            generate_browse_an_artist_albums_response(collection, artist_id, options, addr)
+            generate_browse_an_artist_albums_type_response(collection, artist_id, options, addr)
         }
         [root, next, artist_id, artist_what, album_id]
             if root == "0" && next == "=Artist" && artist_what == "albums" =>
         {
-            generate_browse_an_artist_album_response(collection, artist_id, album_id, options, addr)
+            generate_browse_an_artist_album_type_response(
+                collection, artist_id, album_id, options, addr,
+            )
         }
         [root, next, artist_id, artist_what]
             if root == "0" && next == "=Artist" && artist_what == "items" =>
         {
-            generate_browse_an_artist_items_response(collection, artist_id, options, addr)
+            generate_browse_an_artist_items_type_response(collection, artist_id, options, addr)
         }
         [root, next] if root == "0" && next == "=All Artists" => {
-            Ok(generate_browse_all_artists_response(collection, options))
+            generate_browse_all_artists_type_response(collection, options)
         }
         [root, next, artist_id] if root == "0" && next == "=All Artists" => {
-            generate_browse_an_all_artist_response(collection, artist_id, options, addr)
+            generate_browse_an_all_artist_type_response(collection, artist_id, options, addr)
         }
         [root, next, artist_id, album_id] if root == "0" && next == "=All Artists" => {
-            generate_browse_an_all_artist_album_response(
+            generate_browse_an_all_artist_album_type_response(
                 collection, artist_id, album_id, options, addr,
             )
         }
@@ -2014,8 +2466,8 @@ struct SearchOptionsBuilder {
     container_id: Option<Vec<String>>,
     search_criteria: Option<SearchCrit>,
     filter: Option<Filter>,
-    starting_index: Option<u16>,
-    requested_count: Option<u16>,
+    starting_index: Option<u32>,
+    requested_count: Option<u32>,
     sort_criteria: Option<SortCriteria>,
 }
 
@@ -2055,12 +2507,12 @@ impl SearchOptionsBuilder {
         self
     }
 
-    const fn starting_index(&mut self, starting_index: u16) -> &Self {
+    const fn starting_index(&mut self, starting_index: u32) -> &Self {
         self.starting_index = Some(starting_index);
         self
     }
 
-    const fn requested_count(&mut self, requested_count: u16) -> &Self {
+    const fn requested_count(&mut self, requested_count: u32) -> &Self {
         self.requested_count = Some(requested_count);
         self
     }
@@ -2107,8 +2559,8 @@ struct SearchOptions {
     container_id: Vec<String>,
     search_criteria: SearchCrit,
     filter: Filter,
-    starting_index: u16,
-    requested_count: u16,
+    starting_index: u32,
+    requested_count: u32,
     sort_criteria: SortCriteria,
 }
 
@@ -2241,15 +2693,199 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionEr
 
     debug!("search options: {options:?}");
 
-    match &options.search_criteria {
-        SearchCrit::All => info!("search all. nothing to do"),
-        SearchCrit::SearchExp(search_exp) => {
-            warn!("search criteria: {search_exp:?}. what's up");
+    Ok(options)
+}
+
+fn generate_search_root_response(
+    collection: &Collection,
+    options: &SearchOptions,
+    sort_criteria: &SortCriteria,
+    class_order: &[&str],
+    addr: &str,
+) -> Result<String, UPNPError> {
+    let starting_index = options.starting_index;
+    let requested_count = options.requested_count;
+    let mut total_matches = 0;
+    let mut number_returned = 0;
+    let mut artist_result = String::new();
+    let mut album_result = String::new();
+    let mut track_result = String::new();
+
+    let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
+
+    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+    for c in sort_criteria.iter().rev() {
+        let (ascending, field) = match c {
+            Sort::Ascending(field) => (true, field),
+            Sort::Descending(field) => (false, field),
+        };
+        match field.as_str() {
+            "dc:title" => {
+                artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
+            }
+            other => {
+                warn!("unsupported sort field: {other}");
+                continue;
+            }
+        }
+        if !ascending {
+            artists.reverse();
         }
     }
-    warn!("sort criteria: {:?}. what's up", options.sort_criteria);
+    let artists = artists.iter();
 
-    Ok(options)
+    for artist in artists {
+        let artist_id = artist.id;
+        let include = include_this(
+            &options.search_criteria,
+            &SearchWhat::Artist,
+            None,
+            None,
+            artist,
+        );
+        if include {
+            if total_matches >= starting_index && number_returned < requested_count {
+                let parent_id = "0$=Artist";
+                let item_id = format!("{artist_id}");
+                write_music_artist(
+                    &mut artist_result,
+                    &options.filter,
+                    (parent_id, &item_id),
+                    artist,
+                )?;
+
+                number_returned += 1;
+            }
+            total_matches += 1;
+        }
+
+        let mut albums = artist.get_albums().collect::<Vec<&Album>>();
+
+        // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+        for c in sort_criteria.iter().rev() {
+            let (ascending, field) = match c {
+                Sort::Ascending(field) => (true, field),
+                Sort::Descending(field) => (false, field),
+            };
+            match field.as_str() {
+                "dc:title" => {
+                    albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
+                }
+                "dc:date" => {
+                    albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
+                }
+                other => {
+                    warn!("unsupported sort field: {other}");
+                    continue;
+                }
+            }
+            if !ascending {
+                albums.reverse();
+            }
+        }
+        let albums = albums.iter();
+
+        for album in albums {
+            let album_id = album.id;
+            let include = include_this(
+                &options.search_criteria,
+                &SearchWhat::Album,
+                None,
+                Some(album),
+                artist,
+            );
+            if include {
+                if total_matches >= starting_index && number_returned < requested_count {
+                    let parent_id = "0$albums";
+                    let item_id = format!("*a{album_id}");
+                    write_music_album(
+                        &mut album_result,
+                        &options.filter,
+                        (parent_id, &item_id),
+                        (artist, album),
+                        addr,
+                    )?;
+
+                    number_returned += 1;
+                }
+                total_matches += 1;
+            }
+
+            let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
+
+            // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
+            for c in sort_criteria.iter().rev() {
+                let (ascending, field) = match c {
+                    Sort::Ascending(field) => (true, field),
+                    Sort::Descending(field) => (false, field),
+                };
+                match field.as_str() {
+                    "upnp:originalTrackNumber" => {
+                        tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
+                    }
+                    "dc:title" => {
+                        tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
+                    }
+                    other => {
+                        warn!("unsupported sort field: {other}");
+                        continue;
+                    }
+                }
+                if !ascending {
+                    tracks.reverse();
+                }
+            }
+            let tracks = tracks.iter();
+
+            for track in tracks {
+                let include = include_this(
+                    &options.search_criteria,
+                    &SearchWhat::Track,
+                    Some(track),
+                    Some(album),
+                    artist,
+                );
+                if include {
+                    if total_matches >= starting_index && number_returned < requested_count {
+                        let track_id = track.id;
+                        let parent_id = format!("0$albums$*a{album_id}");
+                        let item_id = format!("*i{track_id}");
+                        write_music_track(
+                            &mut track_result,
+                            &options.filter,
+                            (&parent_id, &item_id),
+                            (artist, album, track),
+                            addr,
+                        )?;
+
+                        number_returned += 1;
+                    }
+                    total_matches += 1;
+                }
+            }
+        }
+    }
+
+    let mut result = String::new();
+
+    for class in class_order {
+        match *class {
+            "object.container.person.musicArtist" => {
+                write!(result, "{artist_result}").expect("could not write to string");
+            }
+            "object.container.album.musicAlbum" => {
+                write!(result, "{album_result}").expect("could not write to string");
+            }
+            "object.item.audioItem.musicTrack" => {
+                write!(result, "{track_result}").expect("could not write to string");
+            }
+            _ => {
+                error!("unsupported class ordering: {class}");
+            }
+        }
+    }
+
+    Ok(format_response(&result, number_returned, total_matches))
 }
 
 fn generate_search_response(
@@ -2305,222 +2941,27 @@ fn generate_search_response(
     // TODO starting_index/requested_count don't work well with sorting
     let search_response = match options.container_id.as_slice() {
         [root] if root == "0" => {
-            let starting_index = options.starting_index.into();
-            let requested_count: usize = options.requested_count.into();
-            let mut total_matches = 0;
-            let mut number_returned = 0;
-            let mut artist_result = String::new();
-            let mut album_result = String::new();
-            let mut track_result = String::new();
-
-            let mut artists = collection.get_artists().collect::<Vec<&Artist>>();
-
-            // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-            for c in sort_criteria.iter().rev() {
-                let (ascending, field) = match c {
-                    Sort::Ascending(field) => (true, field),
-                    Sort::Descending(field) => (false, field),
-                };
-                match field.as_str() {
-                    "dc:title" => {
-                        artists.sort_by(|artist1, artist2| Artist::name_sort(artist1, artist2));
-                    }
-                    other => {
-                        warn!("unsupported sort field: {other}");
-                        continue;
-                    }
-                }
-                if !ascending {
-                    artists.reverse();
-                }
-            }
-            let artists = artists.iter();
-
-            for artist in artists {
-                let artist_id = artist.id;
-                let include = include_this(
-                    &options.search_criteria,
-                    &SearchWhat::Artist,
-                    None,
-                    None,
-                    artist,
-                );
-                if include {
-                    if total_matches >= starting_index && number_returned < requested_count {
-                        let parent_id = "0$=Artist";
-                        let item_id = format!("{artist_id}");
-                        write_music_artist(
-                            &mut artist_result,
-                            &options.filter,
-                            (parent_id, &item_id),
-                            artist,
-                        )
-                        .unwrap_or_else(|err| match err {
-                            GenerateResponseError::Format(err) => {
-                                panic!("should be a 500 response: {err}")
-                            }
-                        });
-
-                        number_returned += 1;
-                    }
-                    total_matches += 1;
-                }
-
-                let mut albums = artist.get_albums().collect::<Vec<&Album>>();
-
-                // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-                for c in sort_criteria.iter().rev() {
-                    let (ascending, field) = match c {
-                        Sort::Ascending(field) => (true, field),
-                        Sort::Descending(field) => (false, field),
-                    };
-                    match field.as_str() {
-                        "dc:title" => {
-                            albums.sort_by(|album1, album2| Album::title_sort(album1, album2));
-                        }
-                        "dc:date" => {
-                            albums.sort_by(|album1, album2| Album::date_sort(album1, album2));
-                        }
-                        other => {
-                            warn!("unsupported sort field: {other}");
-                            continue;
-                        }
-                    }
-                    if !ascending {
-                        albums.reverse();
-                    }
-                }
-                let albums = albums.iter();
-
-                for album in albums {
-                    let album_id = album.id;
-                    let include = include_this(
-                        &options.search_criteria,
-                        &SearchWhat::Album,
-                        None,
-                        Some(album),
-                        artist,
-                    );
-                    if include {
-                        if total_matches >= starting_index && number_returned < requested_count {
-                            let parent_id = "0$albums";
-                            let item_id = format!("*a{album_id}");
-                            write_music_album(
-                                &mut album_result,
-                                &options.filter,
-                                (parent_id, &item_id),
-                                (artist, album),
-                                addr,
-                            )
-                            .unwrap_or_else(|err| match err {
-                                GenerateResponseError::Format(err) => {
-                                    panic!("should be a 500 response: {err}")
-                                }
-                            });
-
-                            number_returned += 1;
-                        }
-                        total_matches += 1;
-                    }
-
-                    let mut tracks = album.get_tracks().collect::<Vec<&Track>>();
-
-                    // reverse sort critieria so the most important thing is sorted last (assumes the sort doesn't reorder 'equal' items)
-                    for c in sort_criteria.iter().rev() {
-                        let (ascending, field) = match c {
-                            Sort::Ascending(field) => (true, field),
-                            Sort::Descending(field) => (false, field),
-                        };
-                        match field.as_str() {
-                            "upnp:originalTrackNumber" => {
-                                tracks.sort_by(|track1, track2| Track::number_sort(track1, track2));
-                            }
-                            "dc:title" => {
-                                tracks.sort_by(|track1, track2| Track::title_sort(track1, track2));
-                            }
-                            other => {
-                                warn!("unsupported sort field: {other}");
-                                continue;
-                            }
-                        }
-                        if !ascending {
-                            tracks.reverse();
-                        }
-                    }
-                    let tracks = tracks.iter();
-
-                    for track in tracks {
-                        let include = include_this(
-                            &options.search_criteria,
-                            &SearchWhat::Track,
-                            Some(track),
-                            Some(album),
-                            artist,
-                        );
-                        if include {
-                            if total_matches >= starting_index && number_returned < requested_count
-                            {
-                                let track_id = track.id;
-                                let parent_id = format!("0$albums$*a{album_id}");
-                                let item_id = format!("*i{track_id}");
-                                write_music_track(
-                                    &mut track_result,
-                                    &options.filter,
-                                    (&parent_id, &item_id),
-                                    (artist, album, track),
-                                    addr,
-                                )
-                                .unwrap_or_else(|err| match err {
-                                    GenerateResponseError::Format(err) => {
-                                        panic!("should be a 500 response: {err}")
-                                    }
-                                });
-
-                                number_returned += 1;
-                            }
-                            total_matches += 1;
-                        }
-                    }
-                }
-            }
-
-            let mut result = String::new();
-
-            for class in class_order {
-                match class {
-                    "object.container.person.musicArtist" => {
-                        write!(result, "{artist_result}").expect("could not write to string");
-                    }
-                    "object.container.album.musicAlbum" => {
-                        write!(result, "{album_result}").expect("could not write to string");
-                    }
-                    "object.item.audioItem.musicTrack" => {
-                        write!(result, "{track_result}").expect("could not write to string");
-                    }
-                    _ => {
-                        error!("unsupported class ordering: {class}");
-                    }
-                }
-            }
-
-            Some(format_response(&result, number_returned, total_matches))
+            generate_search_root_response(collection, options, &sort_criteria, &class_order, addr)
         }
         container_id => {
             error!("control: unexpected container ID: {container_id:?}");
-            None
+            Err(UPNPError::NoSuchObject)
         }
     };
-    search_response.map_or_else(
-        || (String::new(), "400 BAD REQUEST"),
-        |search_response| {
+    match search_response {
+        Ok(search_response) => {
             let body = format!(
                 r#"
         <u:SearchResponse xmlns:u="{CONTENT_DIRECTORY_SERVICE_TYPE}">{search_response}
         </u:SearchResponse>"#
             );
             (wrap_with_envelope_body(&body), HTTP_RESPONSE_OK)
-        },
-    )
+        }
+        Err(e) => {
+            let (code, description) = e.describe();
+            soap_upnp_error(code, description)
+        }
+    }
 }
 
 enum SearchWhat {
@@ -2613,6 +3054,66 @@ fn include_by_search_exp(
     }
 }
 
+fn handle_control<'a>(
+    addr: &str,
+    collection: &Collection,
+    http_request_headers: &HashMap<String, String>,
+    body: Option<String>,
+) -> (String, &'a str) {
+    let soap_action_key = http_request_headers
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case("Soapaction"))
+        .expect("no soap action");
+    http_request_headers.get(soap_action_key).map_or_else(
+        || {
+            // this must be unreachable? should return the nice error above instead of expect, and use expect here
+            warn!("control: no soap action");
+            (String::new(), "400 BAD REQUEST")
+        },
+        |soap_action| {
+            let soap_action = if soap_action.starts_with('"') && soap_action.ends_with('"') {
+                soap_action.trim_matches('"')
+            } else {
+                warn!("expected soap action to be enclosed in '\"': {soap_action}");
+                // not just an invalid action, something worse?
+                return soap_upnp_error(401, "Invalid Action");
+            };
+            let Some((service, action)) = soap_action.split_once('#') else {
+                warn!("received soap action without '#': {soap_action}");
+                // not just an invalid action, something worse?
+                return soap_upnp_error(401, "Invalid Action");
+            };
+
+            if service == CONTENT_DIRECTORY_SERVICE_TYPE {
+                handle_content_directory_actions(action, addr, collection, body)
+            } else {
+                // TODO here, handle ConnectionManager, etc.
+                info!("we got {service}, we got {action}");
+                soap_upnp_error(401, "Invalid Service")
+            }
+        },
+    )
+}
+
+fn handle_icon<'a>(request_line: &str) -> (&'a str, &'a [u8]) {
+    let icon_size = urlencoding::decode(
+        request_line
+            .strip_prefix("GET /icon-")
+            .unwrap()
+            .strip_suffix(".png HTTP/1.1")
+            .unwrap(),
+    )
+    .unwrap();
+
+    let content = match icon_size.as_ref() {
+        "16" => &include_bytes!("strumur-icon-16.png")[..],
+        _ => panic!("unknown icon size: {icon_size}"),
+    };
+    let content_type = "image/png";
+
+    (content_type, content)
+}
+
 fn handle_device_connection(
     device_uuid: Uuid,
     addr: &str,
@@ -2634,8 +3135,9 @@ fn handle_device_connection(
             };
             let (content, result) = soap_upnp_error(error_code, error_description);
             write_response(
+                &[],
                 result,
-                Some("text/xml; charset=utf-8"),
+                Some(XML_CONTENT_TYPE),
                 content.as_bytes(),
                 &mut output_stream,
             );
@@ -2647,6 +3149,38 @@ fn handle_device_connection(
     let http_request_headers = parse_some_headers(&mut buf_reader);
     debug!("Headers: {http_request_headers:?}");
 
+    let connection = get_connection(&http_request_headers);
+    if let Some(connection) = connection {
+        match connection {
+            PersistentConnection::KeepAlive => warn!("HTTP keep-alive not implemented"),
+            PersistentConnection::Close => {
+                warn!("HTTP keep-alive not implemented, close is the default");
+            }
+        }
+    }
+
+    let mut accept_encoding = match get_accept_encoding(&http_request_headers) {
+        Ok(accept_encoding) => accept_encoding,
+        Err(err) => {
+            write_response(
+                &[],
+                "415 UNSUPPORTED MEDIA TYPE",
+                Some(TEXT_CONTENT_TYPE),
+                err.to_string().as_bytes(),
+                &mut output_stream,
+            );
+
+            return;
+        }
+    };
+    debug!("accepted encodings: {accept_encoding:?}");
+
+    // i've never seen this come in here, but maybe one day?
+    let friendly_name = get_friendly_name(&http_request_headers);
+    if let Some(friendly_name) = friendly_name {
+        info!("control point name: {friendly_name}");
+    }
+
     let content_length = get_content_length(&request_line, &http_request_headers);
     debug!("content length: {content_length}");
 
@@ -2657,11 +3191,11 @@ fn handle_device_connection(
         body
     });
 
-    let (content, result) = match &request_line[..] {
+    let (content_type, content, result) = match &request_line[..] {
         "GET /Device.xml HTTP/1.1" => {
             let content = format!(include_str!("Device.xml"), device_uuid);
 
-            (content, HTTP_RESPONSE_OK)
+            (Some(XML_CONTENT_TYPE), content.into(), HTTP_RESPONSE_OK)
         }
         "GET /ConnectionManager.xml HTTP/1.1" => {
             unimplemented!("GET /ConnectionManager.xml not implemented");
@@ -2669,58 +3203,40 @@ fn handle_device_connection(
         "GET /ContentDirectory.xml HTTP/1.1" => {
             let content = include_str!("ContentDirectory.xml");
 
-            (content.to_string(), HTTP_RESPONSE_OK)
+            (Some(XML_CONTENT_TYPE), content.into(), HTTP_RESPONSE_OK)
         }
         "POST /ContentDirectory/Control HTTP/1.1" => {
-            let soap_action_key = http_request_headers
-                .keys()
-                .find(|k| k.eq_ignore_ascii_case("Soapaction"))
-                .expect("no soap action");
-            http_request_headers.get(soap_action_key).map_or_else(
-                || {
-                    warn!("control: no soap action");
-                    (String::new(), "400 BAD REQUEST")
-                },
-                |soap_action| {
-                    let soap_action = if soap_action.starts_with('"') && soap_action.ends_with('"')
-                    {
-                        soap_action.trim_matches('"')
-                    } else {
-                        warn!("expected soap action to be enclosed in '\"': {soap_action}");
-                        // not just an invalid action, something worse?
-                        return soap_upnp_error(401, "Invalid Action");
-                    };
-                    let Some((service, action)) = soap_action.split_once('#') else {
-                        warn!("received soap action without '#': {soap_action}");
-                        // not just an invalid action, something worse?
-                        return soap_upnp_error(401, "Invalid Action");
-                    };
+            let (content, status) = handle_control(addr, collection, &http_request_headers, body);
 
-                    if service == CONTENT_DIRECTORY_SERVICE_TYPE {
-                        handle_content_directory_actions(action, addr, collection, body)
-                    } else {
-                        // TODO here, handle ConnectionManager, etc.
-                        info!("we got {service}, we got {action}");
-                        soap_upnp_error(401, "Invalid Service")
-                    }
-                },
-            )
+            (Some(XML_CONTENT_TYPE), content.into(), status)
         }
         something if something.starts_with("GET /Content/") => {
-            content_handler(something, collection, output_stream);
-            return;
+            let (content_accept_encoding, content_type, content, status) =
+                content_handler(something, collection);
+
+            accept_encoding = content_accept_encoding;
+
+            (content_type, content, status)
+        }
+        something if something.starts_with("GET /icon-") => {
+            let (icon_content_type, content) = handle_icon(&request_line);
+
+            accept_encoding = vec![AcceptEncoding::Identity];
+
+            (Some(icon_content_type), content.into(), HTTP_RESPONSE_OK)
         }
         _ => {
             warn!("unknown request line: {request_line}");
 
-            (String::new(), "404 NOT FOUND")
+            (None, Vec::new(), "404 NOT FOUND")
         }
     };
 
     write_response(
+        &accept_encoding,
         result,
-        Some("text/xml; charset=utf-8"),
-        content.as_bytes(),
+        content_type,
+        &content,
         &mut output_stream,
     );
 }
@@ -2831,29 +3347,46 @@ fn soap_upnp_error(error_code: u16, error_description: &str) -> (String, &'stati
 }
 
 fn write_response(
+    accept_encodings: &[AcceptEncoding],
     result: &str,
     content_type: Option<&str>,
     content: &[u8],
     output_stream: &mut impl std::io::Write,
 ) {
+    let mut encoded_content = Vec::new();
+    let (content_encoding, content) = if accept_encodings.contains(&AcceptEncoding::Gzip)
+        || accept_encodings.contains(&AcceptEncoding::Wildcard)
+    {
+        let mut encoder = GzEncoder::new(content, Compression::default());
+        if let Err(err) = encoder.read_to_end(&mut encoded_content) {
+            error!("could not compress content: {err}");
+        }
+
+        (Some("gzip"), &encoded_content[..])
+    } else {
+        (None, content)
+    };
     let length = content.len();
     let status_line = format!("{HTTP_PROTOCOL_NAME}/{HTTP_PROTOCOL_VERSION} {result}");
     let content_type_header = content_type.map_or_else(String::new, |content_type| {
         format!("\r\nContent-Type: {content_type}")
     });
-    let response_headers =
-        format!("{status_line}{content_type_header}\r\nContent-Length: {length}\r\n\r\n");
+    let content_encoding_header = content_encoding.map_or_else(String::new, |content_encoding| {
+        format!("\r\nContent-Encoding: {content_encoding}")
+    });
+    let response_headers = format!(
+        "{status_line}{content_type_header}{content_encoding_header}\r\nContent-Length: {length}\r\n\r\n"
+    );
     let response = [response_headers.as_bytes(), content].concat();
     if let Err(err) = output_stream.write_all(&response[..]) {
         error!("error writing response: {err}");
     }
 }
 
-fn content_handler(
+fn content_handler<'a>(
     request_line: &str,
     collection: &Collection,
-    mut output_stream: impl std::io::Write,
-) {
+) -> (Vec<AcceptEncoding>, Option<&'a str>, Vec<u8>, &'a str) {
     let request_path = urlencoding::decode(
         request_line
             .strip_prefix("GET /Content/")
@@ -2875,28 +3408,28 @@ fn content_handler(
         let content = match fs::read(&file) {
             Ok(content) => content,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                write_response("404 NOT FOUND", None, &[], &mut output_stream);
-                return;
+                return (Vec::new(), None, Vec::new(), "404 NOT FOUND");
             }
             Err(err) => {
                 panic!("could not read {}: {err}", file.display());
             }
         };
 
-        write_response(
-            HTTP_RESPONSE_OK,
+        (
+            vec![AcceptEncoding::Identity],
             Some(content_type),
-            &content,
-            &mut output_stream,
-        );
+            content,
+            HTTP_RESPONSE_OK,
+        )
     } else {
         let content = format!("unsupported /Content request for {request_path}");
-        write_response(
+
+        (
+            Vec::new(),
+            Some(TEXT_CONTENT_TYPE),
+            content.into(),
             "501 NOT IMPLEMENTED",
-            Some("text/plain; charset=utf-8"),
-            content.as_bytes(),
-            &mut output_stream,
-        );
+        )
     }
 }
 
@@ -2904,6 +3437,7 @@ fn content_handler(
 mod tests {
     use std::{io::Cursor, path::PathBuf};
 
+    use flate2::bufread::GzDecoder;
     use test_log::test;
     use xmldiff::diff;
 
@@ -2919,10 +3453,10 @@ mod tests {
         mut tracks: Vec<Track>,
     ) -> Album {
         let date = release_date.parse::<NaiveDate>().unwrap();
-        tracks.iter_mut().for_each(|t| {
+        for t in &mut tracks {
             *id += 1;
             t.id = *id;
-        });
+        }
         *id += 1;
         Album::new(
             *id,
@@ -2949,7 +3483,7 @@ mod tests {
             file: format!("Music/{artist_name}/{album_title}/{track_number:02} {track_title}.flac")
                 .replace(' ', "*20"),
             duration: NaiveTime::from_hms_milli_opt(0, 2, 18, 893).unwrap(),
-            size: 18323574,
+            size: 18_323_574,
             bits_per_sample: 16,
             sample_frequency: 44100,
             channels: 2,
@@ -3038,7 +3572,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = "GET /Device.xml HTTP/1.1\r\n";
+        let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -3050,20 +3584,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         // check a couple of bits of the body rather than hard coding the whole thing
         assert!(body.contains("<root xmlns=\"urn:schemas-upnp-org:device-1-0\" configId=\"1\">"));
@@ -3075,7 +3598,7 @@ mod tests {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = "GET /ContentDirectory.xml HTTP/1.1\r\n";
+        let input = "GET /ContentDirectory.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
         let output = Vec::new();
         let mut cursor = Cursor::new(output);
 
@@ -3087,20 +3610,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         // check a couple of bits of the body rather than hard coding the whole thing
         assert!(body.contains("<scpd xmlns=\"urn:schemas-upnp-org:service-1-0\">"));
@@ -3120,6 +3632,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3128,12 +3641,12 @@ mod tests {
             + body
     }
 
-    fn extract_get_system_update_id_response(body: &str) -> u16 {
+    fn extract_get_system_update_id_response(body: &str) -> u32 {
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
         let get_system_update_id_response = body.get_child("GetSystemUpdateIDResponse").unwrap();
 
-        let id: u16 = get_system_update_id_response
+        let id: u32 = get_system_update_id_response
             .get_child("Id")
             .unwrap()
             .get_text()
@@ -3161,20 +3674,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let id = extract_get_system_update_id_response(&body);
 
@@ -3193,6 +3695,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3212,7 +3715,7 @@ mod tests {
             .unwrap()
             .get_text();
 
-        search_caps.map(|sort_caps| sort_caps.into())
+        search_caps.map(Into::into)
     }
 
     #[test]
@@ -3232,20 +3735,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let id = extract_get_search_capabilities_response(&body);
 
@@ -3265,6 +3757,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3283,7 +3776,7 @@ mod tests {
             .unwrap()
             .get_text();
 
-        sort_caps.map(|sort_caps| sort_caps.into())
+        sort_caps.map(Into::into)
     }
 
     #[test]
@@ -3303,20 +3796,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let id = extract_get_sort_capabilities_response(&body);
 
@@ -3331,8 +3813,8 @@ mod tests {
 
     fn generate_browse_request(
         object_id: &str,
-        starting_index: u16,
-        requested_count: u16,
+        starting_index: u32,
+        requested_count: u32,
     ) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
@@ -3355,6 +3837,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -3363,7 +3846,7 @@ mod tests {
             + &body
     }
 
-    fn extract_browse_response(body: &str) -> (String, u16, u16, String) {
+    fn extract_browse_response(body: &str) -> (String, u32, u32, u32) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -3375,7 +3858,7 @@ mod tests {
             .get_text()
             .unwrap();
 
-        let number_returned: u16 = browse_response
+        let number_returned: u32 = browse_response
             .get_child("NumberReturned")
             .unwrap()
             .get_text()
@@ -3383,7 +3866,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        let total_matches: u16 = browse_response
+        let total_matches: u32 = browse_response
             .get_child("TotalMatches")
             .unwrap()
             .get_text()
@@ -3395,14 +3878,11 @@ mod tests {
             .get_child("UpdateID")
             .unwrap()
             .get_text()
+            .unwrap()
+            .parse()
             .unwrap();
 
-        (
-            result.into(),
-            number_returned,
-            total_matches,
-            update_id.into(),
-        )
+        (result.into(), number_returned, total_matches, update_id)
     }
 
     fn extract_error_response(body: &str) -> (u16, String) {
@@ -3456,20 +3936,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3496,7 +3965,7 @@ mod tests {
         );
         assert_eq!(number_returned, 4);
         assert_eq!(total_matches, 4);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3516,20 +3985,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3586,7 +4044,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3606,20 +4064,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3667,7 +4114,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3687,23 +4134,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -3727,20 +4160,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3812,7 +4234,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 13);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3832,20 +4254,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3876,7 +4287,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3896,20 +4307,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -3928,7 +4328,7 @@ mod tests {
         );
         assert_eq!(number_returned, 2);
         assert_eq!(total_matches, 2);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -3948,23 +4348,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -3988,20 +4374,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4039,7 +4414,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4059,23 +4434,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -4099,20 +4460,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4156,7 +4506,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4176,23 +4526,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -4216,23 +4552,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         let (error_code, error_description) = extract_error_response(&body);
         assert_eq!(error_code, 701);
@@ -4256,20 +4578,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4336,7 +4647,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 9);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4356,20 +4667,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4401,7 +4701,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4421,20 +4721,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4527,7 +4816,7 @@ mod tests {
         );
         assert_eq!(number_returned, 8);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4547,20 +4836,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
 
@@ -4604,7 +4882,446 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
+    }
+
+    fn generate_browse_metadata_request(object_id: &str) -> String {
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse""#;
+        let body = format!(
+            r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+    <s:Body>
+        <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+            <ObjectID>{object_id}</ObjectID>
+            <BrowseFlag>BrowseMetadata</BrowseFlag>
+            <Filter>*</Filter>
+            <StartingIndex>0</StartingIndex>
+            <RequestedCount>0</RequestedCount>
+            <SortCriteria></SortCriteria>
+        </u:Browse>
+    </s:Body>
+</s:Envelope>"#
+        );
+
+        "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Accept-Encoding: identity\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: "
+            + format!("{}", body.len()).as_str()
+            + "\r\n"
+            + "\r\n"
+            + &body
+    }
+
+    #[test]
+    fn test_handle_browse_root_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0" parentID="-1" restricted="1" searchable="1"><dc:title>root</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_albums_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$albums");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$albums" parentID="0" restricted="1" searchable="1"><dc:title>12 albums</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_an_album_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$albums$*a9");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$albums$*a9" parentID="0$albums" childCount="3" restricted="1" searchable="1"><dc:title>g1</dc:title><dc:date>1996-02-12</dc:date><upnp:artist>ghi</upnp:artist><dc:creator>ghi</dc:creator><upnp:artist role="AlbumArtist">ghi</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/g1/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_items_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$items");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$items" parentID="0" restricted="1" searchable="1"><dc:title>13 items</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_artists_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist" parentID="0" restricted="1" searchable="1"><dc:title>Artist</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$25");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$25" parentID="0$=Artist" restricted="1" searchable="1"><dc:title>a&lt;bc</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_albums_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$25$albums");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$25$albums" parentID="0$=Artist$25" restricted="1" searchable="1"><dc:title>1 albums</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_album_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$28$albums$*a17");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$28$albums$17" parentID="0$=Artist$28$albums" childCount="2" restricted="1" searchable="1"><dc:title>i3</dc:title><dc:date>2011-11-11</dc:date><upnp:artist>ghi</upnp:artist><dc:creator>ghi</dc:creator><upnp:artist role="AlbumArtist">ghi</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_an_artist_items_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=Artist$28$items");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=Artist$28$items" parentID="0$=Artist$28" restricted="1" searchable="1"><dc:title>9 items</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_all_artists_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=All Artists");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=All Artists" parentID="0" restricted="1" searchable="1"><dc:title>All Artists</dc:title><upnp:class>object.container</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_an_all_artist_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=All Artists$25");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=All Artists$25" parentID="0$=All Artists" restricted="1" searchable="1"><dc:title>a&lt;bc</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_handle_browse_an_all_artist_album_metadata() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = generate_browse_metadata_request("0$=All Artists$28$*a17");
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+
+        let (result, number_returned, total_matches, update_id) = extract_browse_response(&body);
+
+        compare_xml(
+            &result,
+            r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
+<container id="0$=All Artists$28$*a17" parentID="0$=All Artists$28" childCount="2" restricted="1" searchable="1"><dc:title>i3</dc:title><dc:date>2011-11-11</dc:date><upnp:artist>ghi</upnp:artist><dc:creator>ghi</dc:creator><upnp:artist role="AlbumArtist">ghi</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">http://1.2.3.100:1234/Content/Music/ghi/i3/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+</DIDL-Lite>"#,
+        );
+        assert_eq!(number_returned, 1);
+        assert_eq!(total_matches, 1);
+        assert_eq!(update_id, 25);
     }
 
     #[test]
@@ -4624,56 +5341,9 @@ mod tests {
             &mut cursor,
         );
 
-        let mut line = Vec::new();
-        cursor.set_position(0);
-        let mut prev = None;
-        loop {
-            let mut buf = [0u8; 1];
-            cursor.read_exact(&mut buf).unwrap();
-            if prev == Some(b'\r') && buf[0] == b'\n' {
-                line.pop().unwrap(); // get rid of the \r
-                break;
-            }
-            line.push(buf[0]);
-            prev = Some(buf[0]);
-        }
+        let (status, _, body) = read_status_headers_and_body(cursor);
 
-        assert_eq!(
-            String::from_utf8(line).unwrap(),
-            "HTTP/1.1 200 OK".to_string()
-        );
-
-        loop {
-            let mut line = Vec::new();
-            let mut prev = None;
-            loop {
-                let mut buf = [0u8; 1];
-                cursor.read_exact(&mut buf).unwrap();
-                if prev == Some(b'\r') && buf[0] == b'\n' {
-                    line.pop().unwrap(); // get rid of the \r
-                    break;
-                }
-                line.push(buf[0]);
-                prev = Some(buf[0]);
-            }
-            if line.is_empty() {
-                break;
-            }
-            // TODO check/use String::from_utf8(line).unwrap() ?
-        }
-
-        let mut body = Vec::new();
-        cursor.read_to_end(&mut body).unwrap();
-
-        // for now, can just check against the only image being returned
-
-        // let mut decoder = Decoder::new(&body[..]);
-        // let result = decoder.decode();
-        // assert!(
-        //     result.is_ok(),
-        //     "failed to decode image: {}",
-        //     result.err().unwrap()
-        // );
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let want = include_bytes!("cover.jpg");
         assert_eq!(body.as_slice(), want);
@@ -4696,49 +5366,38 @@ mod tests {
             &mut cursor,
         );
 
-        let mut line = Vec::new();
-        cursor.set_position(0);
-        let mut prev = None;
-        loop {
-            let mut buf = [0u8; 1];
-            cursor.read_exact(&mut buf).unwrap();
-            if prev == Some(b'\r') && buf[0] == b'\n' {
-                line.pop().unwrap(); // get rid of the \r
-                break;
-            }
-            line.push(buf[0]);
-            prev = Some(buf[0]);
-        }
+        let (status, _, body) = read_status_headers_and_body(cursor);
 
-        assert_eq!(
-            String::from_utf8(line).unwrap(),
-            "HTTP/1.1 200 OK".to_string()
-        );
-
-        loop {
-            let mut line = Vec::new();
-            let mut prev = None;
-            loop {
-                let mut buf = [0u8; 1];
-                cursor.read_exact(&mut buf).unwrap();
-                if prev == Some(b'\r') && buf[0] == b'\n' {
-                    line.pop().unwrap(); // get rid of the \r
-                    break;
-                }
-                line.push(buf[0]);
-                prev = Some(buf[0]);
-            }
-            if line.is_empty() {
-                break;
-            }
-            // TODO check/use String::from_utf8(line).unwrap() ?
-        }
-
-        let mut body = Vec::new();
-        cursor.read_to_end(&mut body).unwrap();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         // for now, can just check against the only song being returned
         let want = include_bytes!("riff.flac");
+        assert_eq!(body.as_slice(), want);
+    }
+
+    #[test]
+    fn test_request_icon() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = "GET /icon-16.png HTTP/1.1\r\n\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, headers, body) = read_status_headers_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+        assert_eq!(headers.get("Content-Encoding"), None);
+
+        let want = include_bytes!("strumur-icon-16.png");
         assert_eq!(body.as_slice(), want);
     }
 
@@ -4759,23 +5418,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(
-            lines.next().unwrap(),
-            "HTTP/1.1 500 Internal Server Error".to_string()
-        );
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
         compare_xml(
             &body,
@@ -4797,10 +5442,220 @@ mod tests {
         );
     }
 
+    #[test]
+    #[should_panic(expected = "no soap action")] // because i'm not doing it right
+    fn test_handle_device_connection_with_no_soap_action() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + "Accept-Encoding: identity\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_bad_soap_quoting() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse"#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
+
+        compare_xml(
+            &body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Invalid Action</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_bad_soap_separator() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1_Browse""#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Accept-Encoding: identity\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
+
+        compare_xml(
+            &body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Invalid Action</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_unknown_soap_action() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
+        let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, body) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
+
+        compare_xml(
+            &body,
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+    <s:Body>
+        <s:Fault>
+            <faultcode>s:Client</faultcode>
+            <faultstring>UPnPError</faultstring>
+            <detail>
+                <UPnPError xmlns="urn:schemas-upnp-org:control-1-0">
+                    <errorCode>401</errorCode>
+                    <errorDescription>Invalid Service</errorDescription>
+                </UPnPError>
+            </detail>
+        </s:Fault>
+    </s:Body>
+</s:Envelope>"#,
+        );
+    }
+
+    #[test]
+    fn test_handle_device_connection_with_unknown_request() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+
+        let soap_action_header =
+            r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
+        let input = "POST /ContentDestruction/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
+            .to_string()
+            + soap_action_header
+            + "\r\n"
+            + "Content-Type: text/xml; charset=utf-8\r\n"
+            + "Content-Length: 0"
+            + "\r\n"
+            + "\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, _) = read_status_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 404 NOT FOUND");
+    }
+
     fn generate_search_request(
         search_str: &str,
-        starting_index: u16,
-        requested_count: u16,
+        starting_index: u32,
+        requested_count: u32,
     ) -> String {
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Search""#;
@@ -4824,6 +5679,7 @@ mod tests {
         "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + soap_action_header
             + "\r\n"
+            + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: "
             + format!("{}", body.len()).as_str()
@@ -4832,7 +5688,7 @@ mod tests {
             + &body
     }
 
-    fn extract_search_response(body: &str) -> (String, u16, u16, String) {
+    fn extract_search_response(body: &str) -> (String, u32, u32, u32) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -4844,7 +5700,7 @@ mod tests {
             .get_text()
             .unwrap();
 
-        let number_returned: u16 = search_response
+        let number_returned: u32 = search_response
             .get_child("NumberReturned")
             .unwrap()
             .get_text()
@@ -4852,7 +5708,7 @@ mod tests {
             .parse()
             .unwrap();
 
-        let total_matches: u16 = search_response
+        let total_matches: u32 = search_response
             .get_child("TotalMatches")
             .unwrap()
             .get_text()
@@ -4864,14 +5720,11 @@ mod tests {
             .get_child("UpdateID")
             .unwrap()
             .get_text()
+            .unwrap()
+            .parse()
             .unwrap();
 
-        (
-            result.into(),
-            number_returned,
-            total_matches,
-            update_id.into(),
-        )
+        (result.into(), number_returned, total_matches, update_id)
     }
 
     #[test]
@@ -4891,20 +5744,9 @@ mod tests {
             &mut cursor,
         );
 
-        let result = String::from_utf8(cursor.into_inner()).unwrap();
-        let mut lines = result.lines();
+        let (status, body) = read_status_and_body(cursor);
 
-        assert_eq!(lines.next().unwrap(), "HTTP/1.1 200 OK".to_string());
-
-        // skip headers
-        loop {
-            let l = lines.next().unwrap();
-            if l.is_empty() {
-                break;
-            }
-        }
-
-        let body = lines.map(|s| s.to_owned() + "\n").collect::<String>();
+        assert_eq!(status, "HTTP/1.1 200 OK");
 
         let (result, number_returned, total_matches, update_id) = extract_search_response(&body);
 
@@ -4963,7 +5805,71 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
+    }
+
+    fn read_status_and_body(cursor: Cursor<Vec<u8>>) -> (String, String) {
+        let (status, _, body) = read_status_headers_and_body(cursor);
+
+        (status, String::from_utf8(body).unwrap())
+    }
+
+    #[derive(Debug)]
+    pub struct SomeLines<B> {
+        buf: B,
+    }
+
+    impl<B: BufRead> Iterator for SomeLines<B> {
+        type Item = std::io::Result<String>;
+
+        fn next(&mut self) -> Option<std::io::Result<String>> {
+            let mut buf = String::new();
+            match self.buf.read_line(&mut buf) {
+                Ok(0) => None,
+                Ok(_n) => {
+                    if buf.ends_with('\n') {
+                        buf.pop();
+                        if buf.ends_with('\r') {
+                            buf.pop();
+                        }
+                    }
+                    Some(Ok(buf))
+                }
+                Err(e) => Some(Err(e)),
+            }
+        }
+    }
+
+    impl<B: BufRead> SomeLines<B> {
+        fn rest(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+            self.buf.read_to_end(buf)
+        }
+    }
+
+    fn read_status_headers_and_body(
+        mut cursor: Cursor<Vec<u8>>,
+    ) -> (String, HashMap<String, String>, Vec<u8>) {
+        cursor.set_position(0);
+        let mut lines = SomeLines { buf: cursor };
+
+        let status = lines.next().unwrap().unwrap().trim_end().to_string();
+
+        let mut headers = HashMap::new();
+        loop {
+            let l = lines.next().unwrap().unwrap();
+            if l.is_empty() {
+                break;
+            }
+
+            let (k, v) = l.split_once(": ").unwrap();
+
+            headers.insert(String::from(k), String::from(v));
+        }
+
+        let mut body = Vec::new();
+        lines.rest(&mut body).unwrap();
+
+        (status, headers, body)
     }
 
     #[test]
@@ -5424,15 +6330,16 @@ mod tests {
                 Sort::Descending("dc:title".into()),
             ],
         };
-        let response = generate_browse_albums_response(&collection, &browse_options, "abc");
+        let response =
+            generate_browse_albums_response(&collection, &browse_options, "abc").unwrap();
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$albums$*a25&quot; parentID=&quot;0$albums&quot; childCount=&quot;0&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;d&amp;lt;1&lt;/dc:title&gt;&lt;dc:date&gt;2005-07-02&lt;/dc:date&gt;&lt;upnp:artist&gt;def&lt;/upnp:artist&gt;&lt;dc:creator&gt;def&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;def&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/def/d&amp;lt;1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$albums$*a17&quot; parentID=&quot;0$albums&quot; childCount=&quot;2&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;i3&lt;/dc:title&gt;&lt;dc:date&gt;2011-11-11&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/i3/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$albums$*a14&quot; parentID=&quot;0$albums&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;h2&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/h2/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$albums$*a9&quot; parentID=&quot;0$albums&quot; childCount=&quot;3&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;g1&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/g1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>4</NumberReturned>
             <TotalMatches>12</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5461,11 +6368,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$albums$*a5$*i4&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$albums$*a5$*i3&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$albums$*a5$*i2&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>4</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5494,11 +6401,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$albums$*a5$*i2&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$albums$*a5$*i3&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$albums$*a5$*i4&quot; parentID=&quot;0$albums$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>4</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5513,15 +6420,15 @@ mod tests {
             requested_count: 2,
             sort_criteria: vec![Sort::Descending("dc:title".into())],
         };
-        let response = generate_browse_items_response(&collection, &browse_options, "abc");
+        let response = generate_browse_items_response(&collection, &browse_options, "abc").unwrap();
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$items$10&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;h21&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:album&gt;h2&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/h2/01*20h21.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$items$6&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;g&amp;lt;11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;g1&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/g1/01*20g&amp;lt;11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>2</NumberReturned>
             <TotalMatches>13</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5539,15 +6446,15 @@ mod tests {
                 Sort::Descending("dc:title".into()),
             ],
         };
-        let response = generate_browse_items_response(&collection, &browse_options, "abc");
+        let response = generate_browse_items_response(&collection, &browse_options, "abc").unwrap();
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$items$15&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;i31&lt;/dc:title&gt;&lt;dc:date&gt;2011-11-11&lt;/dc:date&gt;&lt;upnp:album&gt;i3&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/i3/01*20i31.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$items$10&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;h21&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:album&gt;h2&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/h2/01*20h21.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$items$6&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;g&amp;lt;11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;g1&lt;/upnp:album&gt;&lt;upnp:artist&gt;ghi feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/ghi/g1/01*20g&amp;lt;11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$items$1&quot; parentID=&quot;0$items&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/01*20a11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>4</NumberReturned>
             <TotalMatches>13</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5578,11 +6485,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$=Artist$28$albums$17&quot; parentID=&quot;0$=Artist$28$albums&quot; childCount=&quot;2&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;i3&lt;/dc:title&gt;&lt;dc:date&gt;2011-11-11&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/i3/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$=Artist$28$albums$14&quot; parentID=&quot;0$=Artist$28$albums&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;h2&lt;/dc:title&gt;&lt;dc:date&gt;2002-07-30&lt;/dc:date&gt;&lt;upnp:artist&gt;ghi&lt;/upnp:artist&gt;&lt;dc:creator&gt;ghi&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;ghi&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/ghi/h2/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>2</NumberReturned>
             <TotalMatches>3</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5618,11 +6525,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=Artist$25$albums$5$4&quot; parentID=&quot;0$=Artist$25$albums$5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=Artist$25$albums$5$3&quot; parentID=&quot;0$=Artist$25$albums$5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=Artist$25$albums$5$2&quot; parentID=&quot;0$=Artist$25$albums$5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>4</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5658,11 +6565,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=Artist$25$albums$5$2&quot; parentID=&quot;0$=Artist$25$albums$5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=Artist$25$albums$5$3&quot; parentID=&quot;0$=Artist$25$albums$5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=Artist$25$albums$5$4&quot; parentID=&quot;0$=Artist$25$albums$5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>4</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5677,15 +6584,15 @@ mod tests {
             requested_count: 3,
             sort_criteria: vec![Sort::Descending("dc:title".into())],
         };
-        let response = generate_browse_artists_response(&collection, &browse_options);
+        let response = generate_browse_artists_response(&collection, &browse_options).unwrap();
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$=Artist$35&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;xyz&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$=Artist$34&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;w&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$=Artist$33&quot; parentID=&quot;0$=Artist&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;tuv&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>10</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5700,15 +6607,15 @@ mod tests {
             requested_count: 3,
             sort_criteria: vec![Sort::Descending("dc:title".into())],
         };
-        let response = generate_browse_all_artists_response(&collection, &browse_options);
+        let response = generate_browse_all_artists_response(&collection, &browse_options).unwrap();
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;container id=&quot;0$=All Artists$35&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;xyz&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$=All Artists$34&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;w&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;container id=&quot;0$=All Artists$33&quot; parentID=&quot;0$=All Artists&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;tuv&lt;/dc:title&gt;&lt;upnp:class&gt;object.container.person.musicArtist&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>10</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5732,11 +6639,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i2&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*i1&quot; parentID=&quot;0$=All Artists$25&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a11&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;1&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/01*20a11.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;container id=&quot;0$=All Artists$25$*a5&quot; parentID=&quot;0$=All Artists$25&quot; childCount=&quot;4&quot; restricted=&quot;1&quot; searchable=&quot;1&quot;&gt;&lt;dc:title&gt;a1&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:artist&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:albumArtURI dlna:profileID=&quot;JPEG_MED&quot;&gt;abc/Music/a&amp;lt;bc/a1/cover.jpg&lt;/upnp:albumArtURI&gt;&lt;upnp:class&gt;object.container.album.musicAlbum&lt;/upnp:class&gt;&lt;/container&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>5</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5772,11 +6679,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*a5$4&quot; parentID=&quot;0$=All Artists$25$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*a5$3&quot; parentID=&quot;0$=All Artists$25$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*a5$2&quot; parentID=&quot;0$=All Artists$25$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>4</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5812,11 +6719,11 @@ mod tests {
 
         assert_eq!(
             response,
-            r#"
+            "
             <Result>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot; xmlns:dlna=&quot;urn:schemas-dlna-org:metadata-1-0/&quot;&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*a5$2&quot; parentID=&quot;0$=All Artists$25$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a12&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;2&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/02*20a12.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*a5$3&quot; parentID=&quot;0$=All Artists$25$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a13&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;3&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/03*20a13.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;item id=&quot;0$=All Artists$25$*a5$4&quot; parentID=&quot;0$=All Artists$25$*a5&quot; restricted=&quot;1&quot;&gt;&lt;dc:title&gt;a14&lt;/dc:title&gt;&lt;dc:date&gt;1996-02-12&lt;/dc:date&gt;&lt;upnp:album&gt;a1&lt;/upnp:album&gt;&lt;upnp:artist&gt;a&amp;lt;bc feat. X&lt;/upnp:artist&gt;&lt;dc:creator&gt;a&amp;lt;bc feat. X&lt;/dc:creator&gt;&lt;upnp:artist role=&quot;AlbumArtist&quot;&gt;a&amp;lt;bc&lt;/upnp:artist&gt;&lt;upnp:originalTrackNumber&gt;4&lt;/upnp:originalTrackNumber&gt;&lt;res duration=&quot;0:02:18.893&quot; size=&quot;18323574&quot; bitsPerSample=&quot;16&quot; sampleFrequency=&quot;44100&quot; nrAudioChannels=&quot;2&quot; protocolInfo=&quot;http-get:*:audio/x-flac:DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000&quot;&gt;abc/Music/a&amp;lt;bc/a1/04*20a14.flac&lt;/res&gt;&lt;upnp:class&gt;object.item.audioItem.musicTrack&lt;/upnp:class&gt;&lt;/item&gt;&#xA;&lt;/DIDL-Lite&gt;</Result>
             <NumberReturned>3</NumberReturned>
             <TotalMatches>4</TotalMatches>
-            <UpdateID>25</UpdateID>"#
+            <UpdateID>25</UpdateID>"
         );
     }
 
@@ -5855,6 +6762,88 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, "25");
+        assert_eq!(update_id, 25);
+    }
+
+    #[test]
+    fn test_get_accept_encoding_none_specified() {
+        let headers = HashMap::from([(String::from("something"), String::from("else"))]);
+        let accept_encoding = get_accept_encoding(&headers).unwrap();
+        assert_eq!(accept_encoding, vec![AcceptEncoding::Wildcard]);
+    }
+
+    #[test]
+    fn test_get_accept_encoding_single_specified() {
+        let headers = HashMap::from([(String::from("accept-encoding"), String::from("gzip"))]);
+        let accept_encoding = get_accept_encoding(&headers).unwrap();
+        assert_eq!(
+            accept_encoding,
+            vec![AcceptEncoding::Gzip, AcceptEncoding::Identity]
+        );
+    }
+
+    // #[test]
+    // fn test_get_accept_encoding_multiple_specified() {
+    //     let headers = HashMap::from([(
+    //         String::from("accept-encoding"),
+    //         String::from("compress, gzip"),
+    //     )]);
+    //     let accept_encoding = get_accept_encoding(&headers).unwrap();
+    //     assert_eq!(
+    //         accept_encoding,
+    //         vec![
+    //             AcceptEncoding::Compress,
+    //             AcceptEncoding::Gzip,
+    //             AcceptEncoding::Identity,
+    //         ]
+    //     );
+    // }
+
+    #[test]
+    fn test_get_accept_encoding_empty() {
+        let headers = HashMap::from([(String::from("accept-encoding"), String::new())]);
+        let accept_encoding = get_accept_encoding(&headers).unwrap();
+        assert_eq!(accept_encoding, vec![AcceptEncoding::Identity]);
+    }
+
+    #[test]
+    fn test_get_accept_encoding_unknown() {
+        let headers = HashMap::from([(String::from("accept-encoding"), String::from("xyz"))]);
+        let accept_encoding = get_accept_encoding(&headers);
+        assert_eq!(
+            accept_encoding,
+            Err(AcceptEncodingError::Unsupported(String::from("xyz")))
+        );
+    }
+
+    #[test]
+    fn test_handle_with_accept_encoding() {
+        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
+        let addr = "http://1.2.3.100:1234/Content";
+        let collection = generate_test_collection();
+        let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: gzip\r\n";
+        let output = Vec::new();
+        let mut cursor = Cursor::new(output);
+
+        handle_device_connection(
+            test_device_uuid,
+            addr,
+            &collection,
+            input.as_bytes(),
+            &mut cursor,
+        );
+
+        let (status, headers, encoded) = read_status_headers_and_body(cursor);
+
+        assert_eq!(status, "HTTP/1.1 200 OK");
+        assert_eq!(headers.get("Content-Encoding").unwrap(), "gzip");
+
+        let mut decoder = GzDecoder::new(&encoded[..]);
+        let mut body = String::new();
+        decoder.read_to_string(&mut body).unwrap();
+
+        // check a couple of bits of the body rather than hard coding the whole thing
+        assert!(body.contains("<root xmlns=\"urn:schemas-upnp-org:device-1-0\" configId=\"1\">"));
+        assert!(body.contains("<UDN>uuid:5c863963-f2a2-491e-8b60-079cdadad147</UDN>"));
     }
 }

@@ -122,14 +122,14 @@ impl Track {
 #[derive(Clone, Debug)]
 pub struct Collection {
     last_id: u128,
-    system_update_id: u16, // TODO maintain this value
+    system_update_id: u32, // TODO maintain this value
     pub base: PathBuf,
     artists: Vec<Artist>,
 }
 
 impl Collection {
     #[cfg(test)]
-    pub const fn new(system_update_id: u16, base: PathBuf, artists: Vec<Artist>) -> Self {
+    pub const fn new(system_update_id: u32, base: PathBuf, artists: Vec<Artist>) -> Self {
         Self {
             last_id: 0,
             system_update_id,
@@ -185,7 +185,7 @@ impl Collection {
         collection
     }
 
-    pub const fn get_system_update_id(&self) -> u16 {
+    pub const fn get_system_update_id(&self) -> u32 {
         self.system_update_id
     }
 
@@ -297,7 +297,7 @@ fn process_flac(
     let track_number = metadata.get_field("TRACKNUMBER").map_or_else(
         || {
             warn!("no track number found in {display_file_name}");
-            debug!("fields in {display_file_name}: {field_names:?}",);
+            debug!("fields in {display_file_name}: {field_names:?}");
             0
         },
         |number| parse_number(&number, 0),
@@ -559,7 +559,7 @@ mod tests {
                         artist: "carl".to_string(),
                         file: "./testdata/collection/riff.flac".to_string(),
                         duration: NaiveTime::from_hms_milli_opt(0, 0, 5, 712).unwrap(),
-                        size: 664150,
+                        size: 664_150,
                         bits_per_sample: 16,
                         sample_frequency: 48000,
                         channels: 2,
