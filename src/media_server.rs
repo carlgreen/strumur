@@ -11,8 +11,8 @@ use std::net::SocketAddrV4;
 use std::net::TcpListener;
 use std::num::TryFromIntError;
 use std::sync::Arc;
+use std::sync::atomic;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
@@ -89,7 +89,7 @@ pub fn listen(
             listener.local_addr().expect("could not get local address")
         );
         for stream in listener.incoming() {
-            if next_quitting.load(Ordering::Relaxed) {
+            if next_quitting.load(atomic::Ordering::Relaxed) {
                 debug!("stopping listening");
                 break;
             }
