@@ -2668,9 +2668,7 @@ fn generate_search_artist_response(
     let include = include_this(
         &options.search_criteria,
         &SearchWhat::Artist,
-        None,
-        None,
-        artist,
+        &artist.into(),
     );
     if include {
         if *total_matches >= options.starting_index && *number_returned < options.requested_count {
@@ -2691,10 +2689,14 @@ fn generate_search_artist_response(
     Ok(())
 }
 
+struct ArtistAlbum<'a> {
+    artist: &'a Artist,
+    album: &'a Album,
+}
+
 fn generate_search_album_response(
     options: &SearchOptions,
-    artist: &Artist,
-    album: &Album,
+    artist_album: &ArtistAlbum,
     addr: &str,
     total_matches: &mut u32,
     number_returned: &mut u32,
@@ -2703,20 +2705,18 @@ fn generate_search_album_response(
     let include = include_this(
         &options.search_criteria,
         &SearchWhat::Album,
-        None,
-        Some(album),
-        artist,
+        &artist_album.into(),
     );
     if include {
         if *total_matches >= options.starting_index && *number_returned < options.requested_count {
-            let album_id = album.id;
+            let album_id = artist_album.album.id;
             let parent_id = "0$albums";
             let item_id = format!("*a{album_id}");
             write_music_album(
                 album_result,
                 &options.filter,
                 (parent_id, &item_id),
-                (artist, album),
+                (artist_album.artist, artist_album.album),
                 addr,
             )?;
 
@@ -2728,11 +2728,15 @@ fn generate_search_album_response(
     Ok(())
 }
 
+struct ArtistAlbumTrack<'a> {
+    artist: &'a Artist,
+    album: &'a Album,
+    track: &'a Track,
+}
+
 fn generate_search_track_response(
     options: &SearchOptions,
-    artist: &Artist,
-    album: &Album,
-    track: &Track,
+    artist_album_track: &ArtistAlbumTrack,
     addr: &str,
     total_matches: &mut u32,
     number_returned: &mut u32,
@@ -2741,21 +2745,23 @@ fn generate_search_track_response(
     let include = include_this(
         &options.search_criteria,
         &SearchWhat::Track,
-        Some(track),
-        Some(album),
-        artist,
+        &artist_album_track.into(),
     );
     if include {
         if *total_matches >= options.starting_index && *number_returned < options.requested_count {
-            let album_id = album.id;
-            let track_id = track.id;
+            let album_id = artist_album_track.album.id;
+            let track_id = artist_album_track.track.id;
             let parent_id = format!("0$albums$*a{album_id}");
             let item_id = format!("*i{track_id}");
             write_music_track(
                 track_result,
                 &options.filter,
                 (&parent_id, &item_id),
-                (artist, album, track),
+                (
+                    artist_album_track.artist,
+                    artist_album_track.album,
+                    artist_album_track.track,
+                ),
                 addr,
             )?;
 
@@ -2802,8 +2808,7 @@ fn generate_search_root_response(
         for album in albums {
             generate_search_album_response(
                 options,
-                artist,
-                album,
+                &ArtistAlbum { artist, album },
                 addr,
                 &mut total_matches,
                 &mut number_returned,
@@ -2818,9 +2823,11 @@ fn generate_search_root_response(
             for track in tracks {
                 generate_search_track_response(
                     options,
-                    artist,
-                    album,
-                    track,
+                    &ArtistAlbumTrack {
+                        artist,
+                        album,
+                        track,
+                    },
                     addr,
                     &mut total_matches,
                     &mut number_returned,
@@ -2934,18 +2941,56 @@ enum SearchWhat {
     Track,
 }
 
+struct IncludeArtistAlbumTrack<'a> {
+    artist: &'a Artist,
+    album: Option<&'a Album>,
+    track: Option<&'a Track>,
+}
+
+impl<'a> From<&'a Artist> for IncludeArtistAlbumTrack<'a> {
+    fn from(value: &'a Artist) -> Self {
+        Self {
+            artist: value,
+            album: None,
+            track: None,
+        }
+    }
+}
+
+impl<'a> From<&'a ArtistAlbum<'a>> for IncludeArtistAlbumTrack<'a> {
+    fn from(value: &'a ArtistAlbum) -> Self {
+        Self {
+            artist: value.artist,
+            album: Some(value.album),
+            track: None,
+        }
+    }
+}
+
+impl<'a> From<&'a ArtistAlbumTrack<'a>> for IncludeArtistAlbumTrack<'a> {
+    fn from(value: &'a ArtistAlbumTrack) -> Self {
+        Self {
+            artist: value.artist,
+            album: Some(value.album),
+            track: Some(value.track),
+        }
+    }
+}
+
 fn include_this(
     search_criteria: &SearchCrit,
     what: &SearchWhat,
-    track: Option<&Track>,
-    album: Option<&Album>,
-    artist: &Artist,
+    artist_track_album: &IncludeArtistAlbumTrack,
 ) -> bool {
     match search_criteria {
         SearchCrit::All => true,
-        SearchCrit::SearchExp(search_exp) => {
-            include_by_search_exp(search_exp, what, track, album, artist)
-        }
+        SearchCrit::SearchExp(search_exp) => include_by_search_exp(
+            search_exp,
+            what,
+            artist_track_album.track,
+            artist_track_album.album,
+            artist_track_album.artist,
+        ),
     }
 }
 
