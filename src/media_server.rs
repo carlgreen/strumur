@@ -3619,14 +3619,11 @@ mod tests {
         )
     }
 
-    #[test]
-    fn test_handle_get_device() {
+    fn handle_device_connection_test(input: &str) -> Cursor<Vec<u8>> {
         let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
-        let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -3636,7 +3633,26 @@ mod tests {
             &mut cursor,
         );
 
-        let (status, body) = read_status_and_body(cursor);
+        cursor
+    }
+
+    fn handle_device_connection_text(input: &str) -> (String, String) {
+        let cursor = handle_device_connection_test(input);
+
+        read_status_and_body(cursor)
+    }
+
+    fn handle_device_connection_data(input: &str) -> (String, HashMap<String, String>, Vec<u8>) {
+        let cursor = handle_device_connection_test(input);
+
+        read_status_headers_and_body(cursor)
+    }
+
+    #[test]
+    fn test_handle_get_device() {
+        let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
+
+        let (status, body) = handle_device_connection_text(input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -3647,22 +3663,9 @@ mod tests {
 
     #[test]
     fn test_handle_get_content_directory() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = "GET /ContentDirectory.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -3711,22 +3714,9 @@ mod tests {
 
     #[test]
     fn test_handle_get_system_update_id() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_get_system_update_id_request();
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -3772,22 +3762,9 @@ mod tests {
 
     #[test]
     fn test_handle_get_search_capabilities() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_get_search_capabilities_request();
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -3833,22 +3810,9 @@ mod tests {
 
     #[test]
     fn test_handle_get_sort_capabilities() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_get_sort_capabilities_request();
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -3973,22 +3937,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_content_root() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4022,22 +3973,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_albums_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$albums", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4101,22 +4039,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_album_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$albums$*a9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4171,22 +4096,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_incorrect_album_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$albums$*a200", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -4197,22 +4109,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_items_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$items", 3, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4291,22 +4190,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_artists_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4344,22 +4230,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4385,22 +4258,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_incorrect_artist_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$280", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -4411,22 +4271,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_albums_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28$albums", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4471,22 +4318,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_incorrect_artist_albums_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$280$albums", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -4497,22 +4331,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_album_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28$albums$9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4563,22 +4384,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_incorrect_artist_album_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$280$albums$9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -4589,22 +4397,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_incorrect_album_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3$albums$90", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -4615,22 +4410,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_items_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28$items", 1, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4704,22 +4486,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_all_artists_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4758,22 +4527,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_all_artist_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists$28", 0, 8);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4873,22 +4629,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_all_artist_album_content() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists$28$*a9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -4970,22 +4713,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_root_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5004,22 +4734,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_albums_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$albums");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5038,22 +4755,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_album_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$albums$*a9");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5072,22 +4776,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_items_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$items");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5106,22 +4797,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_artists_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5140,22 +4818,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$25");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5174,22 +4839,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_albums_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$25$albums");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5208,22 +4860,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_album_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$28$albums$*a17");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5242,22 +4881,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_artist_items_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$28$items");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5276,22 +4902,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_all_artists_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=All Artists");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5310,22 +4923,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_all_artist_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=All Artists$25");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5344,22 +4944,9 @@ mod tests {
 
     #[test]
     fn test_handle_browse_an_all_artist_album_metadata() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=All Artists$28$*a17");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5378,22 +4965,9 @@ mod tests {
 
     #[test]
     fn test_request_cover() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = "GET /Content/src/cover.jpg HTTP/1.1\r\n\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, _, body) = read_status_headers_and_body(cursor);
+        let (status, _, body) = handle_device_connection_data(input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5403,22 +4977,9 @@ mod tests {
 
     #[test]
     fn test_request_song() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = "GET /Content/src/riff.flac HTTP/1.1\r\n\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, _, body) = read_status_headers_and_body(cursor);
+        let (status, _, body) = handle_device_connection_data(input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -5429,22 +4990,9 @@ mod tests {
 
     #[test]
     fn test_request_icon() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = "GET /icon-16.png HTTP/1.1\r\n\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, headers, body) = read_status_headers_and_body(cursor);
+        let (status, headers, body) = handle_device_connection_data(input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
         assert_eq!(headers.get("Content-Encoding"), None);
@@ -5455,22 +5003,9 @@ mod tests {
 
     #[test]
     fn test_handle_device_connection_with_bad_request_line() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = "";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -5497,34 +5032,18 @@ mod tests {
     #[test]
     #[should_panic(expected = "no soap action")] // because i'm not doing it right
     fn test_handle_device_connection_with_no_soap_action() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
-
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
             + "Accept-Encoding: identity\r\n"
             + "Content-Type: text/xml; charset=utf-8\r\n"
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
+        handle_device_connection_test(&input);
     }
 
     #[test]
     fn test_handle_device_connection_with_bad_soap_quoting() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
-
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse"#;
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
@@ -5535,18 +5054,8 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -5572,10 +5081,6 @@ mod tests {
 
     #[test]
     fn test_handle_device_connection_with_bad_soap_separator() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
-
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDirectory:1_Browse""#;
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\n".to_string()
@@ -5586,18 +5091,8 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -5623,10 +5118,6 @@ mod tests {
 
     #[test]
     fn test_handle_device_connection_with_unknown_soap_action() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
-
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
         let input = "POST /ContentDirectory/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
@@ -5637,18 +5128,8 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 500 Internal Server Error");
 
@@ -5674,10 +5155,6 @@ mod tests {
 
     #[test]
     fn test_handle_device_connection_with_unknown_request() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
-
         let soap_action_header =
             r#"Soapaction: "urn:schemas-upnp-org:service:ContentDestruction:1#Browse""#;
         let input = "POST /ContentDestruction/Control HTTP/1.1\r\nAccept-Encoding: identity\r\n"
@@ -5688,18 +5165,8 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, _) = read_status_and_body(cursor);
+        let (status, _) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 404 NOT FOUND");
     }
@@ -5781,22 +5248,9 @@ mod tests {
 
     #[test]
     fn test_handle_search() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = generate_search_request("g", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, body) = read_status_and_body(cursor);
+        let (status, body) = handle_device_connection_text(&input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
 
@@ -6891,22 +6345,9 @@ mod tests {
 
     #[test]
     fn test_handle_with_accept_encoding() {
-        let test_device_uuid = Uuid::parse_str("5c863963-f2a2-491e-8b60-079cdadad147").unwrap();
-        let addr = "http://1.2.3.100:1234/Content";
-        let collection = generate_test_collection();
         let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: gzip\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
 
-        handle_device_connection(
-            test_device_uuid,
-            addr,
-            &collection,
-            input.as_bytes(),
-            &mut cursor,
-        );
-
-        let (status, headers, encoded) = read_status_headers_and_body(cursor);
+        let (status, headers, encoded) = handle_device_connection_data(input);
 
         assert_eq!(status, "HTTP/1.1 200 OK");
         assert_eq!(headers.get("Content-Encoding").unwrap(), "gzip");
