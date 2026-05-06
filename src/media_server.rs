@@ -958,7 +958,7 @@ fn generate_browse_albums_response(
             &mut result,
             &options.filter,
             (parent_id, &item_id),
-            (artist, album),
+            &ArtistAlbum { artist, album },
             addr,
         )?;
     }
@@ -1000,7 +1000,11 @@ fn generate_browse_an_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1040,7 +1044,11 @@ fn generate_browse_items_response(
             &mut result,
             &options.filter,
             (parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1160,7 +1168,7 @@ fn generate_browse_an_artist_albums_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album),
+            &ArtistAlbum { artist, album },
             addr,
         )?;
     }
@@ -1207,7 +1215,11 @@ fn generate_browse_an_artist_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1243,7 +1255,11 @@ fn generate_browse_an_artist_items_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1417,7 +1433,7 @@ fn generate_browse_an_all_artist_response_album_part(
             result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album),
+            &ArtistAlbum { artist, album },
             addr,
         )?;
     }
@@ -1456,7 +1472,11 @@ fn generate_browse_an_all_artist_response_track_part(
             result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1505,7 +1525,11 @@ fn generate_browse_an_all_artist_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1667,9 +1691,12 @@ fn write_music_album(
     result: &mut String,
     filter: &Filter,
     (parent_id, container_id): (&str, &str),
-    (artist, album): (&Artist, &Album),
+    artist_album: &ArtistAlbum,
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
+    let artist = artist_album.artist;
+    let album = artist_album.album;
+
     let mut required_properties = vec![];
     required_properties.extend_from_slice(&REQUIRED_OBJECT_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PROPERTIES);
@@ -1746,9 +1773,13 @@ fn write_music_track(
     result: &mut String,
     filter: &Filter,
     (parent_id, item_id): (&str, &str),
-    (artist, album, track): (&Artist, &Album, &Track),
+    artist_album_track: &ArtistAlbumTrack,
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
+    let artist = artist_album_track.artist;
+    let album = artist_album_track.album;
+    let track = artist_album_track.track;
+
     let mut required_properties = vec![];
     required_properties.extend_from_slice(&REQUIRED_OBJECT_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_PROPERTIES);
@@ -2017,7 +2048,7 @@ fn generate_browse_an_album_metadata_response(
         &mut result,
         &filter,
         (parent_id, &item_id),
-        (artist, album),
+        &ArtistAlbum { artist, album },
         addr,
     )?;
 
@@ -2106,7 +2137,7 @@ fn generate_browse_an_artist_album_metadata_response(
         &mut result,
         &filter,
         (&parent_id, &item_id),
-        (artist, album),
+        &ArtistAlbum { artist, album },
         addr,
     )?;
 
@@ -2182,7 +2213,7 @@ fn generate_browse_an_all_artist_album_metadata_response(
         &mut result,
         &filter,
         (&parent_id, &item_id),
-        (artist, album),
+        &ArtistAlbum { artist, album },
         addr,
     )?;
 
@@ -2657,6 +2688,130 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionEr
     Ok(options)
 }
 
+fn generate_search_artist_response(
+    options: &SearchOptions,
+    artist: &Artist,
+    total_matches: &mut u32,
+    number_returned: &mut u32,
+    artist_result: &mut String,
+) -> Result<(), UPNPError> {
+    let artist_id = artist.id;
+    let include = include_this(
+        &options.search_criteria,
+        &SearchWhat::Artist,
+        &artist.into(),
+    );
+    if include {
+        if *total_matches >= options.starting_index && *number_returned < options.requested_count {
+            let parent_id = "0$=Artist";
+            let item_id = format!("{artist_id}");
+            write_music_artist(
+                artist_result,
+                &options.filter,
+                (parent_id, &item_id),
+                artist,
+            )?;
+
+            *number_returned += 1;
+        }
+        *total_matches += 1;
+    }
+
+    Ok(())
+}
+
+struct ArtistAlbum<'a> {
+    artist: &'a Artist,
+    album: &'a Album,
+}
+
+impl<'a> From<&'a ArtistAlbum<'a>> for (&'a Artist, &'a Album) {
+    fn from(value: &'a ArtistAlbum<'a>) -> Self {
+        (value.artist, value.album)
+    }
+}
+
+fn generate_search_album_response(
+    options: &SearchOptions,
+    artist_album: &ArtistAlbum,
+    addr: &str,
+    total_matches: &mut u32,
+    number_returned: &mut u32,
+    album_result: &mut String,
+) -> Result<(), UPNPError> {
+    let include = include_this(
+        &options.search_criteria,
+        &SearchWhat::Album,
+        &artist_album.into(),
+    );
+    if include {
+        if *total_matches >= options.starting_index && *number_returned < options.requested_count {
+            let album_id = artist_album.album.id;
+            let parent_id = "0$albums";
+            let item_id = format!("*a{album_id}");
+            write_music_album(
+                album_result,
+                &options.filter,
+                (parent_id, &item_id),
+                artist_album,
+                addr,
+            )?;
+
+            *number_returned += 1;
+        }
+        *total_matches += 1;
+    }
+
+    Ok(())
+}
+
+struct ArtistAlbumTrack<'a> {
+    artist: &'a Artist,
+    album: &'a Album,
+    track: &'a Track,
+}
+
+impl<'a> From<&'a ArtistAlbumTrack<'a>> for (&'a Artist, &'a Album, &'a Track) {
+    fn from(value: &'a ArtistAlbumTrack<'a>) -> Self {
+        (value.artist, value.album, value.track)
+    }
+}
+
+fn generate_search_track_response(
+    options: &SearchOptions,
+    artist_album_track: &ArtistAlbumTrack,
+    addr: &str,
+    total_matches: &mut u32,
+    number_returned: &mut u32,
+    track_result: &mut String,
+) -> Result<(), UPNPError> {
+    let include = include_this(
+        &options.search_criteria,
+        &SearchWhat::Track,
+        &artist_album_track.into(),
+    );
+    if include {
+        if *total_matches >= options.starting_index && *number_returned < options.requested_count {
+            let album_id = artist_album_track.album.id;
+            let track_id = artist_album_track.track.id;
+            let parent_id = format!("0$albums$*a{album_id}");
+            let item_id = format!("*i{track_id}");
+            write_music_track(
+                track_result,
+                &options.filter,
+                (&parent_id, &item_id),
+                artist_album_track,
+                addr,
+            )?;
+
+            *number_returned += 1;
+        }
+        *total_matches += 1;
+    }
+
+    Ok(())
+}
+
 fn generate_search_root_response(
     collection: &Collection,
     options: &SearchOptions,
@@ -2664,8 +2819,6 @@ fn generate_search_root_response(
     class_order: &[&str],
     addr: &str,
 ) -> Result<String, UPNPError> {
-    let starting_index = options.starting_index;
-    let requested_count = options.requested_count;
     let mut total_matches = 0;
     let mut number_returned = 0;
     let mut artist_result = String::new();
@@ -2678,29 +2831,13 @@ fn generate_search_root_response(
     let artists = artists.iter();
 
     for artist in artists {
-        let artist_id = artist.id;
-        let include = include_this(
-            &options.search_criteria,
-            &SearchWhat::Artist,
-            None,
-            None,
+        generate_search_artist_response(
+            options,
             artist,
-        );
-        if include {
-            if total_matches >= starting_index && number_returned < requested_count {
-                let parent_id = "0$=Artist";
-                let item_id = format!("{artist_id}");
-                write_music_artist(
-                    &mut artist_result,
-                    &options.filter,
-                    (parent_id, &item_id),
-                    artist,
-                )?;
-
-                number_returned += 1;
-            }
-            total_matches += 1;
-        }
+            &mut total_matches,
+            &mut number_returned,
+            &mut artist_result,
+        )?;
 
         let albums = artist.get_albums().collect::<Vec<&Album>>();
 
@@ -2708,30 +2845,14 @@ fn generate_search_root_response(
         let albums = albums.iter();
 
         for album in albums {
-            let album_id = album.id;
-            let include = include_this(
-                &options.search_criteria,
-                &SearchWhat::Album,
-                None,
-                Some(album),
-                artist,
-            );
-            if include {
-                if total_matches >= starting_index && number_returned < requested_count {
-                    let parent_id = "0$albums";
-                    let item_id = format!("*a{album_id}");
-                    write_music_album(
-                        &mut album_result,
-                        &options.filter,
-                        (parent_id, &item_id),
-                        (artist, album),
-                        addr,
-                    )?;
-
-                    number_returned += 1;
-                }
-                total_matches += 1;
-            }
+            generate_search_album_response(
+                options,
+                &ArtistAlbum { artist, album },
+                addr,
+                &mut total_matches,
+                &mut number_returned,
+                &mut album_result,
+            )?;
 
             let tracks = album.get_tracks().collect::<Vec<&Track>>();
 
@@ -2739,30 +2860,18 @@ fn generate_search_root_response(
             let tracks = tracks.iter();
 
             for track in tracks {
-                let include = include_this(
-                    &options.search_criteria,
-                    &SearchWhat::Track,
-                    Some(track),
-                    Some(album),
-                    artist,
-                );
-                if include {
-                    if total_matches >= starting_index && number_returned < requested_count {
-                        let track_id = track.id;
-                        let parent_id = format!("0$albums$*a{album_id}");
-                        let item_id = format!("*i{track_id}");
-                        write_music_track(
-                            &mut track_result,
-                            &options.filter,
-                            (&parent_id, &item_id),
-                            (artist, album, track),
-                            addr,
-                        )?;
-
-                        number_returned += 1;
-                    }
-                    total_matches += 1;
-                }
+                generate_search_track_response(
+                    options,
+                    &ArtistAlbumTrack {
+                        artist,
+                        album,
+                        track,
+                    },
+                    addr,
+                    &mut total_matches,
+                    &mut number_returned,
+                    &mut track_result,
+                )?;
             }
         }
     }
@@ -2871,17 +2980,51 @@ enum SearchWhat {
     Track,
 }
 
+struct IncludeArtistAlbumTrack<'a> {
+    artist: &'a Artist,
+    album: Option<&'a Album>,
+    track: Option<&'a Track>,
+}
+
+impl<'a> From<&'a Artist> for IncludeArtistAlbumTrack<'a> {
+    fn from(value: &'a Artist) -> Self {
+        Self {
+            artist: value,
+            album: None,
+            track: None,
+        }
+    }
+}
+
+impl<'a> From<&'a ArtistAlbum<'a>> for IncludeArtistAlbumTrack<'a> {
+    fn from(value: &'a ArtistAlbum) -> Self {
+        Self {
+            artist: value.artist,
+            album: Some(value.album),
+            track: None,
+        }
+    }
+}
+
+impl<'a> From<&'a ArtistAlbumTrack<'a>> for IncludeArtistAlbumTrack<'a> {
+    fn from(value: &'a ArtistAlbumTrack) -> Self {
+        Self {
+            artist: value.artist,
+            album: Some(value.album),
+            track: Some(value.track),
+        }
+    }
+}
+
 fn include_this(
     search_criteria: &SearchCrit,
     what: &SearchWhat,
-    track: Option<&Track>,
-    album: Option<&Album>,
-    artist: &Artist,
+    artist_album_track: &IncludeArtistAlbumTrack,
 ) -> bool {
     match search_criteria {
         SearchCrit::All => true,
         SearchCrit::SearchExp(search_exp) => {
-            include_by_search_exp(search_exp, what, track, album, artist)
+            include_by_search_exp(search_exp, what, artist_album_track)
         }
     }
 }
@@ -2889,9 +3032,7 @@ fn include_this(
 fn include_by_search_exp(
     search_exp: &SearchExp,
     what: &SearchWhat,
-    track: Option<&Track>,
-    album: Option<&Album>,
-    artist: &Artist,
+    artist_album_track: &IncludeArtistAlbumTrack,
 ) -> bool {
     match search_exp {
         SearchExp::Rel(rel_exp) => {
@@ -2906,9 +3047,19 @@ fn include_by_search_exp(
                             StringOp::Contains => {
                                 if s.as_str() == "dc:title" {
                                     let title = match what {
-                                        SearchWhat::Artist => artist.name.clone(),
-                                        SearchWhat::Album => album.unwrap().title.clone(),
-                                        SearchWhat::Track => track.unwrap().title.clone(),
+                                        SearchWhat::Artist => {
+                                            artist_album_track.artist.name.clone()
+                                        }
+                                        SearchWhat::Album => artist_album_track
+                                            .album
+                                            .expect("album search without an album")
+                                            .title
+                                            .clone(),
+                                        SearchWhat::Track => artist_album_track
+                                            .track
+                                            .expect("track search without a track")
+                                            .title
+                                            .clone(),
                                     };
                                     title.to_ascii_lowercase().contains(quoted_val)
                                 } else {
@@ -2944,8 +3095,8 @@ fn include_by_search_exp(
         }
         SearchExp::Log(search_exp1, log_op, search_exp2) => match log_op {
             LogOp::And => {
-                include_by_search_exp(search_exp1, what, track, album, artist)
-                    && include_by_search_exp(search_exp2, what, track, album, artist)
+                include_by_search_exp(search_exp1, what, artist_album_track)
+                    && include_by_search_exp(search_exp2, what, artist_album_track)
             }
             LogOp::Or => todo!("or"),
         },
@@ -5817,7 +5968,10 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            (&artist, &album),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
             addr,
         )
         .unwrap();
@@ -5853,7 +6007,10 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            (&artist, &album),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
             addr,
         )
         .unwrap();
@@ -5889,7 +6046,10 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            (&artist, &album),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
             addr,
         )
         .unwrap();
@@ -6001,7 +6161,11 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            (&artist, &album, &track),
+            &ArtistAlbumTrack {
+                artist: &artist,
+                album: &album,
+                track: &track,
+            },
             addr,
         )
         .unwrap();
@@ -6050,7 +6214,11 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            (&artist, &album, &track),
+            &ArtistAlbumTrack {
+                artist: &artist,
+                album: &album,
+                track: &track,
+            },
             addr,
         )
         .unwrap();
@@ -6099,7 +6267,11 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            (&artist, &album, &track),
+            &ArtistAlbumTrack {
+                artist: &artist,
+                album: &album,
+                track: &track,
+            },
             addr,
         )
         .unwrap();
