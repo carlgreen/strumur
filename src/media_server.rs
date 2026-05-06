@@ -2694,6 +2694,12 @@ struct ArtistAlbum<'a> {
     album: &'a Album,
 }
 
+impl<'a> From<&'a ArtistAlbum<'a>> for (&'a Artist, &'a Album) {
+    fn from(value: &'a ArtistAlbum<'a>) -> Self {
+        (value.artist, value.album)
+    }
+}
+
 fn generate_search_album_response(
     options: &SearchOptions,
     artist_album: &ArtistAlbum,
@@ -2716,7 +2722,7 @@ fn generate_search_album_response(
                 album_result,
                 &options.filter,
                 (parent_id, &item_id),
-                (artist_album.artist, artist_album.album),
+                artist_album.into(),
                 addr,
             )?;
 
@@ -2732,6 +2738,12 @@ struct ArtistAlbumTrack<'a> {
     artist: &'a Artist,
     album: &'a Album,
     track: &'a Track,
+}
+
+impl<'a> From<&'a ArtistAlbumTrack<'a>> for (&'a Artist, &'a Album, &'a Track) {
+    fn from(value: &'a ArtistAlbumTrack<'a>) -> Self {
+        (value.artist, value.album, value.track)
+    }
 }
 
 fn generate_search_track_response(
@@ -2757,11 +2769,7 @@ fn generate_search_track_response(
                 track_result,
                 &options.filter,
                 (&parent_id, &item_id),
-                (
-                    artist_album_track.artist,
-                    artist_album_track.album,
-                    artist_album_track.track,
-                ),
+                artist_album_track.into(),
                 addr,
             )?;
 
