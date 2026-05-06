@@ -2992,23 +2992,20 @@ fn include_this(
 ) -> bool {
     match search_criteria {
         SearchCrit::All => true,
-        SearchCrit::SearchExp(search_exp) => include_by_search_exp(
-            search_exp,
-            what,
-            artist_album_track.track,
-            artist_album_track.album,
-            artist_album_track.artist,
-        ),
+        SearchCrit::SearchExp(search_exp) => {
+            include_by_search_exp(search_exp, what, artist_album_track)
+        }
     }
 }
 
 fn include_by_search_exp(
     search_exp: &SearchExp,
     what: &SearchWhat,
-    track: Option<&Track>,
-    album: Option<&Album>,
-    artist: &Artist,
+    artist_album_track: &IncludeArtistAlbumTrack,
 ) -> bool {
+    let artist = artist_album_track.artist;
+    let album = artist_album_track.album;
+    let track = artist_album_track.track;
     match search_exp {
         SearchExp::Rel(rel_exp) => {
             match rel_exp {
@@ -3060,8 +3057,8 @@ fn include_by_search_exp(
         }
         SearchExp::Log(search_exp1, log_op, search_exp2) => match log_op {
             LogOp::And => {
-                include_by_search_exp(search_exp1, what, track, album, artist)
-                    && include_by_search_exp(search_exp2, what, track, album, artist)
+                include_by_search_exp(search_exp1, what, artist_album_track)
+                    && include_by_search_exp(search_exp2, what, artist_album_track)
             }
             LogOp::Or => todo!("or"),
         },
