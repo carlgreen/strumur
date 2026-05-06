@@ -3003,9 +3003,6 @@ fn include_by_search_exp(
     what: &SearchWhat,
     artist_album_track: &IncludeArtistAlbumTrack,
 ) -> bool {
-    let artist = artist_album_track.artist;
-    let album = artist_album_track.album;
-    let track = artist_album_track.track;
     match search_exp {
         SearchExp::Rel(rel_exp) => {
             match rel_exp {
@@ -3019,9 +3016,19 @@ fn include_by_search_exp(
                             StringOp::Contains => {
                                 if s.as_str() == "dc:title" {
                                     let title = match what {
-                                        SearchWhat::Artist => artist.name.clone(),
-                                        SearchWhat::Album => album.unwrap().title.clone(),
-                                        SearchWhat::Track => track.unwrap().title.clone(),
+                                        SearchWhat::Artist => {
+                                            artist_album_track.artist.name.clone()
+                                        }
+                                        SearchWhat::Album => artist_album_track
+                                            .album
+                                            .expect("album search without an album")
+                                            .title
+                                            .clone(),
+                                        SearchWhat::Track => artist_album_track
+                                            .track
+                                            .expect("track search without a track")
+                                            .title
+                                            .clone(),
                                     };
                                     title.to_ascii_lowercase().contains(quoted_val)
                                 } else {
