@@ -2988,16 +2988,16 @@ impl<'a> From<&'a ArtistAlbumTrack<'a>> for IncludeArtistAlbumTrack<'a> {
 fn include_this(
     search_criteria: &SearchCrit,
     what: &SearchWhat,
-    artist_track_album: &IncludeArtistAlbumTrack,
+    artist_album_track: &IncludeArtistAlbumTrack,
 ) -> bool {
     match search_criteria {
         SearchCrit::All => true,
         SearchCrit::SearchExp(search_exp) => include_by_search_exp(
             search_exp,
             what,
-            artist_track_album.track,
-            artist_track_album.album,
-            artist_track_album.artist,
+            artist_album_track.track,
+            artist_album_track.album,
+            artist_album_track.artist,
         ),
     }
 }
