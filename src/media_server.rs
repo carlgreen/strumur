@@ -3625,8 +3625,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -3651,8 +3650,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = "GET /ContentDirectory.xml HTTP/1.1\r\nAccept-Encoding: identity\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -3715,8 +3713,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_get_system_update_id_request();
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -3776,8 +3773,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_get_search_capabilities_request();
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -3837,8 +3833,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_get_sort_capabilities_request();
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -3977,8 +3972,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4026,8 +4020,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$albums", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4105,8 +4098,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$albums$*a9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4175,8 +4167,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$albums$*a200", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4201,8 +4192,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$items", 3, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4295,8 +4285,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4348,8 +4337,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4389,8 +4377,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$280", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4415,8 +4402,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28$albums", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4475,8 +4461,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$280$albums", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4501,8 +4486,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28$albums$9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4567,8 +4551,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$280$albums$9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4593,8 +4576,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$3$albums$90", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4619,8 +4601,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=Artist$28$items", 1, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4708,8 +4689,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4762,8 +4742,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists$28", 0, 8);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4877,8 +4856,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_request("0$=All Artists$28$*a9", 0, 500);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -4974,8 +4952,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5008,8 +4985,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$albums");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5042,8 +5018,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$albums$*a9");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5076,8 +5051,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$items");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5110,8 +5084,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5144,8 +5117,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$25");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5178,8 +5150,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$25$albums");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5212,8 +5183,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$28$albums$*a17");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5246,8 +5216,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=Artist$28$items");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5280,8 +5249,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=All Artists");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5314,8 +5282,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=All Artists$25");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5348,8 +5315,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_browse_metadata_request("0$=All Artists$28$*a17");
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5382,8 +5348,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = "GET /Content/src/cover.jpg HTTP/1.1\r\n\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5407,8 +5372,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = "GET /Content/src/riff.flac HTTP/1.1\r\n\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5433,8 +5397,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = "GET /icon-16.png HTTP/1.1\r\n\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5459,8 +5422,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = "";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5507,8 +5469,7 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5535,8 +5496,7 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5586,8 +5546,7 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5637,8 +5596,7 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5688,8 +5646,7 @@ mod tests {
             + "Content-Length: 0"
             + "\r\n"
             + "\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -5785,8 +5742,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = generate_search_request("g", 0, 5);
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
@@ -6895,8 +6851,7 @@ mod tests {
         let addr = "http://1.2.3.100:1234/Content";
         let collection = generate_test_collection();
         let input = "GET /Device.xml HTTP/1.1\r\nAccept-Encoding: gzip\r\n";
-        let output = Vec::new();
-        let mut cursor = Cursor::new(output);
+        let mut cursor: Cursor<Vec<u8>> = Cursor::default();
 
         handle_device_connection(
             test_device_uuid,
