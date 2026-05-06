@@ -1000,7 +1000,11 @@ fn generate_browse_an_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1040,7 +1044,11 @@ fn generate_browse_items_response(
             &mut result,
             &options.filter,
             (parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1207,7 +1215,11 @@ fn generate_browse_an_artist_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1243,7 +1255,11 @@ fn generate_browse_an_artist_items_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1456,7 +1472,11 @@ fn generate_browse_an_all_artist_response_track_part(
             result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1505,7 +1525,11 @@ fn generate_browse_an_all_artist_album_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album, track),
+            &ArtistAlbumTrack {
+                artist,
+                album,
+                track,
+            },
             addr,
         )?;
     }
@@ -1746,9 +1770,13 @@ fn write_music_track(
     result: &mut String,
     filter: &Filter,
     (parent_id, item_id): (&str, &str),
-    (artist, album, track): (&Artist, &Album, &Track),
+    artist_album_track: &ArtistAlbumTrack,
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
+    let artist = artist_album_track.artist;
+    let album = artist_album_track.album;
+    let track = artist_album_track.track;
+
     let mut required_properties = vec![];
     required_properties.extend_from_slice(&REQUIRED_OBJECT_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_ITEM_PROPERTIES);
@@ -2769,7 +2797,7 @@ fn generate_search_track_response(
                 track_result,
                 &options.filter,
                 (&parent_id, &item_id),
-                artist_album_track.into(),
+                artist_album_track,
                 addr,
             )?;
 
@@ -6121,7 +6149,11 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            (&artist, &album, &track),
+            &ArtistAlbumTrack {
+                artist: &artist,
+                album: &album,
+                track: &track,
+            },
             addr,
         )
         .unwrap();
@@ -6170,7 +6202,11 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            (&artist, &album, &track),
+            &ArtistAlbumTrack {
+                artist: &artist,
+                album: &album,
+                track: &track,
+            },
             addr,
         )
         .unwrap();
@@ -6219,7 +6255,11 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums$*a2", "*i3"),
-            (&artist, &album, &track),
+            &ArtistAlbumTrack {
+                artist: &artist,
+                album: &album,
+                track: &track,
+            },
             addr,
         )
         .unwrap();
