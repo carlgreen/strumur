@@ -958,7 +958,7 @@ fn generate_browse_albums_response(
             &mut result,
             &options.filter,
             (parent_id, &item_id),
-            (artist, album),
+            &ArtistAlbum { artist, album },
             addr,
         )?;
     }
@@ -1168,7 +1168,7 @@ fn generate_browse_an_artist_albums_response(
             &mut result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album),
+            &ArtistAlbum { artist, album },
             addr,
         )?;
     }
@@ -1433,7 +1433,7 @@ fn generate_browse_an_all_artist_response_album_part(
             result,
             &options.filter,
             (&parent_id, &item_id),
-            (artist, album),
+            &ArtistAlbum { artist, album },
             addr,
         )?;
     }
@@ -1691,9 +1691,12 @@ fn write_music_album(
     result: &mut String,
     filter: &Filter,
     (parent_id, container_id): (&str, &str),
-    (artist, album): (&Artist, &Album),
+    artist_album: &ArtistAlbum,
     addr: &str,
 ) -> Result<(), GenerateResponseError> {
+    let artist = artist_album.artist;
+    let album = artist_album.album;
+
     let mut required_properties = vec![];
     required_properties.extend_from_slice(&REQUIRED_OBJECT_PROPERTIES);
     required_properties.extend_from_slice(&REQUIRED_OBJECT_CONTAINER_PROPERTIES);
@@ -2045,7 +2048,7 @@ fn generate_browse_an_album_metadata_response(
         &mut result,
         &filter,
         (parent_id, &item_id),
-        (artist, album),
+        &ArtistAlbum { artist, album },
         addr,
     )?;
 
@@ -2134,7 +2137,7 @@ fn generate_browse_an_artist_album_metadata_response(
         &mut result,
         &filter,
         (&parent_id, &item_id),
-        (artist, album),
+        &ArtistAlbum { artist, album },
         addr,
     )?;
 
@@ -2210,7 +2213,7 @@ fn generate_browse_an_all_artist_album_metadata_response(
         &mut result,
         &filter,
         (&parent_id, &item_id),
-        (artist, album),
+        &ArtistAlbum { artist, album },
         addr,
     )?;
 
@@ -2750,7 +2753,7 @@ fn generate_search_album_response(
                 album_result,
                 &options.filter,
                 (parent_id, &item_id),
-                artist_album.into(),
+                artist_album,
                 addr,
             )?;
 
@@ -5965,7 +5968,10 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            (&artist, &album),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
             addr,
         )
         .unwrap();
@@ -6001,7 +6007,10 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            (&artist, &album),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
             addr,
         )
         .unwrap();
@@ -6037,7 +6046,10 @@ mod tests {
             &mut result,
             &options.filter,
             ("0$albums", "*a2"),
-            (&artist, &album),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
             addr,
         )
         .unwrap();
