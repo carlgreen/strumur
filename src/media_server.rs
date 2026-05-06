@@ -2657,6 +2657,116 @@ fn parse_soap_search_request(body: &str) -> Result<SearchOptions, SearchOptionEr
     Ok(options)
 }
 
+fn generate_search_artist_response(
+    options: &SearchOptions,
+    artist: &Artist,
+    total_matches: &mut u32,
+    number_returned: &mut u32,
+    artist_result: &mut String,
+) -> Result<(), UPNPError> {
+    let artist_id = artist.id;
+    let include = include_this(
+        &options.search_criteria,
+        &SearchWhat::Artist,
+        None,
+        None,
+        artist,
+    );
+    if include {
+        if *total_matches >= options.starting_index && *number_returned < options.requested_count {
+            let parent_id = "0$=Artist";
+            let item_id = format!("{artist_id}");
+            write_music_artist(
+                artist_result,
+                &options.filter,
+                (parent_id, &item_id),
+                artist,
+            )?;
+
+            *number_returned += 1;
+        }
+        *total_matches += 1;
+    }
+
+    Ok(())
+}
+
+fn generate_search_album_response(
+    options: &SearchOptions,
+    artist: &Artist,
+    album: &Album,
+    addr: &str,
+    total_matches: &mut u32,
+    number_returned: &mut u32,
+    album_result: &mut String,
+) -> Result<(), UPNPError> {
+    let include = include_this(
+        &options.search_criteria,
+        &SearchWhat::Album,
+        None,
+        Some(album),
+        artist,
+    );
+    if include {
+        if *total_matches >= options.starting_index && *number_returned < options.requested_count {
+            let album_id = album.id;
+            let parent_id = "0$albums";
+            let item_id = format!("*a{album_id}");
+            write_music_album(
+                album_result,
+                &options.filter,
+                (parent_id, &item_id),
+                (artist, album),
+                addr,
+            )?;
+
+            *number_returned += 1;
+        }
+        *total_matches += 1;
+    }
+
+    Ok(())
+}
+
+fn generate_search_track_response(
+    options: &SearchOptions,
+    artist: &Artist,
+    album: &Album,
+    track: &Track,
+    addr: &str,
+    total_matches: &mut u32,
+    number_returned: &mut u32,
+    track_result: &mut String,
+) -> Result<(), UPNPError> {
+    let include = include_this(
+        &options.search_criteria,
+        &SearchWhat::Track,
+        Some(track),
+        Some(album),
+        artist,
+    );
+    if include {
+        if *total_matches >= options.starting_index && *number_returned < options.requested_count {
+            let album_id = album.id;
+            let track_id = track.id;
+            let parent_id = format!("0$albums$*a{album_id}");
+            let item_id = format!("*i{track_id}");
+            write_music_track(
+                track_result,
+                &options.filter,
+                (&parent_id, &item_id),
+                (artist, album, track),
+                addr,
+            )?;
+
+            *number_returned += 1;
+        }
+        *total_matches += 1;
+    }
+
+    Ok(())
+}
+
 fn generate_search_root_response(
     collection: &Collection,
     options: &SearchOptions,
@@ -2664,8 +2774,6 @@ fn generate_search_root_response(
     class_order: &[&str],
     addr: &str,
 ) -> Result<String, UPNPError> {
-    let starting_index = options.starting_index;
-    let requested_count = options.requested_count;
     let mut total_matches = 0;
     let mut number_returned = 0;
     let mut artist_result = String::new();
@@ -2678,29 +2786,13 @@ fn generate_search_root_response(
     let artists = artists.iter();
 
     for artist in artists {
-        let artist_id = artist.id;
-        let include = include_this(
-            &options.search_criteria,
-            &SearchWhat::Artist,
-            None,
-            None,
+        generate_search_artist_response(
+            options,
             artist,
-        );
-        if include {
-            if total_matches >= starting_index && number_returned < requested_count {
-                let parent_id = "0$=Artist";
-                let item_id = format!("{artist_id}");
-                write_music_artist(
-                    &mut artist_result,
-                    &options.filter,
-                    (parent_id, &item_id),
-                    artist,
-                )?;
-
-                number_returned += 1;
-            }
-            total_matches += 1;
-        }
+            &mut total_matches,
+            &mut number_returned,
+            &mut artist_result,
+        )?;
 
         let albums = artist.get_albums().collect::<Vec<&Album>>();
 
@@ -2708,30 +2800,15 @@ fn generate_search_root_response(
         let albums = albums.iter();
 
         for album in albums {
-            let album_id = album.id;
-            let include = include_this(
-                &options.search_criteria,
-                &SearchWhat::Album,
-                None,
-                Some(album),
+            generate_search_album_response(
+                options,
                 artist,
-            );
-            if include {
-                if total_matches >= starting_index && number_returned < requested_count {
-                    let parent_id = "0$albums";
-                    let item_id = format!("*a{album_id}");
-                    write_music_album(
-                        &mut album_result,
-                        &options.filter,
-                        (parent_id, &item_id),
-                        (artist, album),
-                        addr,
-                    )?;
-
-                    number_returned += 1;
-                }
-                total_matches += 1;
-            }
+                album,
+                addr,
+                &mut total_matches,
+                &mut number_returned,
+                &mut album_result,
+            )?;
 
             let tracks = album.get_tracks().collect::<Vec<&Track>>();
 
@@ -2739,30 +2816,16 @@ fn generate_search_root_response(
             let tracks = tracks.iter();
 
             for track in tracks {
-                let include = include_this(
-                    &options.search_criteria,
-                    &SearchWhat::Track,
-                    Some(track),
-                    Some(album),
+                generate_search_track_response(
+                    options,
                     artist,
-                );
-                if include {
-                    if total_matches >= starting_index && number_returned < requested_count {
-                        let track_id = track.id;
-                        let parent_id = format!("0$albums$*a{album_id}");
-                        let item_id = format!("*i{track_id}");
-                        write_music_track(
-                            &mut track_result,
-                            &options.filter,
-                            (&parent_id, &item_id),
-                            (artist, album, track),
-                            addr,
-                        )?;
-
-                        number_returned += 1;
-                    }
-                    total_matches += 1;
-                }
+                    album,
+                    track,
+                    addr,
+                    &mut total_matches,
+                    &mut number_returned,
+                    &mut track_result,
+                )?;
             }
         }
     }
