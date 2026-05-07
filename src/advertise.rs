@@ -977,21 +977,10 @@ Man: "ssdp:discover"
         SysInfo::new(test_device_uuid, os_version, boot_id)
     }
 
-    #[test]
-    fn test_handle_rootdevice_search_message() {
+    fn handle_search_message_test(data: &[u8]) -> (String, String) {
         let sys_info = new_test_sysinfo();
         let location = "somewhere?";
         let max_age = Duration::from_secs(10);
-
-        let buffer = "M-SEARCH * HTTP/1.1\r
-HOST: 239.255.255.250:1900\r
-MAN: \"ssdp:discover\"\r
-MX: 0\r
-ST: upnp:rootdevice\r
-USER-AGENT: OS/version UPnP/2.0 product/version\r
-CPFN.UPNP.ORG: test control point\r
-CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
-            .as_bytes();
 
         let src = setup_test_address();
         let mut test_socket = DontReallySocketToMe::new();
@@ -1003,13 +992,30 @@ CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             location,
             max_age,
             &mut rng,
-            buffer,
+            data,
             &src,
             &mut test_socket,
         )
         .unwrap();
 
         let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
+
+        (pre_date, post_date)
+    }
+
+    #[test]
+    fn test_handle_rootdevice_search_message() {
+        let buffer = "M-SEARCH * HTTP/1.1\r
+HOST: 239.255.255.250:1900\r
+MAN: \"ssdp:discover\"\r
+MX: 0\r
+ST: upnp:rootdevice\r
+USER-AGENT: OS/version UPnP/2.0 product/version\r
+CPFN.UPNP.ORG: test control point\r
+CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
+            .as_bytes();
+
+        let (pre_date, post_date) = handle_search_message_test(buffer);
 
         assert_eq!(pre_date, "HTTP/1.1 200 OK\r\n");
         assert_eq!(
@@ -1029,10 +1035,6 @@ CACHE-CONTROL: max-age=10\r
 
     #[test]
     fn test_handle_uuid_search_message() {
-        let sys_info = new_test_sysinfo();
-        let location = "somewhere?";
-        let max_age = Duration::from_secs(10);
-
         let buffer = "M-SEARCH * HTTP/1.1\r
 HOST: 239.255.255.250:1900\r
 MAN: \"ssdp:discover\"\r
@@ -1043,23 +1045,7 @@ CPFN.UPNP.ORG: test control point\r
 CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             .as_bytes();
 
-        let src = setup_test_address();
-        let mut test_socket = DontReallySocketToMe::new();
-
-        let mut rng = rand::rng();
-
-        handle_search_message(
-            &sys_info,
-            location,
-            max_age,
-            &mut rng,
-            buffer,
-            &src,
-            &mut test_socket,
-        )
-        .unwrap();
-
-        let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
+        let (pre_date, post_date) = handle_search_message_test(buffer);
 
         assert_eq!(pre_date, "HTTP/1.1 200 OK\r\n");
         assert_eq!(
@@ -1079,10 +1065,6 @@ CACHE-CONTROL: max-age=10\r
 
     #[test]
     fn test_handle_media_server_search_message() {
-        let sys_info = new_test_sysinfo();
-        let location = "somewhere?";
-        let max_age = Duration::from_secs(10);
-
         let buffer = "M-SEARCH * HTTP/1.1\r
 HOST: 239.255.255.250:1900\r
 MAN: \"ssdp:discover\"\r
@@ -1093,23 +1075,7 @@ CPFN.UPNP.ORG: test control point\r
 CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             .as_bytes();
 
-        let src = setup_test_address();
-        let mut test_socket = DontReallySocketToMe::new();
-
-        let mut rng = rand::rng();
-
-        handle_search_message(
-            &sys_info,
-            location,
-            max_age,
-            &mut rng,
-            buffer,
-            &src,
-            &mut test_socket,
-        )
-        .unwrap();
-
-        let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
+        let (pre_date, post_date) = handle_search_message_test(buffer);
 
         assert_eq!(pre_date, "HTTP/1.1 200 OK\r\n");
         assert_eq!(
@@ -1129,10 +1095,6 @@ CACHE-CONTROL: max-age=10\r
 
     #[test]
     fn test_handle_content_directory_search_message() {
-        let sys_info = new_test_sysinfo();
-        let location = "somewhere?";
-        let max_age = Duration::from_secs(10);
-
         let buffer = "M-SEARCH * HTTP/1.1\r
 HOST: 239.255.255.250:1900\r
 MAN: \"ssdp:discover\"\r
@@ -1143,23 +1105,7 @@ CPFN.UPNP.ORG: test control point\r
 CPUUID.UPNP.ORG: 7ef73657-27fc-4580-8e7a-c08a4528da9e\r\n\r\n"
             .as_bytes();
 
-        let src = setup_test_address();
-        let mut test_socket = DontReallySocketToMe::new();
-
-        let mut rng = rand::rng();
-
-        handle_search_message(
-            &sys_info,
-            location,
-            max_age,
-            &mut rng,
-            buffer,
-            &src,
-            &mut test_socket,
-        )
-        .unwrap();
-
-        let (pre_date, post_date) = extract_before_and_after_date_header(&test_socket.get_sent());
+        let (pre_date, post_date) = handle_search_message_test(buffer);
 
         assert_eq!(pre_date, "HTTP/1.1 200 OK\r\n");
         assert_eq!(
