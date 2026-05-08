@@ -1962,7 +1962,7 @@ fn format_response(result: &str, number_returned: u32, total_matches: u32) -> St
             <Result>{result}</Result>
             <NumberReturned>{number_returned}</NumberReturned>
             <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>"
+            <UpdateID>25</UpdateID>" // TODO what is this?
     )
 }
 
@@ -2388,6 +2388,9 @@ fn generate_browse_response(
     options: &BrowseOptions,
     addr: &str,
 ) -> (String, &'static str) {
+    // For things below to note, the update_id in browse_response is:
+    // ContainerUpdateID of the container being described if a container is specified in ObjectID.
+    // If the ObjectID is zero, then the UpdateID returned is SystemUpdateID.
     let browse_response = match options.object_id.as_slice() {
         [root] if root == "0" => generate_browse_root_type_response(collection, options),
         [root, next] if root == "0" && next == "albums" => {
