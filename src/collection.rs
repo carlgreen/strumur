@@ -122,7 +122,13 @@ impl Track {
 #[derive(Clone, Debug)]
 pub struct Collection {
     last_id: u128,
-    system_update_id: u32, // TODO maintain this value
+
+    /// This required variable changes whenever anything in the Content Directory changes. A change
+    /// could be a new or removed object, or a change in the metadata of an object. This variable
+    /// is evented and the event is moderated at a maximum rate of 0.5 Hz (once every 2 seconds).
+    ///
+    /// TODO maintain this value
+    system_update_id: u32,
     pub base: PathBuf,
     artists: Vec<Artist>,
 }
