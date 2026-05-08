@@ -901,6 +901,9 @@ fn generate_browse_root_response(
     collection: &Collection,
     options: &BrowseOptions,
 ) -> Result<String, UPNPError> {
+    // If the ObjectID is zero (i.e. root), then the UpdateID returned is SystemUpdateID.
+    let update_id = collection.get_system_update_id();
+
     let mut result = String::new();
     let album_count = collection.get_albums().count();
     write_container(
@@ -925,7 +928,7 @@ fn generate_browse_root_response(
         ("0", "=All Artists"),
         "All Artists",
     )?;
-    Ok(format_response(&result, 4, 4))
+    Ok(format_response_with_update_id(&result, 4, 4, update_id))
 }
 
 fn generate_browse_albums_response(
@@ -1951,7 +1954,12 @@ fn create_album_art_element(addr: &str, cover: &str) -> String {
     format!("<upnp:albumArtURI dlna:profileID=\"JPEG_MED\">{cover}</upnp:albumArtURI>")
 }
 
-fn format_response(result: &str, number_returned: u32, total_matches: u32) -> String {
+fn format_response_with_update_id(
+    result: &str,
+    number_returned: u32,
+    total_matches: u32,
+    update_id: u32,
+) -> String {
     let result = format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
 {result}</DIDL-Lite>"#
@@ -1962,8 +1970,12 @@ fn format_response(result: &str, number_returned: u32, total_matches: u32) -> St
             <Result>{result}</Result>
             <NumberReturned>{number_returned}</NumberReturned>
             <TotalMatches>{total_matches}</TotalMatches>
-            <UpdateID>25</UpdateID>" // TODO what is this?
+            <UpdateID>{update_id}</UpdateID>"
     )
+}
+
+fn format_response(result: &str, number_returned: u32, total_matches: u32) -> String {
+    format_response_with_update_id(result, number_returned, total_matches, 25)
 }
 
 fn generate_get_system_update_id_response(collection: &Collection) -> (String, &'static str) {
@@ -2009,11 +2021,14 @@ fn wrap_with_envelope_body(body: &str) -> String {
     )
 }
 
-fn generate_browse_root_metadata_response() -> Result<String, UPNPError> {
+fn generate_browse_root_metadata_response(collection: &Collection) -> Result<String, UPNPError> {
+    // If the ObjectID is zero (i.e. root), then the UpdateID returned is SystemUpdateID.
+    let update_id = collection.get_system_update_id();
+
     let mut result = String::new();
     let filter = Filter::All;
     write_container(&mut result, &filter, ("-1", "0"), "root")?;
-    Ok(format_response(&result, 1, 1))
+    Ok(format_response_with_update_id(&result, 1, 1, update_id))
 }
 
 fn generate_browse_albums_metadata_response(collection: &Collection) -> Result<String, UPNPError> {
@@ -2225,7 +2240,7 @@ fn generate_browse_root_type_response(
     options: &BrowseOptions,
 ) -> Result<String, UPNPError> {
     match options.browse_flag {
-        BrowseFlag::Metadata => generate_browse_root_metadata_response(),
+        BrowseFlag::Metadata => generate_browse_root_metadata_response(collection),
         BrowseFlag::DirectChildren => generate_browse_root_response(collection, options),
     }
 }
@@ -2390,7 +2405,6 @@ fn generate_browse_response(
 ) -> (String, &'static str) {
     // For things below to note, the update_id in browse_response is:
     // ContainerUpdateID of the container being described if a container is specified in ObjectID.
-    // If the ObjectID is zero, then the UpdateID returned is SystemUpdateID.
     let browse_response = match options.object_id.as_slice() {
         [root] if root == "0" => generate_browse_root_type_response(collection, options),
         [root, next] if root == "0" && next == "albums" => {
@@ -3971,7 +3985,7 @@ mod tests {
         );
         assert_eq!(number_returned, 4);
         assert_eq!(total_matches, 4);
-        assert_eq!(update_id, 25);
+        assert_eq!(update_id, 7);
     }
 
     #[test]
@@ -4732,7 +4746,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 25);
+        assert_eq!(update_id, 7);
     }
 
     #[test]
