@@ -5398,6 +5398,32 @@ mod tests {
         );
     }
 
+    fn setup_test_write_test_data() -> (Artist, Album, Track) {
+        let track = Track {
+            id: 3,
+            disc: 0,
+            number: 1,
+            title: "some song".into(),
+            artist: "an artist feat. someone".into(),
+            file: "01_some_song.flac".into(),
+            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
+            size: 1234,
+            bits_per_sample: 3,
+            sample_frequency: 4,
+            channels: 2,
+        };
+        let album = Album::new(
+            2,
+            "the title".into(),
+            NaiveDate::from_ymd_opt(2026, 2, 21),
+            vec![track.clone()],
+            "cover.jpg".into(),
+        );
+        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+
+        (artist, album, track)
+    }
+
     #[test]
     fn test_write_music_album_all_filter() {
         let mut result = String::new();
@@ -5409,14 +5435,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (artist, album, _) = setup_test_write_test_data();
         let addr = "abc";
         write_music_album(
             &mut result,
@@ -5432,7 +5451,7 @@ mod tests {
 
         assert_eq!(
             result,
-            r#"<container id="0$albums$*a2" parentID="0$albums" childCount="0" restricted="1" searchable="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><dc:creator>an artist</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">abc/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+            r#"<container id="0$albums$*a2" parentID="0$albums" childCount="1" restricted="1" searchable="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><dc:creator>an artist</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">abc/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
 "#,
         );
     }
@@ -5448,14 +5467,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (artist, album, _) = setup_test_write_test_data();
         let addr = "abc";
         write_music_album(
             &mut result,
@@ -5487,14 +5499,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (artist, album, _) = setup_test_write_test_data();
         let addr = "abc";
         write_music_album(
             &mut result,
@@ -5526,7 +5531,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let artist = Artist::new(1, "an artist".into(), vec![]);
+        let (artist, _, _) = setup_test_write_test_data();
         write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
@@ -5547,7 +5552,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let artist = Artist::new(1, "an artist".into(), vec![]);
+        let (artist, _, _) = setup_test_write_test_data();
         write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
@@ -5568,7 +5573,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let artist = Artist::new(1, "an artist".into(), vec![]);
+        let (artist, _, _) = setup_test_write_test_data();
         write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
@@ -5589,27 +5594,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let track = Track {
-            id: 3,
-            disc: 0,
-            number: 1,
-            title: "some song".into(),
-            artist: "an artist feat. someone".into(),
-            file: "01_some_song.flac".into(),
-            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
-            size: 1234,
-            bits_per_sample: 3,
-            sample_frequency: 4,
-            channels: 2,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![track.clone()],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (artist, album, track) = setup_test_write_test_data();
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5642,27 +5627,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let track = Track {
-            id: 3,
-            disc: 0,
-            number: 1,
-            title: "some song".into(),
-            artist: "an artist feat. someone".into(),
-            file: "01_some_song.flac".into(),
-            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
-            size: 1234,
-            bits_per_sample: 3,
-            sample_frequency: 4,
-            channels: 2,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![track.clone()],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (artist, album, track) = setup_test_write_test_data();
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5695,27 +5660,7 @@ mod tests {
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
         };
-        let track = Track {
-            id: 3,
-            disc: 0,
-            number: 1,
-            title: "some song".into(),
-            artist: "an artist feat. someone".into(),
-            file: "01_some_song.flac".into(),
-            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
-            size: 1234,
-            bits_per_sample: 3,
-            sample_frequency: 4,
-            channels: 2,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![track.clone()],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (artist, album, track) = setup_test_write_test_data();
         let addr = "abc";
         write_music_track(
             &mut result,
