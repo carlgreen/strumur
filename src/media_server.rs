@@ -5398,193 +5398,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_write_music_album_all_filter() {
-        let mut result = String::new();
+    fn setup_test_write_test_data(filter: Filter) -> (BrowseOptions, Artist, Album, Track) {
         let options = BrowseOptions {
             object_id: vec![],
             browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
-        let addr = "abc";
-        write_music_album(
-            &mut result,
-            &options.filter,
-            ("0$albums", "*a2"),
-            &ArtistAlbum {
-                artist: &artist,
-                album: &album,
-            },
-            addr,
-        )
-        .unwrap();
-
-        assert_eq!(
-            result,
-            r#"<container id="0$albums$*a2" parentID="0$albums" childCount="0" restricted="1" searchable="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><dc:creator>an artist</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">abc/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
-"#,
-        );
-    }
-
-    #[test]
-    fn test_write_music_album_no_filter() {
-        let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
-        let addr = "abc";
-        write_music_album(
-            &mut result,
-            &options.filter,
-            ("0$albums", "*a2"),
-            &ArtistAlbum {
-                artist: &artist,
-                album: &album,
-            },
-            addr,
-        )
-        .unwrap();
-
-        assert_eq!(
-            result,
-            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class></container>
-"#,
-        );
-    }
-
-    #[test]
-    fn test_write_music_album_some_filter() {
-        let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["dc:date".into(), "upnp:artist".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
-        let addr = "abc";
-        write_music_album(
-            &mut result,
-            &options.filter,
-            ("0$albums", "*a2"),
-            &ArtistAlbum {
-                artist: &artist,
-                album: &album,
-            },
-            addr,
-        )
-        .unwrap();
-
-        assert_eq!(
-            result,
-            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:class>object.container.album.musicAlbum</upnp:class></container>
-"#,
-        );
-    }
-
-    #[test]
-    fn test_write_music_artist_all_filter() {
-        let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let artist = Artist::new(1, "an artist".into(), vec![]);
-        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
-
-        assert_eq!(
-            result,
-            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
-"#,
-        );
-    }
-
-    #[test]
-    fn test_write_music_artist_no_filter() {
-        let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let artist = Artist::new(1, "an artist".into(), vec![]);
-        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
-
-        assert_eq!(
-            result,
-            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
-"#,
-        );
-    }
-
-    #[test]
-    fn test_write_music_artist_some_filter() {
-        let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["searchable".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let artist = Artist::new(1, "an artist".into(), vec![]);
-        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
-
-        assert_eq!(
-            result,
-            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
-"#,
-        );
-    }
-
-    #[test]
-    fn test_write_music_track_all_filter() {
-        let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
+            filter,
             starting_index: 0,
             requested_count: 0,
             sort_criteria: vec![] as SortCriteria,
@@ -5610,6 +5428,129 @@ mod tests {
             "cover.jpg".into(),
         );
         let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+
+        (options, artist, album, track)
+    }
+
+    #[test]
+    fn test_write_music_album_all_filter() {
+        let mut result = String::new();
+        let (options, artist, album, _) = setup_test_write_test_data(Filter::All);
+        let addr = "abc";
+        write_music_album(
+            &mut result,
+            &options.filter,
+            ("0$albums", "*a2"),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$albums$*a2" parentID="0$albums" childCount="1" restricted="1" searchable="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><dc:creator>an artist</dc:creator><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:albumArtURI dlna:profileID="JPEG_MED">abc/cover.jpg</upnp:albumArtURI><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_album_no_filter() {
+        let mut result = String::new();
+        let (options, artist, album, _) = setup_test_write_test_data(Filter::Include(vec![]));
+        let addr = "abc";
+        write_music_album(
+            &mut result,
+            &options.filter,
+            ("0$albums", "*a2"),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_album_some_filter() {
+        let mut result = String::new();
+        let (options, artist, album, _) = setup_test_write_test_data(Filter::Include(vec![
+            "dc:date".into(),
+            "upnp:artist".into(),
+        ]));
+        let addr = "abc";
+        write_music_album(
+            &mut result,
+            &options.filter,
+            ("0$albums", "*a2"),
+            &ArtistAlbum {
+                artist: &artist,
+                album: &album,
+            },
+            addr,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$albums$*a2" parentID="0$albums" restricted="1"><dc:title>the title</dc:title><dc:date>2026-02-21</dc:date><upnp:artist>an artist</upnp:artist><upnp:artist role="AlbumArtist">an artist</upnp:artist><upnp:class>object.container.album.musicAlbum</upnp:class></container>
+"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_artist_all_filter() {
+        let mut result = String::new();
+        let (options, artist, _, _) = setup_test_write_test_data(Filter::All);
+        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_artist_no_filter() {
+        let mut result = String::new();
+        let (options, artist, _, _) = setup_test_write_test_data(Filter::Include(vec![]));
+        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_artist_some_filter() {
+        let mut result = String::new();
+        let (options, artist, _, _) =
+            setup_test_write_test_data(Filter::Include(vec!["searchable".into()]));
+        write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
+
+        assert_eq!(
+            result,
+            r#"<container id="0$artists$*a2" parentID="0$artists" restricted="1" searchable="1"><dc:title>an artist</dc:title><upnp:class>object.container.person.musicArtist</upnp:class></container>
+"#,
+        );
+    }
+
+    #[test]
+    fn test_write_music_track_all_filter() {
+        let mut result = String::new();
+        let (options, artist, album, track) = setup_test_write_test_data(Filter::All);
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5634,35 +5575,7 @@ mod tests {
     #[test]
     fn test_write_music_track_no_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let track = Track {
-            id: 3,
-            disc: 0,
-            number: 1,
-            title: "some song".into(),
-            artist: "an artist feat. someone".into(),
-            file: "01_some_song.flac".into(),
-            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
-            size: 1234,
-            bits_per_sample: 3,
-            sample_frequency: 4,
-            channels: 2,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![track.clone()],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (options, artist, album, track) = setup_test_write_test_data(Filter::Include(vec![]));
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5687,35 +5600,8 @@ mod tests {
     #[test]
     fn test_write_music_track_some_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["res".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let track = Track {
-            id: 3,
-            disc: 0,
-            number: 1,
-            title: "some song".into(),
-            artist: "an artist feat. someone".into(),
-            file: "01_some_song.flac".into(),
-            duration: NaiveTime::from_hms_opt(0, 3, 30).expect("should be a time"),
-            size: 1234,
-            bits_per_sample: 3,
-            sample_frequency: 4,
-            channels: 2,
-        };
-        let album = Album::new(
-            2,
-            "the title".into(),
-            NaiveDate::from_ymd_opt(2026, 2, 21),
-            vec![track.clone()],
-            "cover.jpg".into(),
-        );
-        let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
+        let (options, artist, album, track) =
+            setup_test_write_test_data(Filter::Include(vec!["res".into()]));
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5740,14 +5626,7 @@ mod tests {
     #[test]
     fn test_write_container_all_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
+        let (options, _, _, _) = setup_test_write_test_data(Filter::All);
         write_container(
             &mut result,
             &options.filter,
@@ -5766,14 +5645,7 @@ mod tests {
     #[test]
     fn test_write_container_no_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
+        let (options, _, _, _) = setup_test_write_test_data(Filter::Include(vec![]));
         write_container(
             &mut result,
             &options.filter,
@@ -5792,14 +5664,8 @@ mod tests {
     #[test]
     fn test_write_container_some_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["searchable".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
+        let (options, _, _, _) =
+            setup_test_write_test_data(Filter::Include(vec!["searchable".into()]));
         write_container(
             &mut result,
             &options.filter,
