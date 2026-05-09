@@ -5398,7 +5398,15 @@ mod tests {
         );
     }
 
-    fn setup_test_write_test_data() -> (Artist, Album, Track) {
+    fn setup_test_write_test_data(filter: Filter) -> (BrowseOptions, Artist, Album, Track) {
+        let options = BrowseOptions {
+            object_id: vec![],
+            browse_flag: BrowseFlag::DirectChildren,
+            filter,
+            starting_index: 0,
+            requested_count: 0,
+            sort_criteria: vec![] as SortCriteria,
+        };
         let track = Track {
             id: 3,
             disc: 0,
@@ -5421,21 +5429,13 @@ mod tests {
         );
         let artist = Artist::new(1, "an artist".into(), vec![album.clone()]);
 
-        (artist, album, track)
+        (options, artist, album, track)
     }
 
     #[test]
     fn test_write_music_album_all_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, album, _) = setup_test_write_test_data();
+        let (options, artist, album, _) = setup_test_write_test_data(Filter::All);
         let addr = "abc";
         write_music_album(
             &mut result,
@@ -5459,15 +5459,7 @@ mod tests {
     #[test]
     fn test_write_music_album_no_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, album, _) = setup_test_write_test_data();
+        let (options, artist, album, _) = setup_test_write_test_data(Filter::Include(vec![]));
         let addr = "abc";
         write_music_album(
             &mut result,
@@ -5491,15 +5483,10 @@ mod tests {
     #[test]
     fn test_write_music_album_some_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["dc:date".into(), "upnp:artist".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, album, _) = setup_test_write_test_data();
+        let (options, artist, album, _) = setup_test_write_test_data(Filter::Include(vec![
+            "dc:date".into(),
+            "upnp:artist".into(),
+        ]));
         let addr = "abc";
         write_music_album(
             &mut result,
@@ -5523,15 +5510,7 @@ mod tests {
     #[test]
     fn test_write_music_artist_all_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, _, _) = setup_test_write_test_data();
+        let (options, artist, _, _) = setup_test_write_test_data(Filter::All);
         write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
@@ -5544,15 +5523,7 @@ mod tests {
     #[test]
     fn test_write_music_artist_no_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, _, _) = setup_test_write_test_data();
+        let (options, artist, _, _) = setup_test_write_test_data(Filter::Include(vec![]));
         write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
@@ -5565,15 +5536,8 @@ mod tests {
     #[test]
     fn test_write_music_artist_some_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["searchable".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, _, _) = setup_test_write_test_data();
+        let (options, artist, _, _) =
+            setup_test_write_test_data(Filter::Include(vec!["searchable".into()]));
         write_music_artist(&mut result, &options.filter, ("0$artists", "*a2"), &artist).unwrap();
 
         assert_eq!(
@@ -5586,15 +5550,7 @@ mod tests {
     #[test]
     fn test_write_music_track_all_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, album, track) = setup_test_write_test_data();
+        let (options, artist, album, track) = setup_test_write_test_data(Filter::All);
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5619,15 +5575,7 @@ mod tests {
     #[test]
     fn test_write_music_track_no_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, album, track) = setup_test_write_test_data();
+        let (options, artist, album, track) = setup_test_write_test_data(Filter::Include(vec![]));
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5652,15 +5600,8 @@ mod tests {
     #[test]
     fn test_write_music_track_some_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["res".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
-        let (artist, album, track) = setup_test_write_test_data();
+        let (options, artist, album, track) =
+            setup_test_write_test_data(Filter::Include(vec!["res".into()]));
         let addr = "abc";
         write_music_track(
             &mut result,
@@ -5685,14 +5626,7 @@ mod tests {
     #[test]
     fn test_write_container_all_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::All,
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
+        let (options, _, _, _) = setup_test_write_test_data(Filter::All);
         write_container(
             &mut result,
             &options.filter,
@@ -5711,14 +5645,7 @@ mod tests {
     #[test]
     fn test_write_container_no_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec![]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
+        let (options, _, _, _) = setup_test_write_test_data(Filter::Include(vec![]));
         write_container(
             &mut result,
             &options.filter,
@@ -5737,14 +5664,8 @@ mod tests {
     #[test]
     fn test_write_container_some_filter() {
         let mut result = String::new();
-        let options = BrowseOptions {
-            object_id: vec![],
-            browse_flag: BrowseFlag::DirectChildren,
-            filter: Filter::Include(vec!["searchable".into()]),
-            starting_index: 0,
-            requested_count: 0,
-            sort_criteria: vec![] as SortCriteria,
-        };
+        let (options, _, _, _) =
+            setup_test_write_test_data(Filter::Include(vec!["searchable".into()]));
         write_container(
             &mut result,
             &options.filter,
