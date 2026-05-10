@@ -19,6 +19,9 @@ use crate::flac::is_flac;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Artist {
+    /// The integer value is incremented each time the container is modified
+    container_update_id: u32,
+
     pub id: u128,
     pub name: String,
     albums: Vec<Album>,
@@ -26,8 +29,17 @@ pub struct Artist {
 
 impl Artist {
     #[cfg(test)]
-    pub const fn new(id: u128, name: String, albums: Vec<Album>) -> Self {
-        Self { id, name, albums }
+    pub const fn new(container_update_id: u32, id: u128, name: String, albums: Vec<Album>) -> Self {
+        Self {
+            container_update_id,
+            id,
+            name,
+            albums,
+        }
+    }
+
+    pub const fn get_container_update_id(&self) -> u32 {
+        self.container_update_id
     }
 
     pub fn get_albums(&self) -> impl ExactSizeIterator<Item = &Album> {
@@ -50,6 +62,9 @@ impl Artist {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Album {
+    /// The integer value is incremented each time the container is modified
+    container_update_id: u32,
+
     pub id: u128,
     pub title: String,
     pub date: Option<NaiveDate>,
@@ -60,6 +75,7 @@ pub struct Album {
 impl Album {
     #[cfg(test)]
     pub const fn new(
+        container_update_id: u32,
         id: u128,
         title: String,
         date: Option<NaiveDate>,
@@ -67,12 +83,17 @@ impl Album {
         cover: String,
     ) -> Self {
         Self {
+            container_update_id,
             id,
             title,
             date,
             tracks,
             cover,
         }
+    }
+
+    pub const fn get_container_update_id(&self) -> u32 {
+        self.container_update_id
     }
 
     pub fn get_tracks(&self) -> impl ExactSizeIterator<Item = &Track> {
@@ -129,6 +150,7 @@ pub struct Collection {
     ///
     /// TODO maintain this value
     system_update_id: u32,
+
     pub base: PathBuf,
     artists: Vec<Artist>,
 }
@@ -399,6 +421,7 @@ fn add_track_to_collection(
             collection.last_id += 1;
             let album_id = collection.last_id;
             let album = Album {
+                container_update_id: 0,
                 id: album_id,
                 title: album_title,
                 date: release_date,
@@ -411,6 +434,7 @@ fn add_track_to_collection(
         let cover_url = find_album_artwork(location, entry, &album_title);
 
         let album = Album {
+            container_update_id: 0,
             id: collection.next_id(),
             title: album_title,
             date: release_date,
@@ -419,6 +443,7 @@ fn add_track_to_collection(
         };
 
         let artist = Artist {
+            container_update_id: 0,
             id: collection.next_id(),
             name: album_artist_name,
             albums: vec![album],
@@ -551,9 +576,11 @@ mod tests {
         assert_eq!(
             collection.artists,
             vec![Artist {
+                container_update_id: 0,
                 id: 3,
                 name: "carl".to_string(),
                 albums: vec![Album {
+                    container_update_id: 0,
                     id: 2,
                     title: "none".to_string(),
                     date: None,
