@@ -17,6 +17,21 @@ use log::{debug, info, trace, warn};
 use crate::flac::extract_flac_metadata;
 use crate::flac::is_flac;
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UpdateID(u32);
+
+impl std::fmt::Display for UpdateID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<u32> for UpdateID {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Artist {
     /// The integer value is incremented each time the container is modified
@@ -38,8 +53,8 @@ impl Artist {
         }
     }
 
-    pub const fn get_container_update_id(&self) -> u32 {
-        self.container_update_id
+    pub fn get_container_update_id(&self) -> UpdateID {
+        self.container_update_id.into()
     }
 
     pub fn get_albums(&self) -> impl ExactSizeIterator<Item = &Album> {
@@ -92,8 +107,8 @@ impl Album {
         }
     }
 
-    pub const fn get_container_update_id(&self) -> u32 {
-        self.container_update_id
+    pub fn get_container_update_id(&self) -> UpdateID {
+        self.container_update_id.into()
     }
 
     pub fn get_tracks(&self) -> impl ExactSizeIterator<Item = &Track> {
@@ -213,8 +228,8 @@ impl Collection {
         collection
     }
 
-    pub const fn get_system_update_id(&self) -> u32 {
-        self.system_update_id
+    pub fn get_system_update_id(&self) -> UpdateID {
+        self.system_update_id.into()
     }
 
     pub fn get_artists(&self) -> impl ExactSizeIterator<Item = &Artist> {

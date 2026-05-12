@@ -25,6 +25,7 @@ use log::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use xmltree::Element;
 
+use crate::collection::UpdateID;
 use crate::collection::{Album, Artist, Collection, Track};
 use crate::search_parser::{
     BinOp, BoolVal, Error, ExistsOp, LogOp, QuotedVal, RelExp, SearchCrit, SearchExp, StringOp,
@@ -928,7 +929,7 @@ fn generate_browse_root_response(
         ("0", "=All Artists"),
         "All Artists",
     )?;
-    Ok(format_response(&result, 4, 4, update_id))
+    Ok(format_response(&result, 4, 4, &update_id))
 }
 
 fn generate_browse_albums_response(
@@ -972,7 +973,7 @@ fn generate_browse_albums_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1025,7 +1026,7 @@ fn generate_browse_an_album_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1077,7 +1078,7 @@ fn generate_browse_items_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1114,7 +1115,7 @@ fn generate_browse_artists_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1169,7 +1170,7 @@ fn generate_browse_an_artist_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1221,7 +1222,7 @@ fn generate_browse_an_artist_albums_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1279,7 +1280,7 @@ fn generate_browse_an_artist_album_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1329,7 +1330,7 @@ fn generate_browse_an_artist_items_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1366,7 +1367,7 @@ fn generate_browse_all_artists_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1477,7 +1478,7 @@ fn generate_browse_an_all_artist_response(
         &result,
         number_returned,
         total_matches.try_into()?,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -1617,7 +1618,7 @@ fn generate_browse_an_all_artist_album_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -2040,7 +2041,7 @@ fn format_response(
     result: &str,
     number_returned: u32,
     total_matches: u32,
-    update_id: u32,
+    update_id: &UpdateID,
 ) -> String {
     let result = format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:metadata-1-0/">
@@ -2106,7 +2107,7 @@ fn generate_browse_root_metadata_response(collection: &Collection) -> Result<Str
     let mut result = String::new();
     let filter = Filter::All;
     write_container(&mut result, &filter, ("-1", "0"), "root")?;
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_albums_metadata_response(collection: &Collection) -> Result<String, UPNPError> {
@@ -2122,7 +2123,7 @@ fn generate_browse_albums_metadata_response(collection: &Collection) -> Result<S
         ("0", "albums"),
         &format!("{album_count} albums"),
     )?;
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_an_album_metadata_response(
@@ -2151,7 +2152,7 @@ fn generate_browse_an_album_metadata_response(
         addr,
     )?;
 
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_items_metadata_response(collection: &Collection) -> Result<String, UPNPError> {
@@ -2167,7 +2168,7 @@ fn generate_browse_items_metadata_response(collection: &Collection) -> Result<St
         ("0", "items"),
         &format!("{album_count} items"),
     )?;
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_artists_metadata_response(collection: &Collection) -> Result<String, UPNPError> {
@@ -2177,7 +2178,7 @@ fn generate_browse_artists_metadata_response(collection: &Collection) -> Result<
     let mut result = String::new();
     let filter = Filter::All;
     write_container(&mut result, &filter, ("0", "=Artist"), "Artist")?;
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_an_artist_metadata_response(
@@ -2198,7 +2199,7 @@ fn generate_browse_an_artist_metadata_response(
     let filter = Filter::All;
     write_music_artist(&mut result, &filter, (parent_id, &item_id), artist)?;
 
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_an_artist_albums_metadata_response(
@@ -2226,7 +2227,7 @@ fn generate_browse_an_artist_albums_metadata_response(
         &format!("{album_count} albums"),
     )?;
 
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_an_artist_album_metadata_response(
@@ -2256,7 +2257,7 @@ fn generate_browse_an_artist_album_metadata_response(
         addr,
     )?;
 
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_an_artist_items_metadata_response(
@@ -2283,7 +2284,7 @@ fn generate_browse_an_artist_items_metadata_response(
         &format!("{item_count} items"),
     )?;
 
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_all_artists_metadata_response(
@@ -2295,7 +2296,7 @@ fn generate_browse_all_artists_metadata_response(
     let mut result = String::new();
     let filter = Filter::All;
     write_container(&mut result, &filter, ("0", "=All Artists"), "All Artists")?;
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_an_all_artist_metadata_response(
@@ -2316,7 +2317,7 @@ fn generate_browse_an_all_artist_metadata_response(
     let filter = Filter::All;
     write_music_artist(&mut result, &filter, (parent_id, &item_id), artist)?;
 
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_an_all_artist_album_metadata_response(
@@ -2346,7 +2347,7 @@ fn generate_browse_an_all_artist_album_metadata_response(
         addr,
     )?;
 
-    Ok(format_response(&result, 1, 1, update_id))
+    Ok(format_response(&result, 1, 1, &update_id))
 }
 
 fn generate_browse_root_type_response(
@@ -3033,7 +3034,7 @@ fn generate_search_root_response(
         &result,
         number_returned,
         total_matches,
-        update_id,
+        &update_id,
     ))
 }
 
@@ -4015,7 +4016,7 @@ mod tests {
             + &body
     }
 
-    fn extract_browse_response(body: &str) -> (String, u32, u32, u32) {
+    fn extract_browse_response(body: &str) -> (String, u32, u32, UpdateID) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -4048,10 +4049,15 @@ mod tests {
             .unwrap()
             .get_text()
             .unwrap()
-            .parse()
+            .parse::<u32>()
             .unwrap();
 
-        (result.into(), number_returned, total_matches, update_id)
+        (
+            result.into(),
+            number_returned,
+            total_matches,
+            update_id.into(),
+        )
     }
 
     fn extract_error_response(body: &str) -> (u16, String) {
@@ -4121,7 +4127,7 @@ mod tests {
         );
         assert_eq!(number_returned, 4);
         assert_eq!(total_matches, 4);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4187,7 +4193,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4244,7 +4250,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, 4);
+        assert_eq!(update_id, 4.into());
     }
 
     #[test]
@@ -4338,7 +4344,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 13);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4378,7 +4384,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4406,7 +4412,7 @@ mod tests {
         );
         assert_eq!(number_returned, 2);
         assert_eq!(total_matches, 2);
-        assert_eq!(update_id, 15);
+        assert_eq!(update_id, 15.into());
     }
 
     #[test]
@@ -4466,7 +4472,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, 15);
+        assert_eq!(update_id, 15.into());
     }
 
     #[test]
@@ -4532,7 +4538,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, 4);
+        assert_eq!(update_id, 4.into());
     }
 
     #[test]
@@ -4634,7 +4640,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 9);
-        assert_eq!(update_id, 15);
+        assert_eq!(update_id, 15.into());
     }
 
     #[test]
@@ -4675,7 +4681,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 10);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4777,7 +4783,7 @@ mod tests {
         );
         assert_eq!(number_returned, 8);
         assert_eq!(total_matches, 12);
-        assert_eq!(update_id, 15);
+        assert_eq!(update_id, 15.into());
     }
 
     #[test]
@@ -4830,7 +4836,7 @@ mod tests {
         );
         assert_eq!(number_returned, 3);
         assert_eq!(total_matches, 3);
-        assert_eq!(update_id, 4);
+        assert_eq!(update_id, 4.into());
     }
 
     fn generate_browse_metadata_request(object_id: &str) -> String {
@@ -4882,7 +4888,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4903,7 +4909,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4924,7 +4930,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 4);
+        assert_eq!(update_id, 4.into());
     }
 
     #[test]
@@ -4945,7 +4951,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4966,7 +4972,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -4987,7 +4993,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 6);
+        assert_eq!(update_id, 6.into());
     }
 
     #[test]
@@ -5008,7 +5014,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 6);
+        assert_eq!(update_id, 6.into());
     }
 
     #[test]
@@ -5029,7 +5035,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 3);
+        assert_eq!(update_id, 3.into());
     }
 
     #[test]
@@ -5050,7 +5056,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 15);
+        assert_eq!(update_id, 15.into());
     }
 
     #[test]
@@ -5071,7 +5077,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
@@ -5092,7 +5098,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 6);
+        assert_eq!(update_id, 6.into());
     }
 
     #[test]
@@ -5113,7 +5119,7 @@ mod tests {
         );
         assert_eq!(number_returned, 1);
         assert_eq!(total_matches, 1);
-        assert_eq!(update_id, 3);
+        assert_eq!(update_id, 3.into());
     }
 
     #[test]
@@ -5360,7 +5366,7 @@ mod tests {
             + &body
     }
 
-    fn extract_search_response(body: &str) -> (String, u32, u32, u32) {
+    fn extract_search_response(body: &str) -> (String, u32, u32, UpdateID) {
         debug!("about to parse {body}");
         let envelope = Element::parse(body.as_bytes()).unwrap();
         let body = envelope.get_child("Body").unwrap();
@@ -5393,10 +5399,15 @@ mod tests {
             .unwrap()
             .get_text()
             .unwrap()
-            .parse()
+            .parse::<u32>()
             .unwrap();
 
-        (result.into(), number_returned, total_matches, update_id)
+        (
+            result.into(),
+            number_returned,
+            total_matches,
+            update_id.into(),
+        )
     }
 
     #[test]
@@ -5464,7 +5475,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     fn read_status_and_body(cursor: Cursor<Vec<u8>>) -> (String, String) {
@@ -6309,7 +6320,7 @@ mod tests {
         );
         assert_eq!(number_returned, 5);
         assert_eq!(total_matches, 5);
-        assert_eq!(update_id, 7);
+        assert_eq!(update_id, 7.into());
     }
 
     #[test]
